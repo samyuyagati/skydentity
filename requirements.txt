@@ -1,4 +1,5 @@
-azure-mgmt-resource
-azure-mgmt-compute
-azure-mgmt-network
-azure-identity
+azure-mgmt-resource # azure
+azure-mgmt-compute # azure
+azure-mgmt-network # azure
+azure-identity # azure
+virtualenv # gcp
