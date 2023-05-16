@@ -7,8 +7,13 @@ from typing import Any, List
 import warnings
 
 from google.api_core.extended_operation import ExtendedOperation
+from google.oauth2 import service_account
 from google.cloud import compute_v1
 
+
+def get_credentials() -> service_account.Credentials:
+    return service_account.Credentials.from_service_account_file(
+        '/Users/samyu/.cloud_creds/sky-identity-ac2febc1b9b3.json')
 
 def get_image_from_family(project: str, family: str) -> compute_v1.Image:
     """
@@ -21,7 +26,7 @@ def get_image_from_family(project: str, family: str) -> compute_v1.Image:
     Returns:
         An Image object.
     """
-    image_client = compute_v1.ImagesClient()
+    image_client = compute_v1.ImagesClient(credentials=get_credentials())
     # List of public operating system (OS) images: https://cloud.google.com/compute/docs/images/os-details
     newest_image = image_client.get_from_family(project=project, family=family)
     return newest_image
@@ -191,11 +196,11 @@ def create_instance(
     Returns:
         Instance object.
     """
-    instance_client = compute_v1.InstancesClient()
+    instance_client = compute_v1.InstancesClient(credentials=get_credentials())
 
     # Use the network interface provided in the network_link argument.
     network_interface = compute_v1.NetworkInterface()
-    network_interface.name = network_link
+    network_interface.network = network_link  
     if subnetwork_link:
         network_interface.subnetwork = subnetwork_link
 
@@ -287,3 +292,9 @@ def create_with_ssd(
     ]
     instance = create_instance(project_id, zone, instance_name, disks)
     return instance
+
+def main():
+    create_with_ssd("sky-identity", "us-west1-b", "gcp-clilib")
+
+if __name__ == "__main__":
+    main()

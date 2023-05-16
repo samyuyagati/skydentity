@@ -2,6 +2,8 @@
 
 pip install -r requirements.txt
 
+export PATH=$PATH:~/.local/bin
+
 # GCP
 ENV_NAME=gcp-env
 virtualenv $ENV_NAME
