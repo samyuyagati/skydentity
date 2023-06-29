@@ -1,19 +1,19 @@
-# Example taken from https://cloud.google.com/compute/docs/samples/compute-instances-create-with-local-ssd?hl=en
-# Calling create_with_ssd should create a new VM instance with Debian 10 operating system and SSD local disk.
-
-import re
-import sys
 from typing import Any, List
-import warnings
 
 from google.api_core.extended_operation import ExtendedOperation
-from google.oauth2 import service_account
 from google.cloud import compute_v1
+from google.oauth2 import service_account
+from google.api_core.client_options import ClientOptions
 
+import json
+import os
+import re
 
-def get_credentials() -> service_account.Credentials:
+skydentity_creds = '/Users/samyu/.cloud_creds/skydentity-token.json'
+
+def get_skydentity_credentials() -> service_account.Credentials:
     return service_account.Credentials.from_service_account_file(
-        '/Users/samyu/.cloud_creds/gcp/sky-identity-ac2febc1b9b3.json')
+        skydentity_creds)
 
 def get_image_from_family(project: str, family: str) -> compute_v1.Image:
     """
@@ -26,11 +26,39 @@ def get_image_from_family(project: str, family: str) -> compute_v1.Image:
     Returns:
         An Image object.
     """
-    image_client = compute_v1.ImagesClient(credentials=get_credentials())
+    # GET https://127.0.0.1:5000/compute/v1/skydentity/us-west-1/describe/images/family/debian
+    # --> send request to https://127.0.0.1:5000 to launch serverless function
+    # ------> with /compute/v1/skydentity/us-west-1/describe/images/family/debian included in the HTTPS request
+    options = ClientOptions(api_endpoint="https://127.0.0.1:5000")
+    image_client = compute_v1.ImagesClient(credentials=get_skydentity_credentials(),
+        client_options=options)
     # List of public operating system (OS) images: https://cloud.google.com/compute/docs/images/os-details
     newest_image = image_client.get_from_family(project=project, family=family)
+    # -----> in backend: get_from_family uses REST API to send GET ....
     return newest_image
 
+def local_ssd_disk(zone: str) -> compute_v1.AttachedDisk():
+    """
+    Create an AttachedDisk object to be used in VM instance creation. The created disk contains
+    no data and requires formatting before it can be used.
+
+    Args:
+        zone: The zone in which the local SSD drive will be attached.
+
+    Returns:
+        AttachedDisk object configured as a local SSD disk.
+    """
+    disk = compute_v1.AttachedDisk()
+
+#    disk = compute_v1.AttachedDisk(api_endpoint="https://127.0.0.1:5000")
+    disk.type_ = compute_v1.AttachedDisk.Type.SCRATCH.name
+    initialize_params = compute_v1.AttachedDiskInitializeParams()
+
+#    initialize_params = compute_v1.AttachedDiskInitializeParams(api_endpoint="https://127.0.0.1:5000")
+    initialize_params.disk_type = f"zones/{zone}/diskTypes/local-ssd"
+    disk.initialize_params = initialize_params
+    disk.auto_delete = True
+    return disk
 
 def disk_from_image(
     disk_type: str,
@@ -57,8 +85,15 @@ def disk_from_image(
     Returns:
         AttachedDisk object configured to be created using the specified image.
     """
+#    options = ClientOptions(api_endpoint="https://127.0.0.1:5000")
+#    disk_client = compute_v1.DisksClient(credentials=get_skydentity_credentials(),
+#        client_options=options)
+
     boot_disk = compute_v1.AttachedDisk()
     initialize_params = compute_v1.AttachedDiskInitializeParams()
+
+ #   boot_disk = compute_v1.AttachedDisk(api_endpoint="https://127.0.0.1:5000")
+ #   initialize_params = compute_v1.AttachedDiskInitializeParams(api_endpoint="https://127.0.0.1:5000")
     initialize_params.source_image = source_image
     initialize_params.disk_size_gb = disk_size_gb
     initialize_params.disk_type = disk_type
@@ -68,27 +103,6 @@ def disk_from_image(
     boot_disk.auto_delete = auto_delete
     boot_disk.boot = boot
     return boot_disk
-
-
-def local_ssd_disk(zone: str) -> compute_v1.AttachedDisk():
-    """
-    Create an AttachedDisk object to be used in VM instance creation. The created disk contains
-    no data and requires formatting before it can be used.
-
-    Args:
-        zone: The zone in which the local SSD drive will be attached.
-
-    Returns:
-        AttachedDisk object configured as a local SSD disk.
-    """
-    disk = compute_v1.AttachedDisk()
-    disk.type_ = compute_v1.AttachedDisk.Type.SCRATCH.name
-    initialize_params = compute_v1.AttachedDiskInitializeParams()
-    initialize_params.disk_type = f"zones/{zone}/diskTypes/local-ssd"
-    disk.initialize_params = initialize_params
-    disk.auto_delete = True
-    return disk
-
 
 def wait_for_extended_operation(
     operation: ExtendedOperation, verbose_name: str = "operation", timeout: int = 300
@@ -137,7 +151,6 @@ def wait_for_extended_operation(
 
     return result
 
-
 def create_instance(
     project_id: str,
     zone: str,
@@ -153,8 +166,6 @@ def create_instance(
         project_id: project ID or project number of the Cloud project you want to use.
         zone: name of the zone to create the instance in. For example: "us-west3-b"
         instance_name: name of the new virtual machine (VM) instance.
-        disks: a list of compute_v1.AttachedDisk objects describing the disks
-            you want to attach to your new instance.
         machine_type: machine type of the VM being created. This value uses the
             following format: "zones/{zone}/machineTypes/{type_name}".
             For example: "zones/europe-west3-c/machineTypes/f1-micro"
@@ -164,19 +175,23 @@ def create_instance(
     Returns:
         Instance object.
     """
-    instance_client = compute_v1.InstancesClient(credentials=get_credentials())
+    options = ClientOptions(api_endpoint="https://127.0.0.1:5000")
+    instance_client = compute_v1.InstancesClient(credentials=get_skydentity_credentials(),
+        client_options=options)
 
     # Use the network interface provided in the network_link argument.
     network_interface = compute_v1.NetworkInterface()
     network_interface.network = network_link  
 
     # Collect information into the Instance object.
-    instance = compute_v1.Instance()
+    instance = compute_v1.Instance() # TODO is this a request we need to proxy?
     instance.network_interfaces = [network_interface]
     instance.name = instance_name
-    instance.disks = disks
+#    if re.match(r"^zones/[a-z\d\-]+/machineTypes/[a-z\d\-]+$", machine_type):
+#        instance.machine_type = machine_type
+#    else:
     instance.machine_type = f"zones/{zone}/machineTypes/{machine_type}"
-
+    instance.disks = disks
     # Prepare the request to insert an instance.
     request = compute_v1.InsertInstanceRequest()
     request.zone = zone
@@ -184,38 +199,32 @@ def create_instance(
     request.instance_resource = instance
 
     # Wait for the create operation to complete.
-    print(f"Creating the {instance_name} instance in {zone}...")
+    print(f"Sending creation request for the {instance_name} instance in {zone} to Sky Identity...")
 
     operation = instance_client.insert(request=request)
 
+    # THIS PART NEEDS TO BE DONE W/ ACTUAL CREDENTIALS
 #    wait_for_extended_operation(operation, "instance creation")
 
-    print(f"Instance {instance_name} created.")
-    return instance_client.get(project=project_id, zone=zone, instance=instance_name)
+#    print(f"Instance {instance_name} created.")
+#    return instance_client.get(project=project_id, zone=zone, instance=instance_name)
 
+def main():
+    # Create test token
+#    dictionary = {"name": "gcp", "token": "test_token"}
+#    json_object = json.dumps(dictionary, indent=4)
+#    with open(skydentity_creds, "w") as outfile:
+#        outfile.write(json_object)
 
-def create_with_ssd(
-    project_id: str, zone: str, instance_name: str
-) -> compute_v1.Instance:
-    """
-    Create a new VM instance with Debian 10 operating system and SSD local disk.
-
-    Args:
-        project_id: project ID or project number of the Cloud project you want to use.
-        zone: name of the zone to create the instance in. For example: "us-west3-b"
-        instance_name: name of the new virtual machine (VM) instance.
-
-    Returns:
-        Instance object.
-    """
+    # Send VM creation request
+    zone = "us-west1-b"
     newest_debian = get_image_from_family(project="debian-cloud", family="debian-10")
     disk_type = f"zones/{zone}/diskTypes/pd-standard"
     disks = [
         disk_from_image(disk_type, 10, True, newest_debian.self_link, True),
         local_ssd_disk(zone),
     ]
-    instance = create_instance(project_id, zone, instance_name, disks)
-    return instance
+    create_instance("sky-identity", zone, "gcp-clilib", disks)
 
 def create_firewall_rule(
     project_id: str, firewall_rule_name: str, network: str = "global/networks/default"
@@ -257,18 +266,16 @@ def create_firewall_rule(
     # TODO: Uncomment to set the priority to 0
     # firewall_rule.priority = 0
 
-    firewall_client = compute_v1.FirewallsClient()
+    options = ClientOptions(api_endpoint="https://127.0.0.1:5000")
+    firewall_client = compute_v1.FirewallsClient(credentials=get_skydentity_credentials(),
+        client_options=options)
+
     operation = firewall_client.insert(
         project=project_id, firewall_resource=firewall_rule
     )
 
-#    wait_for_extended_operation(operation, "firewall rule creation")
-
     return firewall_client.get(project=project_id, firewall=firewall_rule_name)
 
-def main():
-    create_with_ssd("sky-identity", "us-west1-b", "gcp-clilib")
-    create_firewall_rule("sky-identity", "allow-http-https")
 
 if __name__ == "__main__":
     main()

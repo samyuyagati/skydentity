@@ -1,0 +1,59 @@
+service: serverless-gcp-skydentity
+
+provider:
+  name: google
+  stage: dev
+  runtime: nodejs10
+  region: us-west1
+  project: sky-identity
+  # The GCF credentials can be a little tricky to set up. Luckily we've documented this for you here:
+  # https://serverless.com/framework/docs/providers/google/guide/credentials/
+  #
+  # the path to the credentials file needs to be absolute
+#  credentials: ~/.gcloud/keyfile.json
+
+frameworkVersion: '3'
+
+plugins:
+  - serverless-google-cloudfunctions
+  - serverless-wsgi
+  - serverless-python-requirements
+
+package:
+  exclude:
+    - node_modules/**
+    - .gitignore
+    - .git/**
+
+custom:
+  wsgi:
+    app: app.app
+
+functions:
+  app:
+    handler: wsgi_handler.handler
+    events:
+      - httpApi: '*'
+
+#functions:
+#  first:
+#    handler: http
+#    events:
+#      - http: path
+  # NOTE: the following uses an "event" event (pubSub event in this case).
+  # Please create the corresponding resources in the Google Cloud
+  # before deploying this service through Serverless
+  #second:
+  #  handler: event
+  #  events:
+  #    - event:
+  #        eventType: providers/cloud.pubsub/eventTypes/topic.publish
+  #        resource: projects/*/topics/my-topic
+# you can define resources, templates etc. the same way you would in a
+# Google Cloud deployment configuration
+#resources:
+#  resources:
+#    - type: storage.v1.bucket
+#      name: my-serverless-service-bucket
+#  imports:
+#    - path: my_template.jinja

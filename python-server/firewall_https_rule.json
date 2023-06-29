@@ -1,0 +1,21 @@
+{
+    "allowed": [
+        {
+            "IPProtocol": "tcp",
+            "ports": [
+                "80",
+                "443"
+            ]
+        }
+    ],
+    "description": "Allowing TCP traffic on port 80 and 443 from Internet.",
+    "direction": "INGRESS",
+    "name": "allow-http-https",
+    "network": "global/networks/default",
+    "sourceRanges": [
+        "0.0.0.0/0"
+    ],
+    "targetTags": [
+        "web"
+    ]
+}
