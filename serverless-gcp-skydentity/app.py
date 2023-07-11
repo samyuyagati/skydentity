@@ -10,10 +10,12 @@ from urllib.parse import urlparse
 
 app = Flask(__name__)
 
-CREDS_PATH = "/Users/samyu/.cloud_creds/gcp"
+#HOME = "/Users/samyu/"
+HOME = "/home/samyu/"
+CREDS_PATH = HOME + ".cloud_creds/gcp"
 COMPUTE_API_ENDPOINT = "https://compute.googleapis.com/"
 #SERVICE_ACCT_EMAIL = "terraform@sky-identity.iam.gserviceaccount.com"
-CERT_DIR = "/Users/samyu/skydentity/certs"
+CERT_DIR = HOME + "skydentity/certs"
 
 def get_gcp_creds():
     cred_files = [f for f in listdir(CREDS_PATH) if isfile(join(CREDS_PATH, f))]
@@ -112,5 +114,6 @@ def after(response):
     return response
 
 if __name__ == "__main__":
-    app.run('127.0.0.1', debug=False, port=5000, ssl_context=(os.path.join(CERT_DIR, 'server.crt'), 
-            os.path.join(CERT_DIR, 'server.key')))
+    app.run(debug=False)
+#    app.run('0.0.0.0', debug=False, port=5000, ssl_context=(os.path.join(CERT_DIR, 'domain.crt'), 
+#            os.path.join(CERT_DIR, 'domain.key')))
