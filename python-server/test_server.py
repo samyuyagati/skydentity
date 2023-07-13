@@ -9,7 +9,7 @@ import json
 import os
 import re
 
-skydentity_creds = '/Users/samyu/.cloud_creds/skydentity-token.json'
+skydentity_creds = '../tokens/.cloud_creds/skydentity-token.json'
 
 def get_skydentity_credentials() -> service_account.Credentials:
     return service_account.Credentials.from_service_account_file(
