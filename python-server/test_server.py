@@ -11,6 +11,9 @@ import re
 
 skydentity_creds = '../tokens/.cloud_creds/skydentity-token.json'
 
+api_endpoint="https://34.168.128.47:5000"
+#api_endpoint=api_endpoint
+>>>>>>> 7107b3050ff49531e6569ae1fab10e01d1ad42ee
 def get_skydentity_credentials() -> service_account.Credentials:
     return service_account.Credentials.from_service_account_file(
         skydentity_creds)
@@ -29,7 +32,7 @@ def get_image_from_family(project: str, family: str) -> compute_v1.Image:
     # GET https://127.0.0.1:5000/compute/v1/skydentity/us-west-1/describe/images/family/debian
     # --> send request to https://127.0.0.1:5000 to launch serverless function
     # ------> with /compute/v1/skydentity/us-west-1/describe/images/family/debian included in the HTTPS request
-    options = ClientOptions(api_endpoint="https://127.0.0.1:5000")
+    options = ClientOptions(api_endpoint=api_endpoint)
     image_client = compute_v1.ImagesClient(credentials=get_skydentity_credentials(),
         client_options=options)
     # List of public operating system (OS) images: https://cloud.google.com/compute/docs/images/os-details
@@ -50,11 +53,11 @@ def local_ssd_disk(zone: str) -> compute_v1.AttachedDisk():
     """
     disk = compute_v1.AttachedDisk()
 
-#    disk = compute_v1.AttachedDisk(api_endpoint="https://127.0.0.1:5000")
+#    disk = compute_v1.AttachedDisk(api_endpoint=api_endpoint)
     disk.type_ = compute_v1.AttachedDisk.Type.SCRATCH.name
     initialize_params = compute_v1.AttachedDiskInitializeParams()
 
-#    initialize_params = compute_v1.AttachedDiskInitializeParams(api_endpoint="https://127.0.0.1:5000")
+#    initialize_params = compute_v1.AttachedDiskInitializeParams(api_endpoint=api_endpoint)
     initialize_params.disk_type = f"zones/{zone}/diskTypes/local-ssd"
     disk.initialize_params = initialize_params
     disk.auto_delete = True
@@ -85,15 +88,15 @@ def disk_from_image(
     Returns:
         AttachedDisk object configured to be created using the specified image.
     """
-#    options = ClientOptions(api_endpoint="https://127.0.0.1:5000")
+#    options = ClientOptions(api_endpoint=api_endpoint)
 #    disk_client = compute_v1.DisksClient(credentials=get_skydentity_credentials(),
 #        client_options=options)
 
     boot_disk = compute_v1.AttachedDisk()
     initialize_params = compute_v1.AttachedDiskInitializeParams()
 
- #   boot_disk = compute_v1.AttachedDisk(api_endpoint="https://127.0.0.1:5000")
- #   initialize_params = compute_v1.AttachedDiskInitializeParams(api_endpoint="https://127.0.0.1:5000")
+ #   boot_disk = compute_v1.AttachedDisk(api_endpoint=api_endpoint)
+ #   initialize_params = compute_v1.AttachedDiskInitializeParams(api_endpoint=api_endpoint)
     initialize_params.source_image = source_image
     initialize_params.disk_size_gb = disk_size_gb
     initialize_params.disk_type = disk_type
@@ -175,7 +178,7 @@ def create_instance(
     Returns:
         Instance object.
     """
-    options = ClientOptions(api_endpoint="https://127.0.0.1:5000")
+    options = ClientOptions(api_endpoint=api_endpoint)
     instance_client = compute_v1.InstancesClient(credentials=get_skydentity_credentials(),
         client_options=options)
 
@@ -217,6 +220,8 @@ def main():
 #        outfile.write(json_object)
 
     # Send VM creation request
+    os.environ["SSL_CERT_FILE"] = "/Users/samyu/skydentity/certs/rootCA.crt"
+    os.environ["SSL_CERT_DIR"] = "/Users/samyu/skydentity/certs"
     zone = "us-west1-b"
     newest_debian = get_image_from_family(project="debian-cloud", family="debian-10")
     disk_type = f"zones/{zone}/diskTypes/pd-standard"
@@ -266,7 +271,7 @@ def create_firewall_rule(
     # TODO: Uncomment to set the priority to 0
     # firewall_rule.priority = 0
 
-    options = ClientOptions(api_endpoint="https://127.0.0.1:5000")
+    options = ClientOptions(api_endpoint=api_endpoint)
     firewall_client = compute_v1.FirewallsClient(credentials=get_skydentity_credentials(),
         client_options=options)
 
