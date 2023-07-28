@@ -1,0 +1,4 @@
+serverless-gcp-skydentity/certs/CA_dir/*
+serverless-gcp-skydentity/certs/domain_dir/*
+serverless-gcp-skydentity/certs/configs/domain.ext
+serverless-gcp-skydentity/certs/configs/domain.cnf
