@@ -12,7 +12,6 @@ app = Flask(__name__)
 
 CREDS_PATH = "/Users/samyu/.cloud_creds/gcp"
 COMPUTE_API_ENDPOINT = "https://compute.googleapis.com/"
-#SERVICE_ACCT_EMAIL = "terraform@sky-identity.iam.gserviceaccount.com"
 CERT_DIR = "/Users/samyu/skydentity/certs"
 
 def get_gcp_creds():
