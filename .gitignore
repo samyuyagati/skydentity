@@ -2,3 +2,7 @@ serverless-gcp-skydentity/certs/CA_dir/*
 serverless-gcp-skydentity/certs/domain_dir/*
 serverless-gcp-skydentity/certs/configs/domain.ext
 serverless-gcp-skydentity/certs/configs/domain.cnf
+serverless-gcp-skydentity/tokens/*
+serverless-gcp-skydentity/skyid/*
+serverless-gcp-skydentity/gcloud/*
+serverless-gcp-skydentity/__pycache__/*

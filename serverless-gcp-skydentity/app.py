@@ -10,12 +10,8 @@ from urllib.parse import urlparse
 
 app = Flask(__name__)
 
-#HOME = "/Users/samyu/"
-HOME = "/home/samyu/"
-CREDS_PATH = HOME + ".cloud_creds/gcp"
+CREDS_PATH = ".cloud_creds/gcp"
 COMPUTE_API_ENDPOINT = "https://compute.googleapis.com/"
-#SERVICE_ACCT_EMAIL = "terraform@sky-identity.iam.gserviceaccount.com"
-CERT_DIR = HOME + "skydentity/certs"
 
 def get_gcp_creds():
     cred_files = [f for f in listdir(CREDS_PATH) if isfile(join(CREDS_PATH, f))]
@@ -61,16 +57,11 @@ def get_new_url(request, new_headers):
         allow_redirects = False,
     )
 
-#@app.before_request
-#def before_request():
-#    os.environ["REQUESTS_CA_BUNDLE"] = os.path.join(CERT_DIR, "server.crt")
- 
 @app.route("/compute/v1/projects/<project>/global/images/family/<family>", methods=["GET"])
 def get_image(project, family):
     print("Incoming GET IMAGE request information----------------------------------")
     print(project)
     print(family)
-#    print(request.data)
     print("\nJSON:", request.is_json, "\n")
     print("REQUEST LEN:", len(request.get_data()))
     print("Setting new headers")
@@ -89,8 +80,6 @@ def create_vm(project, region):
     print(region)
     print(request.data)
     print(request.json)
-#    os.environ["REQUEST_CA_BUNDLE"] = os.path.join(CERT_DIR, "server.crt")
-#    print("REQUESTS_CA_BUNDLE:", os.environ["REQUESTS_CA_BUNDLE"])
     print(request.get_data())
  
     ## Get authorization token and add to headers
@@ -100,7 +89,6 @@ def create_vm(project, region):
     proxy_req = get_new_url(request, new_headers) 
 
     ## TODO: Spawn a new request for firewall rule creation (for http/s traffic allowed)
-
     return Response(proxy_req.content, proxy_req.status_code, new_headers)
 
 # TODO handler for firewall rule creation
