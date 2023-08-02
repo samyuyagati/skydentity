@@ -4,6 +4,9 @@ CA_DIR="CA_dir"
 PROXY_DIR="domain_dir"
 CONFIG_DIR="configs"
 
+# Create CA_DIR if not already existing
+mkdir -p $CA_DIR
+
 # First argument should be string IP addr of proxy (e.g., "34.168.128.47")
 python config_domain.py $1
 
