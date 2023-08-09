@@ -4,8 +4,10 @@ from markupsafe import escape
 from os import listdir
 from os.path import isfile, join
 
+import json
 import os
 import requests
+import subprocess
 from urllib.parse import urlparse
 
 app = Flask(__name__)
@@ -28,11 +30,19 @@ def get_headers_with_auth(request):
  
     # Activate service account and get auth token
     service_acct_creds = get_gcp_creds()
-    os.popen(f"gcloud auth activate-service-account --key-file={service_acct_creds}")
-    
-    auth_token_stream = os.popen(f"gcloud auth print-access-token")
-    auth_token = auth_token_stream.read().strip()
- 
+    print("SERVICE ACCT CRED PATH", service_acct_creds)
+    with open(service_acct_creds, 'r') as file:
+        print("SERVICE ACCT CRED CONTENTS", json.load(file))
+
+    auth_command = f"gcloud auth activate-service-account --key-file={service_acct_creds}"
+    auth_process = subprocess.Popen(auth_command.split())
+    auth_process.wait()
+
+    auth_token_command = f"gcloud auth print-access-token"
+    auth_token_process = subprocess.Popen(auth_token_command.split(), stdout=subprocess.PIPE)
+    auth_token_process_out_bytes, _ = auth_token_process.communicate() 
+    auth_token = auth_token_process_out_bytes.strip().decode('utf-8')
+    print("AUTH TOKEN", auth_token)
     new_headers["Authorization"] = f"Bearer {auth_token}"
     return new_headers
 
