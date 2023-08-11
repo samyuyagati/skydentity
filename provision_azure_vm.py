@@ -30,7 +30,7 @@ resource_client = ResourceManagementClient(credential, subscription_id)
 # the region in which we provision resources. You can change these
 # values however you want.
 RESOURCE_GROUP_NAME = "skydentity-test-group"
-LOCATION = "westus2"
+LOCATION = "eastus2"
 
 # Provision the resource group.
 rg_result = resource_client.resource_groups.create_or_update(
@@ -141,8 +141,8 @@ compute_client = ComputeManagementClient(credential, subscription_id)
 
 # TODO: providing the credentials is the critical part of the library design; definitely don't want to hardcode
 VM_NAME = "HeadVM"
-USERNAME = "user"
-PASSWORD = "password"
+USERNAME = "skydentity"
+PASSWORD = "$kyd3nt1ty"
 
 print(
     f"Provisioning virtual machine {VM_NAME}; this operation might \
@@ -162,11 +162,11 @@ poller = compute_client.virtual_machines.begin_create_or_update(
             "image_reference": {
                 "publisher": "Canonical",
                 "offer": "UbuntuServer",
-                "sku": "18.04.0-LTS",
-                "version": "latest",
+                "sku": "18_04-lts-gen2",
+                "version": "18.04.202205060"
             }
         },
-        "hardware_profile": {"vm_size": "Standard_DC2s_v2"},
+        "hardware_profile": {"vm_size": "Standard_B1s"},
         "os_profile": {
             "computer_name": VM_NAME,
             "admin_username": USERNAME,
