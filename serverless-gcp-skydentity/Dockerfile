@@ -32,6 +32,6 @@ RUN mkdir -p /usr/local/gcloud \
 # Adding the package path to local
 ENV PATH $PATH:/usr/local/gcloud/google-cloud-sdk/bin
 
-CMD ls certs/
+CMD ls /certs/
 
-CMD exec gunicorn --bind :8080 --keyfile ./certs/domain.key --certfile ./certs/domain.crt app:app 
+CMD exec gunicorn --bind :8080 --keyfile /certs/domain.key --certfile ./certs/domain.crt app:app 
