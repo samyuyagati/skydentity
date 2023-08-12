@@ -10,9 +10,8 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
 # Copy required files
 COPY requirements.txt .
-COPY certs/domain_dir ./certs
+COPY certs/domain_dir/domain.crt ./certs/domain.crt
 COPY app.py .
-COPY tokens/.cloud_creds/gcp ./.cloud_creds/gcp 
 
 RUN pip3 install -r requirements.txt
 
@@ -33,4 +32,6 @@ RUN mkdir -p /usr/local/gcloud \
 # Adding the package path to local
 ENV PATH $PATH:/usr/local/gcloud/google-cloud-sdk/bin
 
-CMD [ "python3", "-m" , "flask", "run", "--host=0.0.0.0", "--port=5000", "--cert=certs/domain.crt", "--key=certs/domain.key"]
+CMD ls certs/
+
+CMD exec gunicorn --bind :8080 --keyfile ./certs/domain.key --certfile ./certs/domain.crt app:app 

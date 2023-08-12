@@ -12,7 +12,8 @@ from urllib.parse import urlparse
 
 app = Flask(__name__)
 
-CREDS_PATH = ".cloud_creds/gcp"
+CERT_DIR = "certs/"
+CREDS_PATH = "cloud_creds/gcp"
 COMPUTE_API_ENDPOINT = "https://compute.googleapis.com/"
 
 def get_gcp_creds():
@@ -112,6 +113,6 @@ def after(response):
     return response
 
 if __name__ == "__main__":
-    app.run(debug=False)
-#    app.run('0.0.0.0', debug=False, port=5000, ssl_context=(os.path.join(CERT_DIR, 'domain.crt'), 
-#            os.path.join(CERT_DIR, 'domain.key')))
+    app.run('0.0.0.0', debug=False, port=int(os.environ.get("PORT", 8080)), 
+            ssl_context=(os.path.join(CERT_DIR, 'domain.crt'), 
+            os.path.join(CERT_DIR, 'domain.key')))
