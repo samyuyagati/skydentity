@@ -12,6 +12,7 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 COPY requirements.txt .
 COPY certs/domain_dir/domain.crt ./certs/domain.crt
 COPY app.py .
+#COPY wsgi.py .
 
 RUN pip3 install -r requirements.txt
 
@@ -32,6 +33,8 @@ RUN mkdir -p /usr/local/gcloud \
 # Adding the package path to local
 ENV PATH $PATH:/usr/local/gcloud/google-cloud-sdk/bin
 
-CMD ls /certs/
+# Launch HTTP server
+CMD exec gunicorn --bind :$PORT --workers 1 --threads 4 --timeout 0 app:app
 
-CMD exec gunicorn --bind :8080 --keyfile /certs/domain.key --certfile ./certs/domain.crt app:app 
+# Launch HTTPS server
+#CMD exec gunicorn --bind :$PORT --workers 1 --threads 4 --timeout 0 --keyfile /certs/domain.key --certfile ./certs/domain.crt app:app 

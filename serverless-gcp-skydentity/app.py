@@ -1,5 +1,6 @@
 from flask import Flask
 from flask import request, Response
+from google.cloud import logging
 from markupsafe import escape
 from os import listdir
 from os.path import isfile, join
@@ -12,28 +13,39 @@ from urllib.parse import urlparse
 
 app = Flask(__name__)
 
-CERT_DIR = "certs/"
-CREDS_PATH = "cloud_creds/gcp"
+CERT_DIR = "/certs/"
+CREDS_PATH = "/cloud_creds/gcp"
 COMPUTE_API_ENDPOINT = "https://compute.googleapis.com/"
+
+def get_logger():
+    logging_client = logging.Client()
+    return logging_client.logger("app_proxy")
+
+def print_and_log(logger, text, severity="WARNING"):
+    print(text)
+    logger.log_text(text, severity=severity)
 
 def get_gcp_creds():
     cred_files = [f for f in listdir(CREDS_PATH) if isfile(join(CREDS_PATH, f))]
     return os.path.join(CREDS_PATH, cred_files[0])
 
 def get_headers_with_auth(request):
+    logger = get_logger()
+    print_and_log(logger, "Entered get_headers_with_auth")
     ## Get authorization token and add to headers
     new_headers = {k:v for k,v in request.headers} # if k.lower() == 'host'}
 
-    print("ORIGINAL HEADERS:", new_headers)
+    print_and_log(logger, f"ORIGINAL HEADERS: {new_headers}")
     parsed_compute_api_endpoint = urlparse(f"{COMPUTE_API_ENDPOINT}")
     hostname = parsed_compute_api_endpoint.netloc
     new_headers["Host"] = f'{hostname}'
  
     # Activate service account and get auth token
     service_acct_creds = get_gcp_creds()
-    print("SERVICE ACCT CRED PATH", service_acct_creds)
+    print_and_log(logger, f"SERVICE ACCT CRED PATH: {service_acct_creds}")
     with open(service_acct_creds, 'r') as file:
-        print("SERVICE ACCT CRED CONTENTS", json.load(file))
+        json_contents = json.load(file)
+        print_and_log(logger, f"SERVICE ACCT CRED CONTENTS: {json_contents}") 
 
     auth_command = f"gcloud auth activate-service-account --key-file={service_acct_creds}"
     auth_process = subprocess.Popen(auth_command.split())
@@ -43,13 +55,14 @@ def get_headers_with_auth(request):
     auth_token_process = subprocess.Popen(auth_token_command.split(), stdout=subprocess.PIPE)
     auth_token_process_out_bytes, _ = auth_token_process.communicate() 
     auth_token = auth_token_process_out_bytes.strip().decode('utf-8')
-    print("AUTH TOKEN", auth_token)
+    print_and_log(logger, f"AUTH TOKEN: {auth_token}")
     new_headers["Authorization"] = f"Bearer {auth_token}"
     return new_headers
 
 def get_new_url(request, new_headers):
     new_url = request.url.replace(request.host_url, f'{COMPUTE_API_ENDPOINT}')
-    print(new_url)
+    logger = get_logger()
+    print_and_log(logger, f"{new_url}")
     # If no JSON body, don't include a json body in proxied request
     if (len(request.get_data()) == 0):
         return requests.request(
@@ -68,30 +81,40 @@ def get_new_url(request, new_headers):
         allow_redirects = False,
     )
 
+@app.route("/hello", methods=["GET"])
+def handle_hello():
+    logger = get_logger()
+    print_and_log(logger, "Hello!")
+    return "Hello"
+
 @app.route("/compute/v1/projects/<project>/global/images/family/<family>", methods=["GET"])
 def get_image(project, family):
-    print("Incoming GET IMAGE request information----------------------------------")
-    print(project)
-    print(family)
-    print("\nJSON:", request.is_json, "\n")
-    print("REQUEST LEN:", len(request.get_data()))
-    print("Setting new headers")
+    logger = get_logger()
+    print_and_log(logger, "Incoming GET IMAGE request information----------------------------------")
+    print_and_log(logger, f"{project}")
+    print_and_log(logger, f"{family}")
+
+    request_length = len(request.get_data())
+    print_and_log(logger, "REQUEST LEN: request_length")
+    print_and_log(logger, "Setting new headers")
     new_headers = get_headers_with_auth(request)
-    print("NEW HEADERS:", new_headers)
-    print("Creating proxy request")
+    print_and_log(logger, f"NEW HEADERS: {new_headers}")
+    print_and_log(logger, "Creating proxy request")
     proxy_req = get_new_url(request, new_headers)
 
-    print("Proxied request:", proxy_req)
+    print_and_log(logger, f"Proxied request: {proxy_req}")
     return Response(proxy_req.content, proxy_req.status_code, new_headers)
 
 @app.route("/compute/v1/projects/<project>/zones/<region>/instances", methods=["POST"])
 def create_vm(project, region):
-    print("Incoming POST INSTANCES request information----------------------------------")
-    print(project)
-    print(region)
-    print(request.data)
-    print(request.json)
-    print(request.get_data())
+    logger = get_logger()
+    print_and_log(logger, "Incoming POST INSTANCES request information----------------------------------")
+    print_and_log(logger, f"{project}")
+    print_and_log(logger, f"{region}")
+    print_and_log(logger, f"{request.data}")
+    print_and_log(logger, f"{request.json}")
+    data = request.get_data()
+    print_and_log(logger, f"{data}")
  
     ## Get authorization token and add to headers
     new_headers = get_headers_with_auth(request) 
@@ -104,15 +127,21 @@ def create_vm(project, region):
 
 # TODO handler for firewall rule creation
 
-@app.after_request
-def after(response):
-    print("Response information------------------------------------")
-    print(response.status)
-    print(response.headers)
-    print(response.get_data())
-    return response
+#@app.after_request
+#def after(response):
+#    print_and_log(logger, "Response information------------------------------------")
+#    print_and_log(logger, response.status)
+#    print_and_log(logger, response.headers)
+#    print_and_log(logger, response.get_data())
+#    return response
+
+def create_app():
+    logger = get_logger()
+    print_and_log(logger, "Starting up server")
+    app = Flask(__name__)
+    return app
 
 if __name__ == "__main__":
     app.run('0.0.0.0', debug=False, port=int(os.environ.get("PORT", 8080)), 
             ssl_context=(os.path.join(CERT_DIR, 'domain.crt'), 
-            os.path.join(CERT_DIR, 'domain.key')))
+            os.path.join("certs/", 'domain.key')))

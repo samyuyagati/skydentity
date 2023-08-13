@@ -5,6 +5,7 @@ services:
       - "5000:5000"
     volumes:
       - .:/code
-      - ~/.config/gcloud:/root/.config/gcloud
+      - ./tokens/.cloud_creds/gcp:/cloud_creds/gcp
+      - ./certs/domain_dir/domain.key:/certs/domain.key
     environment:
       FLASK_DEBUG: "false"
