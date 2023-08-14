@@ -29,6 +29,14 @@ def get_gcp_creds():
     cred_files = [f for f in listdir(CREDS_PATH) if isfile(join(CREDS_PATH, f))]
     return os.path.join(CREDS_PATH, cred_files[0])
 
+def get_json_with_service_account(request, service_account_email):
+    json_dict = request.json
+    service_account_dict = {'email': f"{service_account_email}",
+            'scopes': [f"https://www.googleapis.com/auth/cloud-platform"]}
+    new_dict = json_dict.copy()
+    new_dict['serviceAccounts'] = [service_account_dict] 
+    return new_dict
+
 def get_headers_with_auth(request):
     logger = get_logger()
     print_and_log(logger, "Entered get_headers_with_auth")
@@ -59,10 +67,13 @@ def get_headers_with_auth(request):
     new_headers["Authorization"] = f"Bearer {auth_token}"
     return new_headers
 
-def get_new_url(request, new_headers):
+def get_new_url(request):
     new_url = request.url.replace(request.host_url, f'{COMPUTE_API_ENDPOINT}')
     logger = get_logger()
     print_and_log(logger, f"{new_url}")
+    return new_url
+
+def send_gcp_request(request, new_headers, new_url, new_json=None):
     # If no JSON body, don't include a json body in proxied request
     if (len(request.get_data()) == 0):
         return requests.request(
@@ -76,10 +87,11 @@ def get_new_url(request, new_headers):
         method          = request.method,
         url             = new_url,
         headers         = new_headers,
-        json            = request.json,
+        json            = new_json,
         cookies         = request.cookies,
         allow_redirects = False,
     )
+
 
 @app.route("/hello", methods=["GET"])
 def handle_hello():
@@ -100,10 +112,13 @@ def get_image(project, family):
     new_headers = get_headers_with_auth(request)
     print_and_log(logger, f"NEW HEADERS: {new_headers}")
     print_and_log(logger, "Creating proxy request")
-    proxy_req = get_new_url(request, new_headers)
+    new_url = get_new_url(request)
 
-    print_and_log(logger, f"Proxied request: {proxy_req}")
-    return Response(proxy_req.content, proxy_req.status_code, new_headers)
+    # Send request with new url and headers
+    gcp_response = send_gcp_request(request, new_headers, new_url)
+
+    print_and_log(logger, f"Proxied request: {gcp_response}")
+    return Response(gcp_response.content, gcp_response.status_code, new_headers)
 
 @app.route("/compute/v1/projects/<project>/zones/<region>/instances", methods=["POST"])
 def create_vm(project, region):
@@ -111,21 +126,30 @@ def create_vm(project, region):
     print_and_log(logger, "Incoming POST INSTANCES request information----------------------------------")
     print_and_log(logger, f"{project}")
     print_and_log(logger, f"{region}")
-    print_and_log(logger, f"{request.data}")
-    print_and_log(logger, f"{request.json}")
+#    print_and_log(logger, f"DATA {request.data}")
+#    print_and_log(logger, f"JSON {request.json}")
     data = request.get_data()
-    print_and_log(logger, f"{data}")
- 
+    print_and_log(logger, f"DATA {data}")
+    print(type(data))
+    print(type(request.json))
+    print("JSON ", request.json)
+    new_json = get_json_with_service_account(request, "terraform@sky-identity.iam.gserviceaccount.com")
+    print("NEW JSON", new_json)
+    print_and_log(logger, f"NEW JSON: {new_json}") 
     ## Get authorization token and add to headers
     new_headers = get_headers_with_auth(request) 
     
     ## Redirect request to GCP endpoint
-    proxy_req = get_new_url(request, new_headers) 
+    new_url = get_new_url(request) 
+
+    ## Attach service account to VM
+    new_json = get_json_with_service_account(request, "terraform@sky-identity.iam.gserviceaccount.com")
+
+    # Send request
+    gcp_response = send_gcp_request(request, new_headers, new_url, new_json=new_json) 
 
     ## TODO: Spawn a new request for firewall rule creation (for http/s traffic allowed)
-    return Response(proxy_req.content, proxy_req.status_code, new_headers)
-
-# TODO handler for firewall rule creation
+    return Response(gcp_response.content, gcp_response.status_code, new_headers)
 
 #@app.after_request
 #def after(response):
