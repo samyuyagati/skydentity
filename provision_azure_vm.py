@@ -17,7 +17,7 @@ minute or two."
 credential = AzureCliCredential()
 
 # Retrieve subscription ID from environment variable.
-subscription_id = os.environ["AZURE_SUBSCRIPTION_ID"]
+subscription_id = "6288e083-727a-4b98-86d7-7d22c1859fe1"
 
 
 # Step 1: Provision a resource group
