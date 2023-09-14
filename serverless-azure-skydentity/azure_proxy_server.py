@@ -14,6 +14,7 @@ from proxy_server import ProxyServer
 
 class AzureProxyServer(ProxyServer):
     COMPUTE_API_ENDPOINT = "https://management.azure.com/"
+    CRED_PATH = "/cloud_creds/azure"
 
     ROUTES_MAP = {
         "/subscriptions/<subscriptionId>/providers/Microsoft.Compute/virtualMachines": ["GET"],
@@ -37,6 +38,10 @@ class AzureProxyServer(ProxyServer):
         auth_token_stream = os.popen('az account get-access-token --query "accessToken" --output tsv')
         auth_token = auth_token_stream.read().strip()
         return auth_token
+    
+    def get_azure_creds(self):
+        cred_files = [f for f in listdir(AzureProxyServer.CREDS_PATH) if isfile(join(AzureProxyServer.CREDS_PATH, f))]
+        return os.path.join(AzureProxyServer.CREDS_PATH, cred_files[0])
 
     def get_headers_with_auth(self, request):
         ## Get authorization token and add to headers
@@ -46,7 +51,13 @@ class AzureProxyServer(ProxyServer):
         parsed_compute_api_endpoint = urlparse(f"{AzureProxyServer.COMPUTE_API_ENDPOINT}")
         hostname = parsed_compute_api_endpoint.netloc
         new_headers["Host"] = f'{hostname}'
-        
+
+        azure_cred_path = self.get_azure_creds()
+        # The app_id and tenant environment variables are something that we have to set based upon what / how the service principal gets created
+        auth_command = f"az login --service-principal -u {os.environ['app_id']} -p {azure_cred_path} --tenant {os.environ['tenant']}"
+        auth_process = subprocess.Popen(auth_command.split())
+        auth_process.wait()
+
         auth_token = self.get_access_token()
         new_headers["Authorization"] = f"Bearer {auth_token}"
         return new_headers
