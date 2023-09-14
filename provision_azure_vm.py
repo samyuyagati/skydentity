@@ -17,7 +17,7 @@ minute or two."
 credential = AzureCliCredential()
 
 # Retrieve subscription ID from environment variable.
-subscription_id = os.environ["AZURE_SUBSCRIPTION_ID"]
+subscription_id = "6288e083-727a-4b98-86d7-7d22c1859fe1"
 
 
 # Step 1: Provision a resource group
@@ -30,7 +30,7 @@ resource_client = ResourceManagementClient(credential, subscription_id)
 # the region in which we provision resources. You can change these
 # values however you want.
 RESOURCE_GROUP_NAME = "skydentity-test-group"
-LOCATION = "westus2"
+LOCATION = "eastus2"
 
 # Provision the resource group.
 rg_result = resource_client.resource_groups.create_or_update(
@@ -162,8 +162,8 @@ poller = compute_client.virtual_machines.begin_create_or_update(
             "image_reference": {
                 "publisher": "Canonical",
                 "offer": "UbuntuServer",
-                "sku": "18.04.0-LTS",
-                "version": "latest",
+                "sku": "18_04-lts-gen2",
+                "version": "18.04.202205060"
             }
         },
         "hardware_profile": {"vm_size": "Standard_DC2s_v2"},
