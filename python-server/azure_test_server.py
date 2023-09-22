@@ -5,10 +5,12 @@ from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.compute.models import OSProfile, NetworkProfile, ImageReference, ManagedDiskParameters, OSDisk, StorageProfile, HardwareProfile, VirtualMachine, OperatingSystemTypes, DiskCreateOptionTypes
 
 # TODO: Handle secret management + remove uses of 'AzureCliCredential()'
-SUBSCRIPTION_ID =
-USERNAME =
-PASSWORD =
+SUBSCRIPTION_ID = "5ba551fd-4339-4bc8-834e-0dc4b031aa3d"
+USERNAME = "skydentity"
+PASSWORD = "$kyD3ntity"
 NUM_VMS_TO_CREATE = 1
+
+BASE_URL="https://127.0.0.1:5000"
 
 """
     Creates a new resource group in the given location (region), or default eastus2.
@@ -20,13 +22,13 @@ def create_resource_group(resource_group_name, subscription_id, location="eastus
     credential = AzureCliCredential()
 
     # Create resource group
-    resource_client = ResourceManagementClient(credential, subscription_id)
+    resource_client = ResourceManagementClient(credential, subscription_id, base_url=BASE_URL)
     resource_group = resource_client.resource_groups.create_or_update(
         resource_group_name, {"location": location}
     )
 
     # Create virtual network
-    network_client = NetworkManagementClient(credential, subscription_id)
+    network_client = NetworkManagementClient(credential, subscription_id, base_url=BASE_URL)
 
     vnet_name = resource_group_name + "-vnet"
     vnet = network_client.virtual_networks.begin_create_or_update(
@@ -36,7 +38,13 @@ def create_resource_group(resource_group_name, subscription_id, location="eastus
             "location": location,
             "address_space": {"address_prefixes": ["10.0.0.0/16"]},
         },
-    ).result()
+    )
+    import pdb; pdb.set_trace()
+    try:
+        vnet_result = vnet.result()
+    except Exception as e:
+        print('VNet failing')
+        print(e)
 
     # Create subnet
     subnet_name = resource_group_name + "-subnet"
@@ -45,9 +53,16 @@ def create_resource_group(resource_group_name, subscription_id, location="eastus
         vnet_name,
         subnet_name,
         {"address_prefix": "10.0.0.0/24"},
-    ).result()
+    )
 
-    return subnet.id
+    try:
+        subnet_result = subnet.result()
+        return subnet_result.id
+    except Exception as e:
+        print('Bruh')
+        print(e)
+
+    return subnet_result.id
 
 """
     Create the public ip address and network interface for an individual VM in a given subnet.
@@ -58,7 +73,7 @@ def create_public_ip_and_nic(resource_group_name, subscription_id, subnet_id, lo
     credential = AzureCliCredential()
 
     # Create public ip address
-    network_client = NetworkManagementClient(credential, subscription_id)
+    network_client = NetworkManagementClient(credential, subscription_id, base_url=BASE_URL)
 
     ip_name = resource_group_name + "-ip"
     ip_address = network_client.public_ip_addresses.begin_create_or_update(
@@ -97,7 +112,7 @@ def create_public_ip_and_nic(resource_group_name, subscription_id, subnet_id, lo
 # Useful reference: https://learn.microsoft.com/en-us/azure/developer/python/sdk/examples/azure-sdk-samples-managed-disks
 def disk_from_image_reference(vm_name, disk_size_gb, image_reference, location="eastus2"):
     credential = AzureCliCredential()
-    compute_client = ComputeManagementClient(credential, subscription_id)
+    compute_client = ComputeManagementClient(credential, SUBSCRIPTION_ID, base_url=BASE_URL)
     os_disk_name = vm_name + '-osdisk'
 
     disk = {
@@ -144,7 +159,7 @@ Creates a new VM with the provided network interface id.
 """
 def create_instance(resource_group_name, subscription_id, nic_id, vm_name, vm_size="Standard_B1s", location="eastus2", disk=None):
     credential = AzureCliCredential()
-    compute_client = ComputeManagementClient(credential, subscription_id)
+    compute_client = ComputeManagementClient(credential, subscription_id, base_url=BASE_URL)
 
     vm = VirtualMachine(
         location=location,
