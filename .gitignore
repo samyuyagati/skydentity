@@ -6,3 +6,4 @@ serverless-gcp-skydentity/tokens/*
 serverless-gcp-skydentity/skyid/*
 serverless-gcp-skydentity/gcloud/*
 serverless-gcp-skydentity/__pycache__/*
+serverless-gcp-skydentity/skyid/lib/**__pycache__**
