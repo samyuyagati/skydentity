@@ -1,0 +1,10 @@
+Overview: https://learn.microsoft.com/en-us/azure/developer/python/containers-in-azure-overview-python?tabs=vscode-ide
+
+Mounting secrets as volume: https://learn.microsoft.com/en-us/azure/container-apps/manage-secrets?tabs=arm-template#secrets-volume-mounts 
+
+For serverless deployment, need to choose between Azure Container Apps, Azure Container Instances, and Azure Functions
+    https://learn.microsoft.com/en-us/azure/developer/python/containers-in-azure-overview-python?tabs=vscode-ide#deployment-container-options-in-azure 
+    - Based on some research, Azure Container Instances is probably not the best choice
+    - Between Azure Container Apps and Azure Functions, Azure Funtions appears to have higher costs while idle which is I think is good to consider for our case
+
+    - For deploying a Flask app with Azure Container Apps: https://learn.microsoft.com/en-us/azure/developer/python/tutorial-containerize-simple-web-app?tabs=web-app-flask 
