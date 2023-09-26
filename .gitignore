@@ -7,3 +7,6 @@ serverless-gcp-skydentity/skyid/*
 serverless-gcp-skydentity/gcloud/*
 serverless-gcp-skydentity/__pycache__/*
 serverless-gcp-skydentity/skyid/lib/**__pycache__**
+.python_packages
+gcp-env
+**.vscode
