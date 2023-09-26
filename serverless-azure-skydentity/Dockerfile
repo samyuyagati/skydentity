@@ -9,6 +9,10 @@ ENV PYTHONDONTWRITEBYTECODE=1
 # Turns off buffering for easier container logging
 ENV PYTHONUNBUFFERED=1
 
+# Install Azure CLI
+RUN apt-get update && apt-get install -y curl
+RUN curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+
 # Install pip requirements.
 COPY requirements.txt .
 RUN python -m pip install -r requirements.txt
