@@ -11,7 +11,7 @@ from proxy_server import ProxyServer
 class AzureProxyServer(ProxyServer):
     COMPUTE_API_ENDPOINT = "https://management.azure.com/"
     CRED_PATH = "/cloud_creds/azure"
-    SERVICE_PRINCIPAL_SECRET = os.path.join(CRED_PATH, "service_principal_secret")
+    SERVICE_PRINCIPAL_SECRET = os.path.join(CRED_PATH, "service-principal-secret")
 
     ROUTES_MAP = {
         "/subscriptions/<subscriptionId>/providers/Microsoft.Compute/virtualMachines": ["GET"],
@@ -26,6 +26,7 @@ class AzureProxyServer(ProxyServer):
 
     def __init__(self, flask_server: Flask):
         super().__init__(flask_server)
+        self.azure_creds = None
 
     def setup_routes(self):
         for route, method in AzureProxyServer.ROUTES_MAP.items():
@@ -38,7 +39,10 @@ class AzureProxyServer(ProxyServer):
         return auth_token
     
     def get_azure_creds(self):
-        return AzureProxyServer.SERVICE_PRINCIPAL_SECRET
+        if not self.azure_creds:
+            with open(AzureProxyServer.SERVICE_PRINCIPAL_SECRET, "r") as f:
+                self.azure_creds = f.read().strip()
+        return self.azure_creds
 
     def get_headers_with_auth(self, request):
         ## Get authorization token and add to headers
