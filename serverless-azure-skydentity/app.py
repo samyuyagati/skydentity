@@ -11,6 +11,7 @@ from proxy_server import ProxyServer
 class AzureProxyServer(ProxyServer):
     COMPUTE_API_ENDPOINT = "https://management.azure.com/"
     CRED_PATH = "/cloud_creds/azure"
+    SERVICE_PRINCIPAL_SECRET = os.path.join(CRED_PATH, "service_principal_secret")
 
     ROUTES_MAP = {
         "/subscriptions/<subscriptionId>/providers/Microsoft.Compute/virtualMachines": ["GET"],
@@ -37,8 +38,7 @@ class AzureProxyServer(ProxyServer):
         return auth_token
     
     def get_azure_creds(self):
-        cred_files = [f for f in os.listdir(AzureProxyServer.CREDS_PATH) if os.path.isfile(os.path.join(AzureProxyServer.CREDS_PATH, f))]
-        return os.path.join(AzureProxyServer.CREDS_PATH, cred_files[0])
+        return AzureProxyServer.SERVICE_PRINCIPAL_SECRET
 
     def get_headers_with_auth(self, request):
         ## Get authorization token and add to headers
@@ -103,9 +103,10 @@ class AzureProxyServer(ProxyServer):
         print(response.get_data())
         return response
     
+app = Flask(__name__)
+az_server = AzureProxyServer(app)
+az_server.setup_routes()
+
 if __name__ == "__main__":
-    app = Flask(__name__)
-    az_server = AzureProxyServer(app)
-    az_server.setup_routes()
     app.run('0.0.0.0', debug=True, port=int(5000), 
         ssl_context=('../serverless-gcp-skydentity/certs/domain_dir/domain.crt', '../serverless-gcp-skydentity/certs/domain_dir/domain.key'))
