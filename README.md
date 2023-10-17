@@ -6,22 +6,19 @@ SkyIdentity is a proxy built to handle VM request permissions. It removes the ne
    ```
    ./install_deps.sh
    ```
-   To re-activate the virtual environment, run
+   To activate or re-activate the virtual environment, run
    ```
-   source ENV_NAME/bin/activate
+   source skyid/bin/activate
    ```
-   where ENV_NAME is dependent on the cloud, i.e. gcp-env
 2. Optionally, you may verify that your system works correctly by testing with the `provision_gcp_vm.py` and/or `provision_azure_vm.py` scripts using your cloud account credentials
-3. To run the proxy, first run the cloud specific setup script 
-   ```
-   cd serverless-gcp-skydentity
-   ./setup.sh
-   ```
+3. To run the proxy, first run the cloud specific setup script (`setup.sh`), if it exists 
 4. Generate certificates
    ```
    ./certs/create_certs.sh PROXY_IP_ADDRESS
    ```
    replacing PROXY_IP_ADDRESS with a string IP address of the proxy, i.e. "127.0.0.1".
+
+   If you are on Ubuntu, comment out the "For Mac" section of `create_certs.sh` and uncomment the "For Ubuntu" section first.
 
    You may run into an issue where you are not prompted for a password leading to a failure on the "add-trusted-cert" step. To resolve this issue on Mac:
       1. Open KeychainAccess
@@ -50,7 +47,7 @@ SkyIdentity is a proxy built to handle VM request permissions. It removes the ne
 1. Update `requirements.txt` with new cloud-specific requirements and re-run `install_deps.sh`
 2. Optionally, use the new cloud's Python SDK to write a script similar to `provision_gcp_vm.py` and `provision_azure_vm.py` that creates a VM using a personal account to verify that dependencies are correctly installed.
 3. Create a flask app to proxy requests to relevant endpoints used to create vms in the new cloud. For example, `serverless-gcp-skydentity/app.py` is the flask app proxying gcp vm creation requests.
-4. If the cloud requires additional environment setup beyond the dependencies installed through `requirements.txt`, optionally ad a `setup.sh` script (can also be used to activate the virtual environment).
+4. If the cloud requires additional environment setup beyond the dependencies installed through `requirements.txt`, optionally add a `setup.sh` script (can also be used to activate the virtual environment).
 
 
 # Making the Proxy Serverless
