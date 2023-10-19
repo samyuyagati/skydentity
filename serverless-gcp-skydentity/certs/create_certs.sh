@@ -30,5 +30,5 @@ sudo security add-trusted-cert \
   $CA_DIR/rootCA.crt
 
 # For Ubuntu
-#sudo cp rootCA.crt /usr/local/share/ca-certificates/
+#sudo cp $CA_DIR/rootCA.crt /usr/local/share/ca-certificates/
 #sudo update-ca-certificates

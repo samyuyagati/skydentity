@@ -3,3 +3,8 @@ azure-mgmt-compute # azure
 azure-mgmt-network # azure
 azure-identity # azure
 virtualenv # gcp
+Flask
+requests
+google-cloud-compute
+gunicorn
+google-cloud-logging

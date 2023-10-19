@@ -1,5 +1,3 @@
 #!/bin/bash
 
-source skyid/bin/activate
-flask run --host="0.0.0.0" --port=5000 --cert=../certs/domain.crt --key=../certs/domain.key
-
+flask run --host="0.0.0.0" --port=5000 --cert=certs/domain_dir/domain.crt --key=certs/domain_dir/domain.key

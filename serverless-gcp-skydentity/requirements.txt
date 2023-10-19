@@ -1,5 +1,0 @@
-Flask
-requests
-google-cloud-compute
-gunicorn
-google-cloud-logging
