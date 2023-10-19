@@ -10,9 +10,9 @@ from urllib.parse import urlparse
 
 app = Flask(__name__)
 
-CREDS_PATH = "/Users/samyu/.cloud_creds/gcp"
+CREDS_PATH = "tokens/.cloud_creds/gcp"
 COMPUTE_API_ENDPOINT = "https://compute.googleapis.com/"
-CERT_DIR = "/Users/samyu/skydentity/certs"
+CERT_DIR = "certs"
 
 def get_gcp_creds():
     cred_files = [f for f in listdir(CREDS_PATH) if isfile(join(CREDS_PATH, f))]
