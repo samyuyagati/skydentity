@@ -10,7 +10,7 @@ USERNAME = "skydentity"
 PASSWORD = "$kyD3ntity"
 NUM_VMS_TO_CREATE = 1
 
-BASE_URL="https://127.0.0.1:5000"
+BASE_URL="https://skydentity.mangocliff-4eb6d2c4.westus2.azurecontainerapps.io"
 
 """
     Creates a new resource group in the given location (region), or default eastus2.
@@ -39,7 +39,6 @@ def create_resource_group(resource_group_name, subscription_id, location="eastus
             "address_space": {"address_prefixes": ["10.0.0.0/16"]},
         },
     )
-    import pdb; pdb.set_trace()
     try:
         vnet_result = vnet.result()
     except Exception as e:

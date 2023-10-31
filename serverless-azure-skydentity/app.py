@@ -19,7 +19,7 @@ class AzureProxyServer(ProxyServer):
         "/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/networkInterfaces/<nicName>": ["GET"],
         "/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/publicIpAddresses/<ipName>": ["GET", "PUT"],
         "/subscriptions/<subscriptionId>/providers/Microsoft.Compute/locations/<region>/operations/<operationId>": ["GET"],
-        "/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/virtualMachines/<vmName>": ["PUT", "GET"],
+        # "/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/virtualMachines/<vmName>": ["PUT", "GET"],
         "/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<virtualNetworkName>": ["PUT", "GET"],
         "/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<virtualNetworkName>/subnets/<subnetName>": ["PUT", "GET"]
     }
@@ -99,7 +99,35 @@ class AzureProxyServer(ProxyServer):
 
         print("Proxied request:", proxy_req)
         return Response(proxy_req.content, proxy_req.status_code, new_headers)
+    
+    @app.route("/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/virtualMachines/<vmName>", methods=["PUT", "GET"])
+    def process_creation_request(self, subscriptionId, resourceGroupName, vmName):
+        print(f"Incoming {request.method} request information----------------------------------")
+        print('subscriptionId:', subscriptionId)
+        print('resourceGroupName:', resourceGroupName)
+        print('vmName:', vmName)
+        print("\nJSON:", request.is_json, "\n")
+        print("REQUEST LEN:", len(request.get_data()))
+        print("Setting new headers")
+        new_headers = self.get_headers_with_auth(request)
 
+        # Attach virtual machine managed identity in here
+        if os.environ.get('VM_IDENTITY'):
+            request.body['identity'] = {
+                'type': 'UserAssigned',
+                'userAssignedIdentities': {
+                    os.environ['VM_IDENTITY']: {}
+                }
+            }
+            print("NEW JSON:", request.json)
+        print("NEW HEADERS:", new_headers)
+
+        print("Creating proxy request")
+        proxy_req = self.get_new_url(request, new_headers)
+
+        print("Proxied request:", proxy_req)
+        return Response(proxy_req.content, proxy_req.status_code, new_headers)
+    
     def after(self, response):
         print("Response information------------------------------------")
         print(response.status)
