@@ -21,14 +21,20 @@ openssl req -config $CONFIG_DIR/domain.cnf -newkey rsa:2048 -nodes -keyout $PROX
 openssl x509 -req -CA $CA_DIR/rootCA.crt -CAkey $CA_DIR/rootCA.key -in $PROXY_DIR/domain.csr -out $PROXY_DIR/domain.crt -days 365 -CAcreateserial -extfile $CONFIG_DIR/domain.ext
 
 # Trust root CA locally
-# For Mac 
 echo "Please enter your administrator password to trust your newly-created root CA certificate."
-sudo security add-trusted-cert \
-  -d \
-  -r trustAsRoot \
-  -k /Library/Keychains/System.keychain \
-  $CA_DIR/rootCA.crt
-
-# For Ubuntu
-#sudo cp $CA_DIR/rootCA.crt /usr/local/share/ca-certificates/
-#sudo update-ca-certificates
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # For Mac
+    sudo security add-trusted-cert \
+        -d \
+        -r trustAsRoot \
+        -k /Library/Keychains/System.keychain \
+        $CA_DIR/rootCA.crt
+elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    # For Ubuntu
+    sudo cp $CA_DIR/rootCA.crt /usr/local/share/ca-certificates/
+    sudo update-ca-certificates
+else
+    # unknown
+    echo "Unknown OS type; root CA certificates are not trusted"
+    exit 1
+fi
