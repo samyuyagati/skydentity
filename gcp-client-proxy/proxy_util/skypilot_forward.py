@@ -1,11 +1,17 @@
 """
 Forwarding for SkyPilot requests.
 """
+import json
+import os
+import subprocess
 from collections import namedtuple
+from functools import cache
+from urllib.parse import urlparse
 
 import requests
 from flask import Flask, Response, request
 
+from .constants import COMPUTE_API_ENDPOINT, CREDS_PATH, SERVICE_ACCOUNT_EMAIL_FILE
 from .logging import get_logger, print_and_log
 
 SkypilotRoute = namedtuple(
@@ -103,14 +109,15 @@ def generic_forward_request(request, log_dict=None):
         print_and_log(logger, log_str.strip())
 
     new_url = get_new_url(request)
+    new_headers = get_headers_with_auth(request)
 
     # don't modify the body in any way
     new_json = None
     if len(request.get_data()) > 0:
         new_json = request.json
 
-    gcp_response = forward_to_client(request, new_url, new_json=new_json)
-    return Response(gcp_response.content, gcp_response.status_code)
+    gcp_response = send_gcp_request(request, new_headers, new_url, new_json=new_json)
+    return Response(gcp_response.content, gcp_response.status_code, new_headers)
 
 
 def build_generic_forward(path: str, fields: list[str]):
@@ -173,36 +180,101 @@ def setup_routes(app: Flask):
             )
 
 
-def get_client_proxy_endpoint(request):
+@cache  # shouldn't change throughout the proxy lifespan
+def get_service_account_email():
     """
-    Retrieve the correct client proxy endpoint from the client identifier.
+    Retrieve the service account email from the
     """
-    print(request.headers)
+    with open(
+        SERVICE_ACCOUNT_EMAIL_FILE, "r", encoding="utf-8"
+    ) as service_account_file:
+        service_account_file_json = json.load(service_account_file)
 
-    # TODO: replace with actual fetch
-    return "https://127.0.0.1:5001/"
+    assert "email" in service_account_file_json.keys()
+    return service_account_file_json["email"]
+
+
+def get_gcp_creds():
+    """
+    Get GCP credentials from the specified credentials path.
+    """
+    cred_files = [
+        f for f in os.listdir(CREDS_PATH) if os.path.isfile(os.path.join(CREDS_PATH, f))
+    ]
+    return os.path.join(CREDS_PATH, cred_files[0])
+
+
+def get_json_with_service_account(request, service_account_email):
+    """
+    Modify the JSON of the request to include service account details.
+    """
+    json_dict = request.json
+    service_account_dict = {
+        "email": f"{service_account_email}",
+        "scopes": [f"https://www.googleapis.com/auth/cloud-platform"],
+    }
+    new_dict = json_dict.copy()
+    new_dict["serviceAccounts"] = [service_account_dict]
+    return new_dict
+
+
+@cache
+def activate_service_account(credential_file):
+    auth_command = f"gcloud auth activate-service-account --key-file={credential_file}"
+    auth_process = subprocess.Popen(auth_command.split())
+    auth_process.wait()
+
+
+@cache
+def get_service_account_auth_token():
+    auth_token_command = "gcloud auth print-access-token"
+    auth_token_process = subprocess.Popen(
+        auth_token_command.split(), stdout=subprocess.PIPE
+    )
+    auth_token_process_out_bytes, _ = auth_token_process.communicate()
+
+    return auth_token_process_out_bytes
+
+
+def get_headers_with_auth(request):
+    """
+    Append authentication headers for a service account to the request.
+    """
+    # print_and_log(logger, "Entered get_headers_with_auth")
+    ## Get authorization token and add to headers
+    new_headers = {k: v for k, v in request.headers}  # if k.lower() == 'host'}
+
+    # print_and_log(logger, f"ORIGINAL HEADERS: {new_headers}")
+    parsed_compute_api_endpoint = urlparse(f"{COMPUTE_API_ENDPOINT}")
+    hostname = parsed_compute_api_endpoint.netloc
+    new_headers["Host"] = f"{hostname}"
+
+    # Activate service account and get auth token
+    service_acct_creds = get_gcp_creds()
+    activate_service_account(service_acct_creds)
+
+    auth_token_process_out_bytes = get_service_account_auth_token()
+
+    auth_token = auth_token_process_out_bytes.strip().decode("utf-8")
+    # print_and_log(logger, f"AUTH TOKEN: {auth_token}")
+    new_headers["Authorization"] = f"Bearer {auth_token}"
+    return new_headers
 
 
 def get_new_url(request):
     """
-    Redirect the URL (originally to the proxy) to the correct client proxy.
+    Redirect the URL (originally to the proxy) to the correct GCP endpoint.
     """
-    redirect_endpoint = get_client_proxy_endpoint(request)
-
-    new_url = request.url.replace(request.host_url, redirect_endpoint)
+    new_url = request.url.replace(request.host_url, f"{COMPUTE_API_ENDPOINT}")
     logger = get_logger()
     print_and_log(logger, f"\tNew URL: {new_url}")
     return new_url
 
 
-def forward_to_client(request, new_url: str, new_headers=None, new_json=None):
+def send_gcp_request(request, new_headers, new_url, new_json=None):
     """
-    Forward the request to the client proxy, with new headers, URL, and request body.
+    Send a request to the GCP endpoint, with new headers, URL, and request body.
     """
-    if new_headers is None:
-        # default to the current headers
-        new_headers = request.headers
-
     # If no JSON body, don't include a json body in proxied request
     if len(request.get_data()) == 0:
         return requests.request(

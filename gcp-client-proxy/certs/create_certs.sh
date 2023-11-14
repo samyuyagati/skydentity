@@ -4,7 +4,7 @@ CA_DIR="CA_dir"
 PROXY_DIR="domain_dir"
 CONFIG_DIR="configs"
 
-ROOT_CA_NAME="skydentity-server-rootCA"
+ROOT_CA_NAME="skydentity-client-rootCA"
 
 # Create CA_DIR and PROXY_DIR if not already existing
 mkdir -p $CA_DIR
