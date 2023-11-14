@@ -1,12 +1,13 @@
 """
 Logging functions for use in the serverless proxy.
 """
-
+from functools import cache
 from pprint import pprint
 
 from google.cloud import logging
 
 
+@cache
 def get_logger():
     """
     Retrieve the logger from the logging module.

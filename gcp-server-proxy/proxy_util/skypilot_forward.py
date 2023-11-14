@@ -40,6 +40,11 @@ ROUTES: list[SkypilotRoute] = [
     ),
     SkypilotRoute(
         methods=["GET"],
+        path="/compute/v1/projects/<project>/regions/<region>",
+        fields=["project", "region"],
+    ),
+    SkypilotRoute(
+        methods=["GET"],
         path="/compute/v1/projects/<project>/aggregated/reservations",
         fields=["project"],
     ),
@@ -83,6 +88,11 @@ ROUTES: list[SkypilotRoute] = [
         path="/compute/v1/projects/<project>/zones/<region>/instances/<instance>",
         fields=["project", "region", "instance"],
     ),
+    SkypilotRoute(
+        methods=["POST"],
+        path="/compute/v1/projects/<project>/zones/<region>/instances/<instance>/start",
+        fields=["project", "region", "instance"],
+    ),
 ]
 
 
@@ -96,7 +106,7 @@ def generic_forward_request(request, log_dict=None):
         log_str = f"PATH: {request.full_path}\n"
         for key, val in log_dict.items():
             log_str += f"\t{key}: {val}\n"
-        print_and_log(logger, log_str)
+        print_and_log(logger, log_str.strip())
 
     new_url = get_new_url(request)
     new_headers = get_headers_with_auth(request)
@@ -208,11 +218,28 @@ def get_json_with_service_account(request, service_account_email):
     return new_dict
 
 
+@cache
+def activate_service_account(credential_file):
+    auth_command = f"gcloud auth activate-service-account --key-file={credential_file}"
+    auth_process = subprocess.Popen(auth_command.split())
+    auth_process.wait()
+
+
+@cache
+def get_service_account_auth_token():
+    auth_token_command = "gcloud auth print-access-token"
+    auth_token_process = subprocess.Popen(
+        auth_token_command.split(), stdout=subprocess.PIPE
+    )
+    auth_token_process_out_bytes, _ = auth_token_process.communicate()
+
+    return auth_token_process_out_bytes
+
+
 def get_headers_with_auth(request):
     """
     Append authentication headers for a service account to the request.
     """
-    logger = get_logger()
     # print_and_log(logger, "Entered get_headers_with_auth")
     ## Get authorization token and add to headers
     new_headers = {k: v for k, v in request.headers}  # if k.lower() == 'host'}
@@ -224,22 +251,10 @@ def get_headers_with_auth(request):
 
     # Activate service account and get auth token
     service_acct_creds = get_gcp_creds()
-    # print_and_log(logger, f"SERVICE ACCT CRED PATH: {service_acct_creds}")
-    with open(service_acct_creds, "r", encoding="utf-8") as file:
-        json_contents = json.load(file)
-        # print_and_log(logger, f"SERVICE ACCT CRED CONTENTS: {json_contents}")
+    activate_service_account(service_acct_creds)
 
-    auth_command = (
-        f"gcloud auth activate-service-account --key-file={service_acct_creds}"
-    )
-    auth_process = subprocess.Popen(auth_command.split())
-    auth_process.wait()
+    auth_token_process_out_bytes = get_service_account_auth_token()
 
-    auth_token_command = "gcloud auth print-access-token"
-    auth_token_process = subprocess.Popen(
-        auth_token_command.split(), stdout=subprocess.PIPE
-    )
-    auth_token_process_out_bytes, _ = auth_token_process.communicate()
     auth_token = auth_token_process_out_bytes.strip().decode("utf-8")
     # print_and_log(logger, f"AUTH TOKEN: {auth_token}")
     new_headers["Authorization"] = f"Bearer {auth_token}"
