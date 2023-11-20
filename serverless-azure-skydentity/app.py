@@ -8,6 +8,8 @@ from urllib.parse import urlparse
 
 from proxy_server import ProxyServer
 
+app = Flask(__name__)
+
 class AzureProxyServer(ProxyServer):
     COMPUTE_API_ENDPOINT = "https://management.azure.com/"
     CRED_PATH = "/cloud_creds/azure"
@@ -19,7 +21,6 @@ class AzureProxyServer(ProxyServer):
         "/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/networkInterfaces/<nicName>": ["GET"],
         "/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/publicIpAddresses/<ipName>": ["GET", "PUT"],
         "/subscriptions/<subscriptionId>/providers/Microsoft.Compute/locations/<region>/operations/<operationId>": ["GET"],
-        # "/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/virtualMachines/<vmName>": ["PUT", "GET"],
         "/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<virtualNetworkName>": ["PUT", "GET"],
         "/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<virtualNetworkName>/subnets/<subnetName>": ["PUT", "GET"]
     }
@@ -135,10 +136,8 @@ class AzureProxyServer(ProxyServer):
         print(response.get_data())
         return response
     
-app = Flask(__name__)
 az_server = AzureProxyServer(app)
 az_server.setup_routes()
 
 if __name__ == "__main__":
-    app.run('0.0.0.0', debug=True, port=int(5000), 
-        ssl_context=('../serverless-gcp-skydentity/certs/domain_dir/domain.crt', '../serverless-gcp-skydentity/certs/domain_dir/domain.key'))
+    app.run('0.0.0.0', debug=True, port=int(5000))
