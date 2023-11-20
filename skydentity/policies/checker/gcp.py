@@ -10,14 +10,6 @@ class GCPPolicy(Policy):
     def __init__(self, policy: Dict):
         pass
 
-    def check_request(self, request) -> bool:
-        """
-        Enforces the policy on a request.
-        :param request: The request to enforce the policy on.
-        :return: True if the request is allowed, False otherwise.
-        """
-        raise NotImplementedError
-
     def to_dict(self) -> Dict:
         """
         Converts the policy to a dictionary so that it can be stored.
