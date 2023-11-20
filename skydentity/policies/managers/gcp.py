@@ -3,7 +3,7 @@ from firebase_admin import credentials
 from firebase_admin import firestore
 
 from skydentity.policies.managers.policy_manager import PolicyManager
-from skydentity.policies.checker.policy import Policy
+from skydentity.policies.checker.gcp import GCPPolicy
 
 class GCPPolicyManager(PolicyManager):
     """
@@ -22,7 +22,7 @@ class GCPPolicyManager(PolicyManager):
         self._db = firestore.client()
         self._firestore_policy_collection = firestore_policy_collection
 
-    def upload_policy(self, public_key: str, policy: Policy):
+    def upload_policy(self, public_key: str, policy: GCPPolicy):
         """
         Uploads a policy to GCP.
         :param public_key: The public key of the policy.
@@ -33,13 +33,13 @@ class GCPPolicyManager(PolicyManager):
             .document(public_key) \
             .set(policy.to_dict())
 
-    def get_policy(self, public_key: str) -> Policy:
+    def get_policy(self, public_key: str) -> GCPPolicy:
         """
         Gets a policy from the cloud vendor.
         :param public_key: The public key of the policy.
         :return: The policy.
         """
-        return Policy.from_dict(
+        return GCPPolicy.from_dict(
             self._db \
                 .collection(self._firestore_policy_collection) \
                 .document(public_key) \

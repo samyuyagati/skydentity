@@ -1,10 +1,14 @@
-from abc import ABC
 from typing import Dict
 
-class Policy(ABC):
+from skydentity.policies.checker.policy import Policy
+
+class GCPPolicy(Policy):
     """
-    A policy is a set of rules that tell what actions can be done on what resources.
+    Defines methods for GCP policies.
     """
+
+    def __init__(self, policy: Dict):
+        pass
 
     def check_request(self, request) -> bool:
         """
