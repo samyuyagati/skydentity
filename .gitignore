@@ -11,3 +11,4 @@ serverless-gcp-skydentity/skyid/lib/**__pycache__**
 gcp-env
 **.vscode
 **.egg-info
+__pycache__
