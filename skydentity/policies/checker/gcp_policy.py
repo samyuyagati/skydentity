@@ -12,6 +12,14 @@ class GCPVMPolicy(ResourcePolicy):
         :param policy: The dict of the policy to enforce.
         """
         pass
+
+    def check_request(self, request) -> bool:
+        """
+        Enforces the policy on a request.
+        :param request: The request to enforce the policy on.
+        :return: True if the request is allowed, False otherwise.
+        """
+        raise NotImplementedError
     
     def to_dict(self) -> Dict:
         """
@@ -40,6 +48,14 @@ class GCPAttachedPolicyPolicy(ResourcePolicy):
         """
         pass
     
+    def check_request(self, request) -> bool:
+        """
+        Enforces the policy on a request.
+        :param request: The request to enforce the policy on.
+        :return: True if the request is allowed, False otherwise.
+        """
+        raise NotImplementedError
+
     def to_dict(self) -> Dict:
         """
         Converts the policy to a dictionary so that it can be stored.
@@ -61,11 +77,15 @@ class GCPPolicy(CloudPolicy):
     Defines methods for GCP policies.
     """
 
-    def __init__(self, vm_policy: GCPVMPolicy, policy: Dict):
+    def __init__(self, vm_policy: GCPVMPolicy, attached_policy_policy: GCPAttachedPolicyPolicy):
         """
-        :param policy: The dict of the policy to enforce.
+        :param vm_policy: The GCP VM Policy to enforce.
+        :param attached_policy_policy: The Attached Policy Policy to enforce.
         """
-        self.
+        self._resource_policies = {
+            "virtual_machine": vm_policy,
+            "attached_policies": attached_policy_policy
+        }
 
     def get_request_resource_types(self, request) -> List[str]:
         """
@@ -82,15 +102,19 @@ class GCPPolicy(CloudPolicy):
         :param request: The request to enforce the policy on.
         :return: True if the request is allowed, False otherwise.
         """
-        raise NotImplementedError
+        assert resource_type in self._resource_policies
+        return self._resource_policies[resource_type].check_request(request)
 
     def to_dict(self) -> Dict:
         """
         Converts the policy to a dictionary so that it can be stored.
         :return: The dictionary representation of the policy.
         """
-        raise NotImplementedError
-    
+        out_dict = {}
+        for resource_type, policy in self._resource_policies.items():
+            out_dict[resource_type] = policy.to_dict()
+        return out_dict
+
     @staticmethod
     def from_dict(policy_dict: Dict) -> 'GCPPolicy':
         """
@@ -98,4 +122,6 @@ class GCPPolicy(CloudPolicy):
         :param policy_dict: The dictionary representation of the policy.
         :return: The policy representation of the dict.
         """
-        raise NotImplementedError
+        vm_policy = GCPVMPolicy.from_dict(policy_dict["virtual_machine"])
+        attached_policy_policy = GCPAttachedPolicyPolicy.from_dict(policy_dict["attached_policies"])
+        return GCPPolicy(vm_policy, attached_policy_policy)
