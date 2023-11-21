@@ -12,7 +12,7 @@ class LocalPolicyManagerSuite(unittest.TestCase):
         """
         self._policy_dir = './policies'
         os.mkdir(self._policy_dir)
-        self._policy_manager = LocalPolicyManager(self._policy_dir)
+        self._policy_manager = LocalPolicyManager(self._policy_dir, DictPolicy)
 
     def test_write_get_policy(self):
         test_policy_dict = {

@@ -1,5 +1,6 @@
 import os
 import yaml
+from typing import Type
 
 from skydentity.policies.managers.policy_manager import PolicyManager
 from skydentity.policies.checker.policy import Policy
@@ -9,8 +10,9 @@ class LocalPolicyManager(PolicyManager):
     Uses local storage to store / update policies. 
     """
 
-    def __init__(self, policy_dir: str):
+    def __init__(self, policy_dir: str, return_policy_type: Type[Policy]):
         self._policy_dir = policy_dir
+        self._return_policy_type = return_policy_type
 
     def upload_policy(self, public_key: str, policy: Policy):
         """
@@ -34,4 +36,5 @@ class LocalPolicyManager(PolicyManager):
         policy_file_name = os.path.join(self._policy_dir, base_file_name)
         with open(policy_file_name, 'r') as f:
             policy_dict = yaml.load(f)
+        return self._return_policy_type.from_dict(policy_dict)
         
