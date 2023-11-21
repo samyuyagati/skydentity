@@ -1,5 +1,6 @@
 import unittest
 import os
+import shutil
 
 from skydentity.policies.managers.local_policy_manager import LocalPolicyManager
 from skydentity.policies.checker.dict_policy import DictPolicy
@@ -15,6 +16,10 @@ class LocalPolicyManagerSuite(unittest.TestCase):
         self._policy_manager = LocalPolicyManager(self._policy_dir, DictPolicy)
 
     def test_write_get_policy(self):
+        """
+        Tests a simple write / get policy.
+        """
+        print('Testing write / get policy.')
         test_policy_dict = {
             'test': 'test'
         }
@@ -27,4 +32,4 @@ class LocalPolicyManagerSuite(unittest.TestCase):
         """
         Clean up code run once after this test suite.
         """
-        os.rmdir(self._policy_dir)
+        shutil.rmtree(self._policy_dir)

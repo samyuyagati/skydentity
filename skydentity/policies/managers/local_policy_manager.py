@@ -35,6 +35,6 @@ class LocalPolicyManager(PolicyManager):
         base_file_name = public_key + '.yaml'
         policy_file_name = os.path.join(self._policy_dir, base_file_name)
         with open(policy_file_name, 'r') as f:
-            policy_dict = yaml.load(f)
+            policy_dict = yaml.load(f, Loader=yaml.SafeLoader)
         return self._return_policy_type.from_dict(policy_dict)
         
