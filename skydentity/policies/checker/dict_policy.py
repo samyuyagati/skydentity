@@ -1,8 +1,8 @@
 from typing import Dict, List
 
-from skydentity.policies.checker.policy import Policy
+from skydentity.policies.checker.policy import CloudPolicy
 
-class DictPolicy(Policy):
+class DictPolicy(CloudPolicy):
     """
     A policy that is defined by a dictionary, used for mocking up policies,
     but should not be used in production.

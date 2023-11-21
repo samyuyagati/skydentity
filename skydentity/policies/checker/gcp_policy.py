@@ -1,14 +1,71 @@
 from typing import Dict, List
 
-from skydentity.policies.checker.policy import Policy
+from skydentity.policies.checker.policy import CloudPolicy, ResourcePolicy
 
-class GCPPolicy(Policy):
+class GCPVMPolicy(ResourcePolicy):
+    """
+    Defines methods for GCP VM policies.
+    """
+
+    def __init__(self, policy: Dict):
+        """
+        :param policy: The dict of the policy to enforce.
+        """
+        pass
+    
+    def to_dict(self) -> Dict:
+        """
+        Converts the policy to a dictionary so that it can be stored.
+        :return: The dictionary representation of the policy.
+        """
+        raise NotImplementedError
+    
+    @staticmethod
+    def from_dict(policy_dict: Dict):
+        """
+        Converts a dictionary to a policy.
+        :param policy_dict: The dictionary representation of the policy.
+        :return: The policy representation of the dict.
+        """
+        raise NotImplementedError
+    
+class GCPAttachedPolicyPolicy(ResourcePolicy):
+    """
+    Defines methods for GCP Attached Policies (what GCP policies can be attached to a VM)
+    """
+
+    def __init__(self, policy: Dict):
+        """
+        :param policy: The dict of the policy to enforce.
+        """
+        pass
+    
+    def to_dict(self) -> Dict:
+        """
+        Converts the policy to a dictionary so that it can be stored.
+        :return: The dictionary representation of the policy.
+        """
+        raise NotImplementedError
+    
+    @staticmethod
+    def from_dict(policy_dict: Dict):
+        """
+        Converts a dictionary to a policy.
+        :param policy_dict: The dictionary representation of the policy.
+        :return: The policy representation of the dict.
+        """
+        raise NotImplementedError
+
+class GCPPolicy(CloudPolicy):
     """
     Defines methods for GCP policies.
     """
 
-    def __init__(self, policy: Dict):
-        pass
+    def __init__(self, vm_policy: GCPVMPolicy, policy: Dict):
+        """
+        :param policy: The dict of the policy to enforce.
+        """
+        self.
 
     def get_request_resource_types(self, request) -> List[str]:
         """
@@ -35,7 +92,7 @@ class GCPPolicy(Policy):
         raise NotImplementedError
     
     @staticmethod
-    def from_dict(policy_dict: Dict):
+    def from_dict(policy_dict: Dict) -> 'GCPPolicy':
         """
         Converts a dictionary to a policy.
         :param policy_dict: The dictionary representation of the policy.

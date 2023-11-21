@@ -3,18 +3,18 @@ import yaml
 from typing import Type
 
 from skydentity.policies.managers.policy_manager import PolicyManager
-from skydentity.policies.checker.policy import Policy
+from skydentity.policies.checker.policy import CloudPolicy
 
 class LocalPolicyManager(PolicyManager):
     """
     Uses local storage to store / update policies. 
     """
 
-    def __init__(self, policy_dir: str, return_policy_type: Type[Policy]):
+    def __init__(self, policy_dir: str, return_policy_type: Type[CloudPolicy]):
         self._policy_dir = policy_dir
         self._return_policy_type = return_policy_type
 
-    def upload_policy(self, public_key: str, policy: Policy):
+    def upload_policy(self, public_key: str, policy: CloudPolicy):
         """
         Writes / updates a policy to the local filesystem.
         :param public_key: The public key of the policy.
@@ -26,7 +26,7 @@ class LocalPolicyManager(PolicyManager):
         with open(policy_file_name, 'w') as f:
             yaml.dump(policy_dict, f)
 
-    def get_policy(self, public_key: str) -> Policy:
+    def get_policy(self, public_key: str) -> CloudPolicy:
         """
         Gets a policy from the cloud vendor.
         :param public_key: The public key of the policy.
