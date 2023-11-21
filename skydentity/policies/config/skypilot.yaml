@@ -20,22 +20,26 @@ virtual_machine:
       - n1-standard-1
       - n1-standard-2
     - azure:
-
-  max_cpu: 8
-  max_memory: 16
-  max_disk_size: 100
-  gpu: false
+      - max_spec:
+        - max_cpu: 8
+        - max_memory: 16
+        - max_disk_size: 100
+        - gpu: false
 
   allowed_images:
     - gcp:
       - ubuntu-1604-xenial-v20181029
       - ubuntu-1804-bionic-v20181029
     - azure:
+      - Canonical:0001-com-ubuntu-server \
+        - jammy-22-04-lts-gen2:latest
 
-  attached_policies:
-    - gcp:
-        authorization:
-          - service_account_x created from a previous step
-    - azure:
-        authorization:
-          - ...
+# TODO  allowed_setup:
+
+attached_policies:
+  - gcp:
+      authorization:
+        - service_account_x created from a previous step
+  - azure:
+      authorization:
+        - managed identity created from a previous step
