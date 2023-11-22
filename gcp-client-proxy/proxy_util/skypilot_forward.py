@@ -10,6 +10,12 @@ from urllib.parse import urlparse
 
 import requests
 from flask import Flask, Response, request
+from flask_api import status
+
+import pyca/cryptography
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
+import datetime
 
 from .constants import COMPUTE_API_ENDPOINT, CREDS_PATH, SERVICE_ACCOUNT_EMAIL_FILE
 from .logging import get_logger, print_and_log
@@ -95,6 +101,31 @@ ROUTES: list[SkypilotRoute] = [
     ),
 ]
 
+def verify_request_signature(request):
+    signature = request.headers["X-Signature"]
+    timestamp = request.headers["X-Timestamp"]
+    public_key = request.headers["X-PublicKey"]
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if now  - datetime.timedelta(seconds=60) > timestamp: # if timestamp when request was sent is > 60 seconds old, deny the request
+        return False
+
+    reformed_message = f"{str(request.method)}-{request.headers.get("Host", "")}-{timestamp}-{str(public_key)}"
+    reformed_message_bytes = message.encode('utf-8')
+
+    # raises InvalidSignature exception if the signature does not match
+    public_key.verify(
+        signature,
+        reformed_message_bytes,
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()),
+            salt_length=padding.PSS.MAX_LENGTH
+        ),
+        hashes.SHA256()
+    )
+
+    return True
+
 
 def generic_forward_request(request, log_dict=None):
     """
@@ -108,8 +139,13 @@ def generic_forward_request(request, log_dict=None):
             log_str += f"\t{key}: {val}\n"
         print_and_log(logger, log_str.strip())
 
+    if not verify_request_signature(request):
+        # Not sure if this is the correct status code. This case will only happen when the timestamp 
+        # associated with the signature is too old at the time when the signature is verified.
+        return Response("", status.HTTP_408_REQUEST_TIMEOUT, {})
+
     new_url = get_new_url(request)
-    new_headers = get_headers_with_auth(request)
+    new_headers = get_new_headers(request)
 
     # don't modify the body in any way
     new_json = None
@@ -235,6 +271,15 @@ def get_service_account_auth_token():
 
     return auth_token_process_out_bytes
 
+def get_new_headers(request):
+    headers_with_auth = get_headers_with_auth(request)
+    new_headers = strip_signature_headers(headers_with_auth)
+    return new_headers
+
+def strip_signature_headers(headers):
+    signature_headers = set(["X-Signature", "X-Timestamp", "X-PublicKey"])
+    new_headers = {k: v for k, v in headers if k not in signature_headers}
+    return new_headers
 
 def get_headers_with_auth(request):
     """
