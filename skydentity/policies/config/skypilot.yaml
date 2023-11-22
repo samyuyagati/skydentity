@@ -3,7 +3,7 @@ virtual_machine:
     - gcp
     - azure
   
-  actions: 
+  actions:
     - ALL
 
   regions:

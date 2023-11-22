@@ -1,8 +1,8 @@
 from typing import Dict, List
 
-from skydentity.policies.checker.policy import CloudPolicy, ResourcePolicy
+from skydentity.policies.checker.policy import CloudPolicy, ResourcePolicy, VMPolicy
 
-class GCPVMPolicy(ResourcePolicy):
+class GCPVMPolicy(VMPolicy):
     """
     Defines methods for GCP VM policies.
     """
@@ -11,16 +11,15 @@ class GCPVMPolicy(ResourcePolicy):
         """
         :param policy: The dict of the policy to enforce.
         """
-        pass
-
-    def check_request(self, request) -> bool:
-        """
-        Enforces the policy on a request.
-        :param request: The request to enforce the policy on.
-        :return: True if the request is allowed, False otherwise.
-        """
-        raise NotImplementedError
+        self._policy = policy
     
+    def get_policy_standard_form(self) -> Dict:
+        """
+        Gets the policy in a standard form.
+        :return: The policy in a standard form.
+        """
+        return self._policy
+
     def to_dict(self) -> Dict:
         """
         Converts the policy to a dictionary so that it can be stored.
@@ -29,13 +28,34 @@ class GCPVMPolicy(ResourcePolicy):
         raise NotImplementedError
     
     @staticmethod
-    def from_dict(policy_dict: Dict):
+    def from_dict(policy_dict_cloud_level: Dict):
         """
-        Converts a dictionary to a policy.
-        :param policy_dict: The dictionary representation of the policy.
+        Distills a general multi-cloud policy into a cloud specific policy.
+        :param policy_dict_cloud_level: The dictionary representation of the policy in terms of all clouds.
+        :throws: Error if the policy is not valid.
         :return: The policy representation of the dict.
         """
-        raise NotImplementedError
+        cloud_specific_policy = {}
+        cloud_specific_policy["can_cloud_run"] = GCPPolicy.GCP_CLOUD_NAME \
+                            in policy_dict_cloud_level["cloud_provider"]
+        if not cloud_specific_policy["can_cloud_run"]:
+            
+
+        gcp_cloud_regions = []
+        if GCPPolicy.GCP_CLOUD_NAME in policy_dict_cloud_level["regions"]:
+            gcp_cloud_regions = policy_dict_cloud_level["regions"][GCPPolicy.GCP_CLOUD_NAME]
+
+        # TODO(kdharmarajan): Check that the regions are valid later (not essential)
+        cloud_specific_policy["regions"] = gcp_cloud_regions
+
+        gcp_allowed_images = []
+        if GCPPolicy.GCP_CLOUD_NAME in policy_dict_cloud_level["allowed_images"]:
+            gcp_allowed_images = policy_dict_cloud_level["allowed_images"][GCPPolicy.GCP_CLOUD_NAME]
+
+        cloud_specific_policy["allowed_images"] = gcp_allowed_images
+
+        # TODO(kdharmarajan): Add allowed_setup script inclusion here
+        return GCPVMPolicy(cloud_specific_policy)
     
 class GCPAttachedPolicyPolicy(ResourcePolicy):
     """
@@ -64,18 +84,22 @@ class GCPAttachedPolicyPolicy(ResourcePolicy):
         raise NotImplementedError
     
     @staticmethod
-    def from_dict(policy_dict: Dict):
+    def from_dict(policy_dict_cloud_level: Dict):
         """
         Converts a dictionary to a policy.
         :param policy_dict: The dictionary representation of the policy.
         :return: The policy representation of the dict.
         """
-        raise NotImplementedError
+        cloud_specific_policy = {}
+        cloud_specific_policy['can_cloud_run'] = GCPPolicy.GCP_CLOUD_NAME \
+                            in policy_dict_cloud_level["cloud_provider"]
 
 class GCPPolicy(CloudPolicy):
     """
     Defines methods for GCP policies.
     """
+
+    GCP_CLOUD_NAME = "gcp"
 
     def __init__(self, vm_policy: GCPVMPolicy, attached_policy_policy: GCPAttachedPolicyPolicy):
         """
