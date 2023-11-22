@@ -1,3 +1,4 @@
+import enum
 from abc import ABC
 from typing import Dict, List
 
@@ -105,3 +106,12 @@ class PolicyContentException(Exception):
         """
         super().__init__(message)
         self.message = message
+
+class PolicyAction(enum.Enum):
+    """
+    An action that can be taken on a resource.
+    """
+    CREATE = "CREATE"
+    READ = "READ"
+    DELETE = "DELETE"
+    ALL = "ALL"

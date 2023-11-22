@@ -1,6 +1,12 @@
 from typing import Dict, List
 
-from skydentity.policies.checker.policy import CloudPolicy, ResourcePolicy, VMPolicy
+from skydentity.policies.checker.policy import (
+    CloudPolicy, 
+    ResourcePolicy, 
+    VMPolicy, 
+    PolicyContentException,
+    PolicyAction
+)
 
 class GCPVMPolicy(VMPolicy):
     """
@@ -25,7 +31,14 @@ class GCPVMPolicy(VMPolicy):
         Converts the policy to a dictionary so that it can be stored.
         :return: The dictionary representation of the policy.
         """
-        raise NotImplementedError
+        out_dict = {
+            "regions": {
+                "gcp": self._policy["regions"]
+            },
+            "allowed_images": {
+                "gcp": self._policy["allowed_images"]
+            }
+        }
     
     @staticmethod
     def from_dict(policy_dict_cloud_level: Dict):
@@ -39,7 +52,13 @@ class GCPVMPolicy(VMPolicy):
         cloud_specific_policy["can_cloud_run"] = GCPPolicy.GCP_CLOUD_NAME \
                             in policy_dict_cloud_level["cloud_provider"]
         if not cloud_specific_policy["can_cloud_run"]:
-            
+            raise PolicyContentException("Policy does not accept GCP")
+
+        try:
+            action = PolicyAction[policy_dict_cloud_level["action"]]
+            cloud_specific_policy["action"] = action
+        except KeyError:
+            raise PolicyContentException("Policy action is not valid")
 
         gcp_cloud_regions = []
         if GCPPolicy.GCP_CLOUD_NAME in policy_dict_cloud_level["regions"]:
