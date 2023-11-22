@@ -1,12 +1,13 @@
 from abc import ABC
 from typing import Dict, List
+from flask import Request
 
 class ResourcePolicy(ABC):
     """
     General resource policy for VMs, Attached Policies
     """
 
-    def check_request(self, request) -> bool:
+    def check_request(self, request: Request) -> bool:
         """
         Enforces the policy on a request.
         :param request: The request to enforce the policy on.
@@ -35,7 +36,7 @@ class VMPolicy(ResourcePolicy, ABC):
     General resource policy for VMs
     """
 
-    def check_request(self, request) -> bool:
+    def check_request(self, request: Request) -> bool:
         """
         Enforces the policy on a request.
         :param request: The request to enforce the policy on.
@@ -66,7 +67,7 @@ class VMPolicy(ResourcePolicy, ABC):
         # TODO(kdharmarajan): Add allowed_setup script inclusion here
         return True
 
-    def get_standard_request_form(self, request) -> Dict:
+    def get_standard_request_form(self, request: Request) -> Dict:
         """
         Extracts the important values from the request to check in a standardized form.
         The standard form is:
@@ -107,7 +108,7 @@ class CloudPolicy(ResourcePolicy, ABC):
     A policy is a set of rules that tell what actions can be done on what resources.
     """
 
-    def get_request_resource_types(self, request) -> List[str]:
+    def get_request_resource_types(self, request: Request) -> List[str]:
         """
         Gets the resource types that the request is trying to access / create / delete.
         :param request: The request to get the resource types from.
@@ -115,7 +116,7 @@ class CloudPolicy(ResourcePolicy, ABC):
         """
         raise NotImplementedError
 
-    def check_request(self, request) -> bool:
+    def check_request(self, request: Request) -> bool:
         """
         Enforces the policy on a request.
         :param request: The request to enforce the policy on.
@@ -127,7 +128,7 @@ class CloudPolicy(ResourcePolicy, ABC):
                 return False
         return True
     
-    def check_resource_type(self, resource_type: str, request) -> bool:
+    def check_resource_type(self, resource_type: str, request: Request) -> bool:
         """
         Enforces the policy on a resource type.
         :param resource_type: The resource type to enforce the policy on.
