@@ -32,13 +32,21 @@ class GCPVMPolicy(VMPolicy):
         :return: The dictionary representation of the policy.
         """
         out_dict = {
+            "actions": self._policy["actions"].value,
+            "cloud_provider": [
+                GCPPolicy.GCP_CLOUD_NAME
+            ],
             "regions": {
                 "gcp": self._policy["regions"]
+            },
+            "instance_type": {
+                "gcp": self._policy["instance_types"]
             },
             "allowed_images": {
                 "gcp": self._policy["allowed_images"]
             }
         }
+        return out_dict
     
     @staticmethod
     def from_dict(policy_dict_cloud_level: Dict):
@@ -56,7 +64,7 @@ class GCPVMPolicy(VMPolicy):
 
         try:
             action = PolicyAction[policy_dict_cloud_level["action"]]
-            cloud_specific_policy["action"] = action
+            cloud_specific_policy["actions"] = action
         except KeyError:
             raise PolicyContentException("Policy action is not valid")
 
@@ -66,6 +74,11 @@ class GCPVMPolicy(VMPolicy):
 
         # TODO(kdharmarajan): Check that the regions are valid later (not essential)
         cloud_specific_policy["regions"] = gcp_cloud_regions
+
+        gcp_instance_types = []
+        if GCPPolicy.GCP_CLOUD_NAME in policy_dict_cloud_level["instance_type"]:
+            gcp_instance_types = policy_dict_cloud_level["instance_type"][GCPPolicy.GCP_CLOUD_NAME]
+        cloud_specific_policy["instance_type"] = gcp_instance_types
 
         gcp_allowed_images = []
         if GCPPolicy.GCP_CLOUD_NAME in policy_dict_cloud_level["allowed_images"]:
