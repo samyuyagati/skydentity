@@ -11,7 +11,7 @@ class LocalPolicyManagerSuite(unittest.TestCase):
         """
         Set up code run once before this test suite.
         """
-        self._policy_dir = './policies'
+        self._policy_dir = './local_policies'
         os.mkdir(self._policy_dir)
         self._policy_manager = LocalPolicyManager(self._policy_dir, DictPolicy)
 

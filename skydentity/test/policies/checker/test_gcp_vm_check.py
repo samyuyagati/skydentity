@@ -57,6 +57,11 @@ class GCPVMCheckSuite(unittest.TestCase):
         successful_request = Request.from_values(json=request_body, method='GET')
         self.assertTrue(loose_policy.check_request(successful_request))
 
+        # Should fail to work for wrong regions
+        request_body["machineType"] = "zones/asia-east1-b/machineTypes/n1-standard-1"
+        failed_request = Request.from_values(json=request_body, method='POST')
+        self.assertFalse(loose_policy.check_request(failed_request))
+
     def test_gcp_vm_strict_check(self):
         """
         Tests a stricter GCP Policy, which only allows reads.
@@ -68,5 +73,10 @@ class GCPVMCheckSuite(unittest.TestCase):
         self.assertTrue(strict_policy.check_request(successful_request))
 
         # Should not work for creates
-        successful_request = Request.from_values(json=request_body, method='POST')
-        self.assertFalse(strict_policy.check_request(successful_request))
+        failed_request = Request.from_values(json=request_body, method='POST')
+        self.assertFalse(strict_policy.check_request(failed_request))
+
+        # Should fail to work for wrong regions
+        request_body["machineType"] = "zones/asia-east1-b/machineTypes/n1-standard-1"
+        failed_request = Request.from_values(json=request_body, method='GET')
+        self.assertFalse(strict_policy.check_request(failed_request))
