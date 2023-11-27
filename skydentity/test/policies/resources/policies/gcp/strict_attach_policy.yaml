@@ -1,0 +1,27 @@
+virtual_machine:
+  cloud_provider: 
+    - gcp
+  
+  actions:
+    - READ
+
+  regions:
+    - gcp:
+        - us-central1
+        - us-east1
+        - us-west1-b
+
+  instance_type:
+    - gcp:
+      - n1-standard-1
+      - n1-standard-2
+
+  allowed_images:
+    - gcp:
+      - debian-10-buster-v20200902
+
+attached_policies:
+  - gcp:
+      authorization:
+        - service_account_1@project.iam.gserviceaccount.com
+        - service_account_2@project.iam.gserviceaccount.com

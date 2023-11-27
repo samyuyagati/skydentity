@@ -1,0 +1,29 @@
+{
+    "name": "gcp-clilib",
+    "networkInterfaces": [{"network": "global/networks/default"}],
+    "disks": [
+        {
+            "boot": true,
+            "initializeParams": {
+                "sourceImage": "projects/debian-cloud/global/images/debian-10-buster-v20200902",
+                "diskType": "zones/us-west1-b/diskTypes/pd-standard",
+                "diskSizeGb": "10"
+            },
+            "autoDelete": true
+        },
+        {
+            "type": "SCRATCH",
+            "initializeParams": {"diskType": "zones/us-west1-b/diskTypes/local-ssd"},
+            "autoDelete": true
+        }
+    ],
+    "machineType": "zones/us-west1-b/machineTypes/n1-standard-1",
+    "serviceAccounts": [
+        {
+            "email": "service_account_1@project.iam.gserviceaccount.com",
+            "scopes": [
+                "https://www.googleapis.com/auth/cloud-platform"
+            ]
+        }
+    ]
+}

@@ -7,9 +7,9 @@ from flask import Request
 from skydentity.policies.checker.gcp_policy import GCPVMPolicy, GCPPolicy
 from skydentity.policies.managers.local_policy_manager import LocalPolicyManager
 
-class GCPVMCheckSuite(unittest.TestCase):
+class GCPPolicyCheckSuite(unittest.TestCase):
     """
-    Tests cases related to the GCP VM part of the policy
+    Tests cases related to the GCP policies
     """
 
     def setUp(self):
@@ -95,5 +95,25 @@ class GCPVMCheckSuite(unittest.TestCase):
 
         # Should fail to work for wrong regions
         request_body["machineType"] = "zones/asia-east1-b/machineTypes/n1-standard-1"
+        failed_request = Request.from_values(json=request_body, method='GET')
+        self.assertFalse(strict_policy.check_request(failed_request))
+
+    def test_gcp_attached_policy_strict_check(self):
+        """
+        Tests a stricter GCP Policy, which only allows reads, and we now enable attaching service accounts
+        """
+        strict_policy = self.get_policy('strict_attach_policy')
+        request_body = self.get_request_body('gcp_vm_creation_attached_policy')
+
+        successful_request = Request.from_values(json=request_body, method='GET')
+        self.assertTrue(strict_policy.check_request(successful_request))
+
+        # Attach a different policy to the machine that should be successful
+        request_body["serviceAccounts"][0]["email"] = "service_account_2@project.iam.gserviceaccount.com"
+        failed_request = Request.from_values(json=request_body, method='GET')
+        self.assertTrue(strict_policy.check_request(failed_request))
+
+        # Attach a different policy to the machine that should fail
+        request_body["serviceAccounts"][0]["email"] = "malicious_account@project.iam.gserviceaccount.com"
         failed_request = Request.from_values(json=request_body, method='GET')
         self.assertFalse(strict_policy.check_request(failed_request))
