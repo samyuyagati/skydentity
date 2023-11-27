@@ -62,6 +62,23 @@ class GCPVMCheckSuite(unittest.TestCase):
         failed_request = Request.from_values(json=request_body, method='POST')
         self.assertFalse(loose_policy.check_request(failed_request))
 
+        # Should fail to work for wrong machine type
+        # A2 yikes!
+        request_body["machineType"] = "zones/us-west1-b/machineTypes/a2-standard-1"
+        failed_request = Request.from_values(json=request_body, method='POST')
+        self.assertFalse(loose_policy.check_request(failed_request))
+
+    def test_gcp_vm_image_check(self):
+        """
+        Tests the checking of GCP VM images
+        """
+        loose_policy = self.get_policy('loose_vm')
+        request_body = self.get_request_body('gcp_vm_creation')
+
+        request_body["disks"][0]["initializeParams"]["sourceImage"] = "projects/debian-cloud/global/images/family/debian-9"
+        failed_request = Request.from_values(json=request_body, method='POST')
+        self.assertFalse(loose_policy.check_request(failed_request))
+
     def test_gcp_vm_strict_check(self):
         """
         Tests a stricter GCP Policy, which only allows reads.
