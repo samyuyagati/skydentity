@@ -5,12 +5,12 @@ from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.compute.models import OSProfile, NetworkProfile, ImageReference, ManagedDiskParameters, OSDisk, StorageProfile, HardwareProfile, VirtualMachine, OperatingSystemTypes, DiskCreateOptionTypes
 
 # TODO: Handle secret management + remove uses of 'AzureCliCredential()'
-SUBSCRIPTION_ID = "5ba551fd-4339-4bc8-834e-0dc4b031aa3d"
-USERNAME = "skydentity"
-PASSWORD = "$kyD3ntity"
+SUBSCRIPTION_ID =
+USERNAME = 
+PASSWORD = 
 NUM_VMS_TO_CREATE = 1
 
-BASE_URL="https://skydentity.mangocliff-4eb6d2c4.westus2.azurecontainerapps.io"
+BASE_URL=
 
 """
     Creates a new resource group in the given location (region), or default eastus2.
