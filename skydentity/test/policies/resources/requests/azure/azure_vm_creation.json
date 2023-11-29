@@ -1,11 +1,5 @@
 {
     "location": "westus",
-    "identity": {
-        "type": "UserAssigned",
-        "userAssignedIdentities": {
-            "/subscriptions/{subscription-id}/resourceGroups/myResourceGroup/providers/Microsoft.ManagedIdentity/userAssignedIdentities/access_data": {}
-        }
-    },
     "properties": {
         "hardwareProfile": {
             "vmSize": "Standard_D1_v2"

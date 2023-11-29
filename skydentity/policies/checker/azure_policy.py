@@ -1,6 +1,5 @@
 from typing import Dict, List
 from flask import Request
-import re
 
 from skydentity.policies.checker.policy import (
     CloudPolicy, 
@@ -208,7 +207,8 @@ class AzurePolicy(CloudPolicy):
 
     Azure_CLOUD_NAME = "azure"
     VM_REQUEST_KEYS = set([
-        # TODO(kdharmarajan): Determine this
+        # TODO(kdharmarajan): Possibly restrict which keys are allowed here
+        "location",
     ])
     ATTACHED_POLICY_KEYS = set([
         "identity"
