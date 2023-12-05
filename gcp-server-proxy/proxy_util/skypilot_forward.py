@@ -1,6 +1,7 @@
 """
 Forwarding for SkyPilot requests.
 """
+import os
 from collections import namedtuple
 
 import requests
@@ -177,10 +178,11 @@ def get_client_proxy_endpoint(request):
     """
     Retrieve the correct client proxy endpoint from the client identifier.
     """
-    print(request.headers)
+    # user_agent = request.headers.get("User-Agent")
+    # print(f"USER AGENT: {user_agent}")
 
     # TODO: replace with actual fetch
-    return "https://127.0.0.1:5001/"
+    return os.environ.get("SKYID_CLIENT_ADDRESS", "https://127.0.0.1:5001/")
 
 
 def get_new_url(request):
