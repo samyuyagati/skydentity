@@ -12,8 +12,7 @@ import requests
 from flask import Flask, Response, request
 from flask_api import status
 
-import pyca/cryptography
-from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 import datetime
 
@@ -104,15 +103,19 @@ ROUTES: list[SkypilotRoute] = [
 def verify_request_signature(request):
     signature = request.headers["X-Signature"]
     timestamp = request.headers["X-Timestamp"]
-    public_key = request.headers["X-PublicKey"]
+    public_key_bytes = request.headers["X-PublicKey"]
 
     now = datetime.datetime.now(datetime.timezone.utc)
     if now  - datetime.timedelta(seconds=60) > timestamp: # if timestamp when request was sent is > 60 seconds old, deny the request
         return False
 
-    reformed_message = f"{str(request.method)}-{request.headers.get("Host", "")}-{timestamp}-{str(public_key)}"
-    reformed_message_bytes = message.encode('utf-8')
+    host = new_headers.get("Host", "")
+    reformed_message = f"{request.method}-{host}-{timestamp}-{public_key_bytes}"
+    reformed_message_bytes = reformed_message.encode('utf-8')
 
+    public_key = serialization.load_pem_public_key(
+        public_key_bytes
+    )
     # raises InvalidSignature exception if the signature does not match
     public_key.verify(
         signature,

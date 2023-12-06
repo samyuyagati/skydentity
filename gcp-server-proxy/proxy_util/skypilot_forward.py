@@ -6,8 +6,7 @@ from collections import namedtuple
 import requests
 from flask import Flask, Response, request
 
-import pyca/cryptography
-from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 import datetime
 
@@ -97,17 +96,22 @@ ROUTES: list[SkypilotRoute] = [
 def get_headers_with_signature(request):
     new_headers = {k: v for k, v in request.headers}
 
-    # placeholder, assuming broker service has acess to key
-    private_key = rsa.generate_private_key( # can load key from disk instead if one already exists
-        public_exponent=65537,
-        key_size=2048,
-    )
+    with open("private_key.pem", "rb") as key_file:
+        private_key = serialization.load_pem_private_key(
+            key_file.read(),
+            password=None,
+        )
 
     # assume set, predetermined/agreed upon tolerance on client proxy/receiving end
     # use utc for consistency if server runs in cloud in different region
     timestamp = datetime.datetime.now(datetime.timezone.utc)
+    host = new_headers.get("Host", "")
+    public_key_bytes = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    )
 
-    message = f"{str(request.method)}-{new_headers.get("Host", "")}-{timestamp}-{str(private_key.public_key())}"
+    message = f"{str(request.method)}-{host}-{timestamp}-{public_key_bytes}"
     message_bytes = message.encode('utf-8')
 
     signature = private_key.sign(
