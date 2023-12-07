@@ -12,9 +12,13 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 COPY requirements.txt .
 COPY certs/domain_dir/domain.crt ./certs/domain.crt
 COPY app.py .
+COPY skydentity/ .
 #COPY wsgi.py .
 
 RUN pip3 install -r requirements.txt
+
+# Install the skydentity package which provides core code for policy checking
+RUN pip3 install ./skydentity
 
 # Install google cloud SDK
 # Install required dependencies

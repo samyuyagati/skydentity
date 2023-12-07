@@ -1,11 +1,9 @@
 import unittest
 import os
-import shutil
 
 from skydentity.policies.checker.azure_policy import AzurePolicy
 from skydentity.policies.managers.azure_policy_manager import AzurePolicyManager
 from skydentity.policies.managers.local_policy_manager import LocalPolicyManager
-from skydentity.policies.checker.dict_policy import DictPolicy
 
 class AzurePolicyManagerSuite(unittest.TestCase):
 
