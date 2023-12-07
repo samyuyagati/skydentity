@@ -4,7 +4,7 @@ import json
 from typing import Dict
 from flask import Request
 
-from skydentity.policies.checker.gcp_policy import GCPVMPolicy, GCPPolicy
+from skydentity.policies.checker.gcp_policy import GCPPolicy
 from skydentity.policies.managers.local_policy_manager import LocalPolicyManager
 
 class GCPPolicyCheckSuite(unittest.TestCase):

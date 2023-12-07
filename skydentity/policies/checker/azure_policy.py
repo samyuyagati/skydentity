@@ -208,7 +208,7 @@ class AzurePolicy(CloudPolicy):
     Azure_CLOUD_NAME = "azure"
     VM_REQUEST_KEYS = set([
         # TODO(kdharmarajan): Possibly restrict which keys are allowed here
-        "location",
+        "location"
     ])
     ATTACHED_POLICY_KEYS = set([
         "identity"
