@@ -58,4 +58,16 @@ SkyIdentity is a proxy built to handle VM request permissions. It removes the ne
    1. The setup script should add the service account secret key and the domain cert private key to your cloud's secrets store and create the build image. See `serverless-gcp-skydentity/deploy_setup.sh` for an example. To check if a secret already exists in gcp, use `gcloud secrets versions access version-id --secret="secret-id" --out-file="path/to/secret"` and modify the setup script according to whether or not a given secret needs to be added.
    2. The deployment script should run the build created in the previous step using the provided service account and credentials. See `serverless-gcp-skydentity/deploy.sh` for an example.
 5. If possible, create a Dockerfile (or even better, reuse a single shared Dockerfile i.e. the existing Dockerfile in the project root) to dockerize the proxy. Make sure that your chosen cloud service has an option to mount volumes in order to deploy secrets with your container.
-   
+  
+# To build as an editable module from source, run the following line from the top-level skydentity directory:
+```
+pip install --editable .
+```
+
+# Uploading client policy to Firestore
+Upload the policy to the Firestore Account using the script `skydentity/scripts/upload_policy.py`. Specify the arguments --policy to the path to the policy to be uploaded, --cloud gcp, --public-key as the string of the public key of the broker, and --credentials as the path to the credentials for Firestore; this should be the json keyfile from setting up a service account on GCP, and the service account should have the role roles/datastore.user.
+
+Example usage:
+```
+python scripts/upload_policy.py --policy policies/config/skypilot_eval.yaml --public-key skypilot_eval --credentials <path-to-service-account-json-key-file> --cloud gcp
+``` 

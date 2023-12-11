@@ -6,7 +6,7 @@ LONG_DESCRIPTION = 'Skydentity'
 
 # Setting up
 setup(
-       # the name must match the folder name 'verysimplemodule'
+       # the name must match the folder name 'skydentity'
         name="skydentity", 
         version=VERSION,
         author="Samyu Yagati",

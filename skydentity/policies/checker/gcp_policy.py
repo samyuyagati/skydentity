@@ -86,7 +86,7 @@ class GCPVMPolicy(VMPolicy):
                 GCPPolicy.GCP_CLOUD_NAME: self._policy["regions"]
             },
             "instance_type": {
-                GCPPolicy.GCP_CLOUD_NAME: self._policy["instance_types"]
+                GCPPolicy.GCP_CLOUD_NAME: self._policy["instance_type"]
             },
             "allowed_images": {
                 GCPPolicy.GCP_CLOUD_NAME: self._policy["allowed_images"]
