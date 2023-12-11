@@ -9,5 +9,17 @@
 # Set region
 gcloud config set run/region us-west1
 
+# Copy skydentity package code to current directory
+mkdir skydentity
+cp -r ../skydentity/policies ./skydentity/
+echo "copied skydentity policy checking module"
+cp ../setup.py .
+
+ls .
+
 # Create the image in Google Cloud run (takes several minutes)
 gcloud builds submit --tag gcr.io/sky-identity/skyidproxy
+
+# Cleanup
+rm -r ./skydentity
+rm setup.py

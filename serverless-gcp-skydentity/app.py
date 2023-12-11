@@ -113,7 +113,7 @@ def get_image(project, family):
     print_and_log(logger, f"{family}")
 
     # TODO: Take out the public key from the request
-    if not check_request_from_policy("test", request):
+    if not check_request_from_policy("skypilot_eval", request):
         print_and_log(logger, "Request is unauthorized")
         return Response("Unauthorized", 401)
 
@@ -139,7 +139,7 @@ def create_vm(project, region):
     print_and_log(logger, f"{region}")
 
     # TODO: Take out the public key from the request
-    if not check_request_from_policy("test", request):
+    if not check_request_from_policy("skypilot_eval", request):
         print_and_log(logger, "Request is unauthorized")
         return Response("Unauthorized", 401)
 

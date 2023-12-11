@@ -1,0 +1,16 @@
+# Proxy
+Flask
+requests
+setuptools
+build
+gunicorn
+pyyaml
+# Azure
+azure-mgmt-resource 
+azure-mgmt-compute
+azure-mgmt-network
+azure-identity
+# GCP
+google-cloud-compute
+google-cloud-logging
+firebase-admin
