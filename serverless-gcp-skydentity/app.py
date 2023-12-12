@@ -19,7 +19,6 @@ CREDS_DIR = "/cloud_creds/gcp"
 COMPUTE_API_ENDPOINT = "https://compute.googleapis.com/"
 
 # Utilities
-
 def get_logger():
     logging_client = logging.Client()
     return logging_client.logger("app_proxy")
