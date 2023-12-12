@@ -15,10 +15,10 @@ from skydentity.policies.managers.gcp_policy_manager import GCPPolicyManager
 app = Flask(__name__)
 
 CERT_DIR = "/certs/"
-CREDS_PATH = "/cloud_creds/gcp"
+CREDS_DIR = "/cloud_creds/gcp"
 COMPUTE_API_ENDPOINT = "https://compute.googleapis.com/"
 
-gcp_policy_manager = GCPPolicyManager(CREDS_PATH)
+# Utilities
 
 def get_logger():
     logging_client = logging.Client()
@@ -29,8 +29,9 @@ def print_and_log(logger, text, severity="WARNING"):
     logger.log_text(text, severity=severity)
 
 def get_gcp_creds():
-    cred_files = [f for f in listdir(CREDS_PATH) if isfile(join(CREDS_PATH, f))]
-    return os.path.join(CREDS_PATH, cred_files[0])
+    cred_files = [f for f in listdir(CREDS_DIR) if isfile(join(CREDS_DIR, f))]
+    assert(len(cred_files) == 1)
+    return os.path.join(CREDS_DIR, cred_files[0])
 
 def check_request_from_policy(public_key, request) -> bool:
     return gcp_policy_manager.get_policy(public_key).check_request(request)
@@ -98,6 +99,10 @@ def send_gcp_request(request, new_headers, new_url, new_json=None):
         allow_redirects = False,
     )
 
+# Define policy manager object
+gcp_policy_manager = GCPPolicyManager(get_gcp_creds())
+
+# Handlers
 
 @app.route("/hello", methods=["GET"])
 def handle_hello():
