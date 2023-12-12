@@ -18,7 +18,11 @@ CERT_DIR = "/certs/"
 CREDS_PATH = "/cloud_creds/gcp"
 COMPUTE_API_ENDPOINT = "https://compute.googleapis.com/"
 
-gcp_policy_manager = GCPPolicyManager(CREDS_PATH)
+def get_gcp_creds():
+    cred_files = [f for f in listdir(CREDS_PATH) if isfile(join(CREDS_PATH, f))]
+    return os.path.join(CREDS_PATH, cred_files[0])
+
+gcp_policy_manager = GCPPolicyManager(get_gcp_creds())
 
 def get_logger():
     logging_client = logging.Client()
@@ -27,10 +31,6 @@ def get_logger():
 def print_and_log(logger, text, severity="WARNING"):
     print(text)
     logger.log_text(text, severity=severity)
-
-def get_gcp_creds():
-    cred_files = [f for f in listdir(CREDS_PATH) if isfile(join(CREDS_PATH, f))]
-    return os.path.join(CREDS_PATH, cred_files[0])
 
 def check_request_from_policy(public_key, request) -> bool:
     return gcp_policy_manager.get_policy(public_key).check_request(request)
