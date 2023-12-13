@@ -1,11 +1,11 @@
 import unittest
 import os
 
-from skydentity.policies.checker.azure_policy import AzurePolicy
-from skydentity.policies.managers.azure_policy_manager import AzurePolicyManager
+from skydentity.policies.checker.gcp_policy import GCPPolicy
+from skydentity.policies.managers.gcp_policy_manager import GCPPolicyManager
 from skydentity.policies.managers.local_policy_manager import LocalPolicyManager
 
-class AzurePolicyManagerSuite(unittest.TestCase):
+class GCPPolicyManagerSuite(unittest.TestCase):
 
     def setUp(self):
         """
@@ -15,16 +15,13 @@ class AzurePolicyManagerSuite(unittest.TestCase):
                                     '..', # For moving out of the current directory
                                     'resources', 
                                     'policies', 
-                                    'azure')
-        self._policy_manager = AzurePolicyManager(
-            db_endpoint = os.environ['AZURE_DB_ENDPOINT'],
-            db_key = os.environ['AZURE_DB_KEY'],
-            db_name = os.environ['AZURE_DB_NAME'],
-            db_container_name = os.environ['AZURE_DB_CONTAINER_NAME']
+                                    'gcp')
+        self._policy_manager = GCPPolicyManager(
+            credentials_path = os.environ['GCP_CREDENTIALS'],
         )
-        self._local_policy_manager = LocalPolicyManager(self._policy_dir, AzurePolicy)
+        self._local_policy_manager = LocalPolicyManager(self._policy_dir, GCPPolicy)
 
-    def get_local_policy(self, policy_name: str) -> AzurePolicy:
+    def get_local_policy(self, policy_name: str) -> GCPPolicy:
         """
         Reads the policy from a file, from resources/policies/gcp/{policy_name}.json
         """
@@ -35,6 +32,7 @@ class AzurePolicyManagerSuite(unittest.TestCase):
         Tests a simple write / get policy.
         """
         print('Testing write / get policy.')
+        import pdb; pdb.set_trace()
         test_policy = self.get_local_policy('loose_vm')
         self._policy_manager.upload_policy('skypilot', test_policy)
         out_policy = self._policy_manager.get_policy('skypilot')
