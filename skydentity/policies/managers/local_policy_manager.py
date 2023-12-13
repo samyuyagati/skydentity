@@ -30,7 +30,7 @@ class LocalPolicyManager(PolicyManager):
 
     def get_policy(self, public_key: str) -> CloudPolicy:
         """
-        Gets a policy from the cloud vendor.
+        Gets a policy from the local filesystem.
         :param public_key: The public key of the policy.
         :return: The policy.
         """
@@ -42,5 +42,7 @@ class LocalPolicyManager(PolicyManager):
         print("public key:", public_key)
         with open(policy_file_name, 'r') as f:
             policy_dict = yaml.load(f, Loader=yaml.SafeLoader)
+        print("get_policy", policy_dict)
+        print("policy type:", self._return_policy_type) 
         return self._return_policy_type.from_dict(policy_dict)
         

@@ -28,15 +28,17 @@ class GCPPolicyManager(PolicyManager):
         :param public_key: The public key of the policy.
         :param policy: The policy to upload.
         """
+        print("Uploading policy:\n", policy.to_dict())
         self._db \
             .collection(self._firestore_policy_collection) \
             .document(public_key) \
             .set(policy.to_dict())
 
-    def get_policy(self, public_key: str) -> GCPPolicy:
+    def get_policy(self, public_key: str, logger=None) -> GCPPolicy:
         """
         Gets a policy from the cloud vendor.
         :param public_key: The public key of the policy.
+        :param logger: optional. google.cloud logger
         :return: The policy.
         """
         return GCPPolicy.from_dict(
@@ -44,5 +46,6 @@ class GCPPolicyManager(PolicyManager):
                 .collection(self._firestore_policy_collection) \
                 .document(public_key) \
                 .get() \
-                .to_dict()
+                .to_dict(),
+            logger
         )

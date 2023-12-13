@@ -12,10 +12,13 @@ import subprocess
 from urllib.parse import urlparse
 from skydentity.policies.managers.gcp_policy_manager import GCPPolicyManager
 
+import pdb
+
 app = Flask(__name__)
 
-CERT_DIR = "/certs/"
-CREDS_DIR = "/cloud_creds/gcp"
+#CERT_DIR = "/certs/"
+#CREDS_DIR = "/cloud_creds/gcp"
+CREDS_DIR = "/Users/samyu/.cloud_creds/gcp"
 COMPUTE_API_ENDPOINT = "https://compute.googleapis.com/"
 
 # Utilities
@@ -33,7 +36,16 @@ def get_gcp_creds():
     return os.path.join(CREDS_DIR, cred_files[0])
 
 def check_request_from_policy(public_key, request) -> bool:
-    return gcp_policy_manager.get_policy(public_key).check_request(request)
+    logger = get_logger()
+    print_and_log(logger, f"Check request public key: {public_key} (request: {request})")
+    policy = gcp_policy_manager.get_policy(public_key, None)
+    print("Got policy", policy)
+    print("Request", request)
+#    print("Request json:", request.json)
+#    breakpoint()
+    check_result = policy.check_request(request)
+    print("Check result:", check_result)
+    return check_result
 
 def get_json_with_service_account(request, service_account_email):
     json_dict = request.json
@@ -117,9 +129,14 @@ def get_image(project, family):
     print_and_log(logger, f"{family}")
 
     # TODO: Take out the public key from the request
-    if not check_request_from_policy("skypilot_eval", request):
+    print("Checking request")
+    authorized = check_request_from_policy("skypilot_eval", request)
+    print("Checked request")
+    if not authorized:
         print_and_log(logger, "Request is unauthorized")
         return Response("Unauthorized", 401)
+
+    print("Request is authorized")
 
     request_length = len(request.get_data())
     print_and_log(logger, "REQUEST LEN: request_length")

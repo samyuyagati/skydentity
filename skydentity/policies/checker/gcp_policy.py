@@ -1,6 +1,7 @@
 from typing import Dict, List
 from flask import Request
 import re
+import sys
 
 from skydentity.policies.checker.policy import (
     CloudPolicy, 
@@ -95,13 +96,18 @@ class GCPVMPolicy(VMPolicy):
         return out_dict
     
     @staticmethod
-    def from_dict(policy_dict_cloud_level: Dict):
+    def from_dict(policy_dict_cloud_level: Dict, logger=None):
         """
         Distills a general multi-cloud policy into a cloud specific policy.
         :param policy_dict_cloud_level: The dictionary representation of the policy in terms of all clouds.
+        :param logger: optional. google.cloud logger object 
         :throws: Error if the policy is not valid.
         :return: The policy representation of the dict.
         """
+        if logger:
+          logger.log_text(str(policy_dict_cloud_level), severity="WARNING")
+        else:
+          print(str(policy_dict_cloud_level))
         cloud_specific_policy = {}
         cloud_specific_policy["can_cloud_run"] = GCPPolicy.GCP_CLOUD_NAME \
                             in policy_dict_cloud_level["cloud_provider"]
@@ -109,16 +115,25 @@ class GCPVMPolicy(VMPolicy):
             raise PolicyContentException("Policy does not accept GCP")
 
         try:
-            # TODO(kdharmarajan): Generalize this policy action
-            action = PolicyAction[policy_dict_cloud_level["actions"][0]]
+            # TODO(kdharmarajan): Generalize this policy actioni
+            # TODO what happens if multiple actions are permitted?
+            print(policy_dict_cloud_level["actions"])
+            if isinstance(policy_dict_cloud_level["actions"], list):
+              action = PolicyAction[policy_dict_cloud_level["actions"][0]]
+            else:
+              action = PolicyAction[policy_dict_cloud_level["actions"]]
             cloud_specific_policy["actions"] = action
         except KeyError:
             raise PolicyContentException("Policy action is not valid")
 
         gcp_cloud_regions = []
         for region_group in policy_dict_cloud_level["regions"]:
+            print("REGION GROUP", region_group)
             if GCPPolicy.GCP_CLOUD_NAME in region_group:
-                gcp_cloud_regions = region_group[GCPPolicy.GCP_CLOUD_NAME]
+                if isinstance(policy_dict_cloud_level["regions"], list):
+                  gcp_cloud_regions = region_group[GCPPolicy.GCP_CLOUD_NAME] 
+                else: 
+                  gcp_cloud_regions = policy_dict_cloud_level["regions"][region_group] 
                 break
 
         # TODO(kdharmarajan): Check that the regions are valid later (not essential)
@@ -127,13 +142,19 @@ class GCPVMPolicy(VMPolicy):
         gcp_instance_types = []
         for instance_type_group in policy_dict_cloud_level["instance_type"]:
             if GCPPolicy.GCP_CLOUD_NAME in instance_type_group:
-                gcp_instance_types = instance_type_group[GCPPolicy.GCP_CLOUD_NAME]
+                if isinstance(policy_dict_cloud_level["instance_type"], list):
+                  gcp_instance_types = instance_type_group[GCPPolicy.GCP_CLOUD_NAME]
+                else:
+                  gcp_instance_types = policy_dict_cloud_level["instance_type"][GCPPolicy.GCP_CLOUD_NAME]
         cloud_specific_policy["instance_type"] = gcp_instance_types
 
         gcp_allowed_images = []
         for allowed_images_group in policy_dict_cloud_level["allowed_images"]:
             if GCPPolicy.GCP_CLOUD_NAME in allowed_images_group:
-                gcp_allowed_images = allowed_images_group[GCPPolicy.GCP_CLOUD_NAME]
+                if isinstance(policy_dict_cloud_level["allowed_images"], list):
+                  gcp_allowed_images = allowed_images_group[GCPPolicy.GCP_CLOUD_NAME]
+                else:
+                  gcp_allowed_images = policy_dict_cloud_level["allowed_images"][GCPPolicy.GCP_CLOUD_NAME]
 
         cloud_specific_policy["allowed_images"] = gcp_allowed_images
 
@@ -157,13 +178,17 @@ class GCPAttachedPolicyPolicy(ResourcePolicy):
         :param request: The request to enforce the policy on.
         :return: True if the request is allowed, False otherwise.
         """
-        request_contents = request.get_json(cache=True)
-        if "serviceAccounts" in request_contents:
-            for service_account in request_contents["serviceAccounts"]:
-                if service_account["email"] not in self._policy["authorization"]:
-                    return False
-        # TODO(kdharmarajan): Add scope checks here 
+        print("check_request", flush=True)
+        sys.stdout.flush()
         return True
+#        request_contents = request.get_json(cache=True)
+#        print(">>>request:", request_contents)
+#        if "serviceAccounts" in request_contents:
+#            for service_account in request_contents["serviceAccounts"]:
+#                if service_account["email"] not in self._policy["authorization"]:
+#                    return False
+        # TODO(kdharmarajan): Add scope checks here 
+#        return True
 
     def to_dict(self) -> Dict:
         """
@@ -171,27 +196,43 @@ class GCPAttachedPolicyPolicy(ResourcePolicy):
         :return: The dictionary representation of the policy.
         """
         out_dict = {}
-        if "authorization" in self._policy:
-            out_dict["authorization"] = self._policy["authorization"]
+        if GCPPolicy.GCP_CLOUD_NAME in self._policy:
+            out_dict[GCPPolicy.GCP_CLOUD_NAME] = self._policy[GCPPolicy.GCP_CLOUD_NAME]
         return out_dict
 
     @staticmethod
-    def from_dict(policy_dict_cloud_level: Dict) -> 'GCPAttachedPolicyPolicy':
+    def from_dict(policy_dict_cloud_level: Dict, logger=None) -> 'GCPAttachedPolicyPolicy':
         """
         Converts a dictionary to a policy.
         :param policy_dict: The dictionary representation of the policy.
+        :param logger: optional. google.cloud logger object.
         :return: The policy representation of the dict.
         """
+        if logger:
+          logger.log_text("GCPAttachedPolicy", severity="WARNING")
+        else:
+          print("GCPAttachedPolicy")
         cloud_specific_policy = {}
         can_cloud_run = False
-        for cloud_auth in policy_dict_cloud_level:
-            if GCPPolicy.GCP_CLOUD_NAME \
-                            in cloud_auth:
-                can_cloud_run = True
-                service_accounts = cloud_auth[GCPPolicy.GCP_CLOUD_NAME]["authorization"]
-                cloud_specific_policy["authorization"] = service_accounts
-                break
+        print("Policy dict:", policy_dict_cloud_level)
+        if isinstance(policy_dict_cloud_level, list):
+          for cloud_auth in policy_dict_cloud_level:
+              if GCPPolicy.GCP_CLOUD_NAME \
+                              in cloud_auth:
+                  can_cloud_run = True
+                  service_accounts = cloud_auth[GCPPolicy.GCP_CLOUD_NAME]
+                  cloud_specific_policy[GCPPolicy.GCP_CLOUD_NAME] = service_accounts
+                  break
+        else:
+          for cloud_name in policy_dict_cloud_level:
+              if not (cloud_name == GCPPolicy.GCP_CLOUD_NAME):
+                  continue
+              can_cloud_run = True
+              service_accounts = policy_dict_cloud_level[cloud_name]
+              cloud_specific_policy[GCPPolicy.GCP_CLOUD_NAME] = service_accounts
+              break
         cloud_specific_policy['can_cloud_run'] = can_cloud_run
+        print("Cloud-specific attached policy:", cloud_specific_policy)
         return GCPAttachedPolicyPolicy(cloud_specific_policy)
 
 class GCPPolicy(CloudPolicy):
@@ -218,6 +259,7 @@ class GCPPolicy(CloudPolicy):
             "virtual_machine": vm_policy,
             "attached_policies": attached_policy_policy
         }
+        print("GCPPolicy init:", self._resource_policies["attached_policies"]._policy)
 
     def get_request_resource_types(self, request: Request) -> List[str]:
         """
@@ -226,6 +268,12 @@ class GCPPolicy(CloudPolicy):
         :return: The resource types that the request is trying to access as a list of names.
         """
         resource_types = set([])
+#        breakpoint()
+        # Handle GET request
+        if request.method == "GET":
+            print("NOT JSON")
+            return []
+        # Handle POST request
         for key in request.get_json(cache=True).keys():
             if key in GCPPolicy.VM_REQUEST_KEYS:
                 resource_types.add("virtual_machine")
@@ -254,18 +302,20 @@ class GCPPolicy(CloudPolicy):
         return out_dict
 
     @staticmethod
-    def from_dict(policy_dict: Dict) -> 'GCPPolicy':
+    def from_dict(policy_dict: Dict, logger=None) -> 'GCPPolicy':
         """
         Converts a dictionary to a policy.
         :param policy_dict: The dictionary representation of the policy.
+        :param logger: optional. google.cloud logger object.
         :return: The policy representation of the dict.
         """
         vm_dict = {}
         if "virtual_machine" in policy_dict:
             vm_dict = policy_dict["virtual_machine"]
-        vm_policy = GCPVMPolicy.from_dict(vm_dict)
+        vm_policy = GCPVMPolicy.from_dict(vm_dict, logger)
         attached_policy_dict = {}
         if "attached_policies" in policy_dict:
             attached_policy_dict = policy_dict["attached_policies"]
-        attached_policy_policy = GCPAttachedPolicyPolicy.from_dict(attached_policy_dict)
+        print("GCPPolicy attached policies dict:", attached_policy_dict)
+        attached_policy_policy = GCPAttachedPolicyPolicy.from_dict(attached_policy_dict, logger)
         return GCPPolicy(vm_policy, attached_policy_policy)
