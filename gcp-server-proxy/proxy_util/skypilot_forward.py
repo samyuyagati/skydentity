@@ -1,10 +1,13 @@
 """
 Forwarding for SkyPilot requests.
 """
+import datetime
 import os
-from collections import namedtuple
-
 import requests
+
+from collections import namedtuple
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from flask import Flask, Response, request
 
 from .logging import get_logger, print_and_log
@@ -90,6 +93,42 @@ ROUTES: list[SkypilotRoute] = [
     ),
 ]
 
+def get_headers_with_signature(request):
+    new_headers = {k: v for k, v in request.headers}
+
+    with open("private_key.pem", "rb") as key_file:
+        private_key = serialization.load_pem_private_key(
+            key_file.read(),
+            password=None,
+        )
+
+    # assume set, predetermined/agreed upon tolerance on client proxy/receiving end
+    # use utc for consistency if server runs in cloud in different region
+    timestamp = datetime.datetime.now(datetime.timezone.utc)
+    host = new_headers.get("Host", "")
+    public_key_bytes = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+
+    message = f"{str(request.method)}-{host}-{timestamp}-{public_key_bytes}"
+    message_bytes = message.encode('utf-8')
+
+    signature = private_key.sign(
+        message_bytes,
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()),
+            salt_length=padding.PSS.MAX_LENGTH
+        ),
+        hashes.SHA256()
+    )
+
+    new_headers["X-Signature"] = signature
+    new_headers["X-Timestamp"] = timestamp
+    new_headers["X-PublicKey"] = private_key.public_key()
+
+    return new_headers
+
 
 def generic_forward_request(request, log_dict=None):
     """
@@ -104,13 +143,14 @@ def generic_forward_request(request, log_dict=None):
         print_and_log(logger, log_str.strip())
 
     new_url = get_new_url(request)
+    new_headers = get_headers_with_signature(request)
 
     # don't modify the body in any way
     new_json = None
     if len(request.get_data()) > 0:
         new_json = request.json
 
-    gcp_response = forward_to_client(request, new_url, new_json=new_json)
+    gcp_response = forward_to_client(request, new_url, new_headers=new_headers, new_json=new_json)
     return Response(gcp_response.content, gcp_response.status_code)
 
 
