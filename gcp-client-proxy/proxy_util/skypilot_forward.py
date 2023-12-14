@@ -1,20 +1,19 @@
 """
 Forwarding for SkyPilot requests.
 """
+import datetime
 import json
 import os
-import subprocess
-from collections import namedtuple
-from functools import cache
-from urllib.parse import urlparse
-
 import requests
-from flask import Flask, Response, request
-from flask_api import status
+import subprocess
 
+from collections import namedtuple
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
-import datetime
+from flask import Flask, Response, request
+from flask_api import status
+from functools import cache
+from urllib.parse import urlparse
 
 from .constants import COMPUTE_API_ENDPOINT, CREDS_PATH, SERVICE_ACCOUNT_EMAIL_FILE
 from .logging import get_logger, print_and_log
@@ -129,7 +128,6 @@ def verify_request_signature(request):
 
     return True
 
-
 def generic_forward_request(request, log_dict=None):
     """
     [SkyPilot Integration]
@@ -146,9 +144,8 @@ def generic_forward_request(request, log_dict=None):
         # Not sure if this is the correct status code. This case will only happen when the timestamp 
         # associated with the signature is too old at the time when the signature is verified.
         return Response("", status.HTTP_408_REQUEST_TIMEOUT, {})
-
     new_url = get_new_url(request)
-    new_headers = get_new_headers(request)
+    new_headers = get_headers_with_auth(request)
 
     # don't modify the body in any way
     new_json = None
@@ -274,11 +271,6 @@ def get_service_account_auth_token():
 
     return auth_token_process_out_bytes
 
-def get_new_headers(request):
-    headers_with_auth = get_headers_with_auth(request)
-    new_headers = strip_signature_headers(headers_with_auth)
-    return new_headers
-
 def strip_signature_headers(headers):
     signature_headers = set(["X-Signature", "X-Timestamp", "X-PublicKey"])
     new_headers = {k: v for k, v in headers if k not in signature_headers}
@@ -306,7 +298,9 @@ def get_headers_with_auth(request):
     auth_token = auth_token_process_out_bytes.strip().decode("utf-8")
     # print_and_log(logger, f"AUTH TOKEN: {auth_token}")
     new_headers["Authorization"] = f"Bearer {auth_token}"
-    return new_headers
+    
+    clean_new_headers = strip_signature_headers(new_headers)
+    return clean_new_headers
 
 
 def get_new_url(request):
