@@ -234,6 +234,50 @@ class GCPAttachedPolicyPolicy(ResourcePolicy):
         cloud_specific_policy['can_cloud_run'] = can_cloud_run
         print("Cloud-specific attached policy:", cloud_specific_policy)
         return GCPAttachedPolicyPolicy(cloud_specific_policy)
+    
+class GCPImageLookupPolicy(ResourcePolicy):
+    """
+    Defines methods for GCP Image Lookup policies.
+    """
+
+    PUBLIC_PROJECTS = set([
+        "debian-cloud",
+        "centos-cloud",
+        "ubuntu-os-cloud",
+        "windows-cloud",
+        "cos-cloud",
+        "rhel-cloud",
+        "rhel-sap-cloud",
+        "rocky-linux-cloud",
+        "opensuse-cloud",
+        "suse-sap-cloud",
+        "suse-cloud",
+        "windows-sql-cloud",
+        "fedora-cloud",
+        "fedora-coreos-cloud",
+        "ubuntu-os-pro-cloud"])
+
+    def __init__(self):
+        """
+        :param policy: The dict of the policy to enforce.
+        """
+        self._image_regex_extractor = re.compile(r'compute/v1/projects/(?P<project>)/global/images/family/(?P<family>)$')
+    
+    def check_request(self, request: Request) -> bool:
+        """
+        Enforces the policy on a request.
+        :param request: The request to enforce the policy on.
+        :return: True if the request is allowed, False otherwise.
+        """
+        if request.method == "GET":
+            image_info = self._image_regex_extractor.match(request.path)
+            if image_info:
+                project = image_info.group("project")
+                if project not in GCPImageLookupPolicy.PUBLIC_PROJECTS:
+                    return False
+        return True
+
+
 
 class GCPPolicy(CloudPolicy):
     """
@@ -257,7 +301,8 @@ class GCPPolicy(CloudPolicy):
         """
         self._resource_policies = {
             "virtual_machine": vm_policy,
-            "attached_policies": attached_policy_policy
+            "attached_policies": attached_policy_policy,
+            "image_lookup": GCPImageLookupPolicy()
         }
         print("GCPPolicy init:", self._resource_policies["attached_policies"]._policy)
 
@@ -272,7 +317,9 @@ class GCPPolicy(CloudPolicy):
         # Handle GET request
         if request.method == "GET":
             print("NOT JSON")
-            return []
+            if "images" in request.path:
+                resource_types.add("image_lookup")
+            return list(resource_types)
         # Handle POST request
         for key in request.get_json(cache=True).keys():
             if key in GCPPolicy.VM_REQUEST_KEYS:
