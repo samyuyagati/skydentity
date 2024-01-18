@@ -1,19 +1,20 @@
 """
 Forwarding for SkyPilot requests.
 """
+import base64
 import datetime
 import json
 import os
-import requests
 import subprocess
-
 from collections import namedtuple
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa, padding
-from flask import Flask, Response, request
-from http import HTTPStatus
 from functools import cache
+from http import HTTPStatus
 from urllib.parse import urlparse
+
+import requests
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from flask import Flask, Response, request
 
 from .constants import COMPUTE_API_ENDPOINT, CREDS_PATH, SERVICE_ACCOUNT_EMAIL_FILE
 from .logging import get_logger, print_and_log
@@ -109,34 +110,47 @@ ROUTES: list[SkypilotRoute] = [
     ),
 ]
 
+
 def verify_request_signature(request):
-    # signature = request.headers["X-Signature"]
-    # timestamp = request.headers["X-Timestamp"]
-    # public_key_bytes = request.headers["X-PublicKey"]
-    #
-    # now = datetime.datetime.now(datetime.timezone.utc)
-    # if now  - datetime.timedelta(seconds=60) > timestamp: # if timestamp when request was sent is > 60 seconds old, deny the request
-    #     return False
-    #
-    # host = new_headers.get("Host", "")
-    # reformed_message = f"{request.method}-{host}-{timestamp}-{public_key_bytes}"
-    # reformed_message_bytes = reformed_message.encode('utf-8')
-    #
-    # public_key = serialization.load_pem_public_key(
-    #     public_key_bytes
-    # )
-    # # raises InvalidSignature exception if the signature does not match
-    # public_key.verify(
-    #     signature,
-    #     reformed_message_bytes,
-    #     padding.PSS(
-    #         mgf=padding.MGF1(hashes.SHA256()),
-    #         salt_length=padding.PSS.MAX_LENGTH
-    #     ),
-    #     hashes.SHA256()
-    # )
+    encoded_signature = request.headers["X-Signature"]
+    timestamp = request.headers["X-Timestamp"]
+    encoded_public_key_bytes = request.headers["X-PublicKey"]
+
+    try:
+        timestamp = float(timestamp)
+        timestamp_datetime = datetime.datetime.fromtimestamp(
+            timestamp, tz=datetime.timezone.utc
+        )
+    except ValueError:
+        # invalid timestamp
+        return False
+
+    # decode signature and public key using base64
+    signature = base64.b64decode(encoded_signature, validate=True)
+    public_key_bytes = base64.b64decode(encoded_public_key_bytes, validate=True)
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if now - datetime.timedelta(seconds=60) > timestamp_datetime:
+        # if timestamp when request was sent is > 60 seconds old, deny the request
+        return False
+
+    host = request.headers.get("Host", "")
+    reformed_message = f"{str(request.method)}-{host}-{timestamp}-{public_key_bytes}"
+    reformed_message_bytes = reformed_message.encode("utf-8")
+
+    public_key = serialization.load_pem_public_key(public_key_bytes)
+    # raises InvalidSignature exception if the signature does not match
+    public_key.verify(
+        signature,
+        reformed_message_bytes,
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH
+        ),
+        hashes.SHA256(),
+    )
 
     return True
+
 
 def generic_forward_request(request, log_dict=None):
     """
@@ -151,7 +165,7 @@ def generic_forward_request(request, log_dict=None):
         print_and_log(logger, log_str.strip())
 
     if not verify_request_signature(request):
-        # Not sure if this is the correct status code. This case will only happen when the timestamp 
+        # Not sure if this is the correct status code. This case will only happen when the timestamp
         # associated with the signature is too old at the time when the signature is verified.
         return Response("", HTTPStatus.REQUEST_TIMEOUT, {})
     new_url = get_new_url(request)
@@ -245,7 +259,10 @@ def get_service_account_email():
         service_account_file_json = json.load(service_account_file)
 
     assert "email" in service_account_file_json.keys()
-    return (service_account_file_json["email"], service_account_file_json["cred_filename"])
+    return (
+        service_account_file_json["email"],
+        service_account_file_json["cred_filename"],
+    )
 
 
 def get_gcp_creds(cred_file):
@@ -289,10 +306,12 @@ def get_service_account_auth_token():
 
     return auth_token_process_out_bytes
 
+
 def strip_signature_headers(headers):
     signature_headers = set(["X-Signature", "X-Timestamp", "X-PublicKey"])
     new_headers = {k: v for k, v in headers.items() if k not in signature_headers}
     return new_headers
+
 
 def get_headers_with_auth(request):
     """
@@ -317,7 +336,7 @@ def get_headers_with_auth(request):
     auth_token = auth_token_process_out_bytes.strip().decode("utf-8")
     # print_and_log(logger, f"AUTH TOKEN: {auth_token}")
     new_headers["Authorization"] = f"Bearer {auth_token}"
-    
+
     clean_new_headers = strip_signature_headers(new_headers)
     return clean_new_headers
 
