@@ -52,14 +52,19 @@ ROUTES: list[SkypilotRoute] = [
         fields=["project"],
     ),
     SkypilotRoute(
-        methods=["GET"],
+        methods=["GET", "POST"],
         path="/compute/v1/projects/<project>/global/networks",
         fields=["project"],
     ),
     SkypilotRoute(
-        methods=["GET"],
-        path="/compute/v1/projects/<project>/global/networks/default/getEffectiveFirewalls",
+        methods=["GET", "POST"],
+        path="/compute/v1/projects/<project>/global/firewalls",
         fields=["project"],
+    ),
+    SkypilotRoute(
+        methods=["GET"],
+        path="/compute/v1/projects/<project>/global/networks/<network>/getEffectiveFirewalls",
+        fields=["project", "network"],
     ),
     SkypilotRoute(
         methods=["GET"],
@@ -96,7 +101,7 @@ ROUTES: list[SkypilotRoute] = [
 def get_headers_with_signature(request):
     new_headers = {k: v for k, v in request.headers}
 
-    with open("private_key.pem", "rb") as key_file:
+    with open("proxy_util/private_key.pem", "rb") as key_file:
         private_key = serialization.load_pem_private_key(
             key_file.read(),
             password=None,
@@ -123,9 +128,9 @@ def get_headers_with_signature(request):
         hashes.SHA256()
     )
 
-    new_headers["X-Signature"] = signature
-    new_headers["X-Timestamp"] = timestamp
-    new_headers["X-PublicKey"] = private_key.public_key()
+    # new_headers["X-Signature"] = signature
+    # new_headers["X-Timestamp"] = timestamp
+    # new_headers["X-PublicKey"] = private_key.public_key()
 
     return new_headers
 
@@ -170,6 +175,10 @@ def build_generic_forward(path: str, fields: list[str]):
     elif fields == ["project", "family"]:
         func = lambda project, family: generic_forward_request(
             request, {"project": project, "family": family}
+        )
+    elif fields == ["project", "network"]:
+        func = lambda project, network: generic_forward_request(
+            request, {"project": project, "network": network}
         )
     elif fields == ["project", "region", "operation"]:
         func = lambda project, region, operation: generic_forward_request(

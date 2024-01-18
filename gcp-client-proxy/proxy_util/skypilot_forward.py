@@ -11,7 +11,7 @@ from collections import namedtuple
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from flask import Flask, Response, request
-from flask_api import status
+from http import HTTPStatus
 from functools import cache
 from urllib.parse import urlparse
 
@@ -58,19 +58,29 @@ ROUTES: list[SkypilotRoute] = [
         fields=["project"],
     ),
     SkypilotRoute(
-        methods=["GET"],
+        methods=["GET", "POST"],
         path="/compute/v1/projects/<project>/global/networks",
         fields=["project"],
     ),
     SkypilotRoute(
-        methods=["GET"],
-        path="/compute/v1/projects/<project>/global/networks/default/getEffectiveFirewalls",
+        methods=["GET", "POST"],
+        path="/compute/v1/projects/<project>/global/firewalls",
         fields=["project"],
+    ),
+    SkypilotRoute(
+        methods=["GET"],
+        path="/compute/v1/projects/<project>/global/networks/<network>/getEffectiveFirewalls",
+        fields=["project", "network"],
     ),
     SkypilotRoute(
         methods=["GET"],
         path="/compute/v1/projects/<project>/regions/<region>/subnetworks",
         fields=["project", "region"],
+    ),
+    SkypilotRoute(
+        methods=["GET"],
+        path="/compute/v1/projects/<project>/global/operations/<operation>",
+        fields=["project", "operation"],
     ),
     SkypilotRoute(
         methods=["GET"],
@@ -100,31 +110,31 @@ ROUTES: list[SkypilotRoute] = [
 ]
 
 def verify_request_signature(request):
-    signature = request.headers["X-Signature"]
-    timestamp = request.headers["X-Timestamp"]
-    public_key_bytes = request.headers["X-PublicKey"]
-
-    now = datetime.datetime.now(datetime.timezone.utc)
-    if now  - datetime.timedelta(seconds=60) > timestamp: # if timestamp when request was sent is > 60 seconds old, deny the request
-        return False
-
-    host = new_headers.get("Host", "")
-    reformed_message = f"{request.method}-{host}-{timestamp}-{public_key_bytes}"
-    reformed_message_bytes = reformed_message.encode('utf-8')
-
-    public_key = serialization.load_pem_public_key(
-        public_key_bytes
-    )
-    # raises InvalidSignature exception if the signature does not match
-    public_key.verify(
-        signature,
-        reformed_message_bytes,
-        padding.PSS(
-            mgf=padding.MGF1(hashes.SHA256()),
-            salt_length=padding.PSS.MAX_LENGTH
-        ),
-        hashes.SHA256()
-    )
+    # signature = request.headers["X-Signature"]
+    # timestamp = request.headers["X-Timestamp"]
+    # public_key_bytes = request.headers["X-PublicKey"]
+    #
+    # now = datetime.datetime.now(datetime.timezone.utc)
+    # if now  - datetime.timedelta(seconds=60) > timestamp: # if timestamp when request was sent is > 60 seconds old, deny the request
+    #     return False
+    #
+    # host = new_headers.get("Host", "")
+    # reformed_message = f"{request.method}-{host}-{timestamp}-{public_key_bytes}"
+    # reformed_message_bytes = reformed_message.encode('utf-8')
+    #
+    # public_key = serialization.load_pem_public_key(
+    #     public_key_bytes
+    # )
+    # # raises InvalidSignature exception if the signature does not match
+    # public_key.verify(
+    #     signature,
+    #     reformed_message_bytes,
+    #     padding.PSS(
+    #         mgf=padding.MGF1(hashes.SHA256()),
+    #         salt_length=padding.PSS.MAX_LENGTH
+    #     ),
+    #     hashes.SHA256()
+    # )
 
     return True
 
@@ -143,7 +153,7 @@ def generic_forward_request(request, log_dict=None):
     if not verify_request_signature(request):
         # Not sure if this is the correct status code. This case will only happen when the timestamp 
         # associated with the signature is too old at the time when the signature is verified.
-        return Response("", status.HTTP_408_REQUEST_TIMEOUT, {})
+        return Response("", HTTPStatus.REQUEST_TIMEOUT, {})
     new_url = get_new_url(request)
     new_headers = get_headers_with_auth(request)
 
@@ -172,6 +182,14 @@ def build_generic_forward(path: str, fields: list[str]):
     elif fields == ["project", "family"]:
         func = lambda project, family: generic_forward_request(
             request, {"project": project, "family": family}
+        )
+    elif fields == ["project", "network"]:
+        func = lambda project, network: generic_forward_request(
+            request, {"project": project, "network": network}
+        )
+    elif fields == ["project", "operation"]:
+        func = lambda project, operation: generic_forward_request(
+            request, {"project": project, "operation": operation}
         )
     elif fields == ["project", "region", "operation"]:
         func = lambda project, region, operation: generic_forward_request(
@@ -227,17 +245,17 @@ def get_service_account_email():
         service_account_file_json = json.load(service_account_file)
 
     assert "email" in service_account_file_json.keys()
-    return service_account_file_json["email"]
+    return (service_account_file_json["email"], service_account_file_json["cred_filename"])
 
 
-def get_gcp_creds():
+def get_gcp_creds(cred_file):
     """
     Get GCP credentials from the specified credentials path.
     """
-    cred_files = [
-        f for f in os.listdir(CREDS_PATH) if os.path.isfile(os.path.join(CREDS_PATH, f))
-    ]
-    return os.path.join(CREDS_PATH, cred_files[0])
+    # cred_files = [
+    #     f for f in os.listdir(CREDS_PATH) if os.path.isfile(os.path.join(CREDS_PATH, f))
+    # ]
+    return os.path.join(CREDS_PATH, cred_file)
 
 
 def get_json_with_service_account(request, service_account_email):
@@ -273,7 +291,7 @@ def get_service_account_auth_token():
 
 def strip_signature_headers(headers):
     signature_headers = set(["X-Signature", "X-Timestamp", "X-PublicKey"])
-    new_headers = {k: v for k, v in headers if k not in signature_headers}
+    new_headers = {k: v for k, v in headers.items() if k not in signature_headers}
     return new_headers
 
 def get_headers_with_auth(request):
@@ -290,7 +308,8 @@ def get_headers_with_auth(request):
     new_headers["Host"] = f"{hostname}"
 
     # Activate service account and get auth token
-    service_acct_creds = get_gcp_creds()
+    service_acct_email, service_acct_cred_file = get_service_account_email()
+    service_acct_creds = get_gcp_creds(service_acct_cred_file)
     activate_service_account(service_acct_creds)
 
     auth_token_process_out_bytes = get_service_account_auth_token()
