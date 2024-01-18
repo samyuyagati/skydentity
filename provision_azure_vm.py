@@ -17,9 +17,7 @@ minute or two."
 credential = AzureCliCredential()
 
 # Retrieve subscription ID from environment variable.
-# TODO: Look into finding correct env variable for subscription_id
-# Answer: one possibility is using `az account subscription list`
-subscription_id = "6288e083-727a-4b98-86d7-7d22c1859fe1"
+subscription_id = os.environ["AZURE_SUBSCRIPTION_ID"]
 
 
 # Step 1: Provision a resource group
@@ -142,8 +140,6 @@ print(f"Provisioned network interface client {nic_result.name}")
 compute_client = ComputeManagementClient(credential, subscription_id)
 
 # TODO: providing the credentials is the critical part of the library design; definitely don't want to hardcode
-# A: https://stackoverflow.com/questions/68101457/adding-ssh-key-while-creating-azure-vm-using-python-sdk
-# Q: How are we handling SSH keys
 VM_NAME = "HeadVM"
 USERNAME = "skydentity"
 PASSWORD = "$kyd3nt1ty"
@@ -171,7 +167,6 @@ poller = compute_client.virtual_machines.begin_create_or_update(
             }
         },
         "hardware_profile": {"vm_size": "Standard_B1s"},
-        #TODO: Is this necessary?
         "os_profile": {
             "computer_name": VM_NAME,
             "admin_username": USERNAME,

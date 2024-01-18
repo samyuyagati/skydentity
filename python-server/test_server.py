@@ -13,7 +13,7 @@ skydentity_creds = '../tokens/.cloud_creds/skydentity-token.json'
 
 api_endpoint="https://34.168.128.47:5000"
 #api_endpoint=api_endpoint
-
+>>>>>>> 7107b3050ff49531e6569ae1fab10e01d1ad42ee
 def get_skydentity_credentials() -> service_account.Credentials:
     return service_account.Credentials.from_service_account_file(
         skydentity_creds)
