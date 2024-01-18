@@ -6,7 +6,8 @@ import sys
 from skydentity.policies.checker.policy import (
     CloudPolicy, 
     ResourcePolicy, 
-    VMPolicy, 
+    VMPolicy,
+    UnrecognizedResourcePolicy,
     PolicyContentException
 )
 from skydentity.policies.checker.policy_actions import PolicyAction
@@ -302,7 +303,8 @@ class GCPPolicy(CloudPolicy):
         self._resource_policies = {
             "virtual_machine": vm_policy,
             "attached_policies": attached_policy_policy,
-            "image_lookup": GCPImageLookupPolicy()
+            "image_lookup": GCPImageLookupPolicy(),
+            "unrecognized": UnrecognizedResourcePolicy()
         }
         print("GCPPolicy init:", self._resource_policies["attached_policies"]._policy)
 
@@ -313,19 +315,23 @@ class GCPPolicy(CloudPolicy):
         :return: The resource types that the request is trying to access as a list of names.
         """
         resource_types = set([])
-#        breakpoint()
+
         # Handle GET request
         if request.method == "GET":
             print("NOT JSON")
             if "images" in request.path:
                 resource_types.add("image_lookup")
+            else:
+                resource_types.add("unrecognized")
             return list(resource_types)
         # Handle POST request
         for key in request.get_json(cache=True).keys():
             if key in GCPPolicy.VM_REQUEST_KEYS:
                 resource_types.add("virtual_machine")
-            if key in GCPPolicy.ATTACHED_POLICY_KEYS:
+            elif key in GCPPolicy.ATTACHED_POLICY_KEYS:
                 resource_types.add("attached_policies")
+            else:
+                resource_types.add("unrecognized")
         return list(resource_types)
     
     def check_resource_type(self, resource_type: str, request: Request) -> bool:
@@ -345,6 +351,8 @@ class GCPPolicy(CloudPolicy):
         """
         out_dict = {}
         for resource_type, policy in self._resource_policies.items():
+            if resource_type == "unrecognized" or resource_type == "image_lookup":
+                continue
             out_dict[resource_type] = policy.to_dict()
         return out_dict
 

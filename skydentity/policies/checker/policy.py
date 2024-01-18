@@ -103,6 +103,36 @@ class VMPolicy(ResourcePolicy, ABC):
         """
         raise NotImplementedError
 
+class UnrecognizedResourcePolicy(ResourcePolicy):
+    def check_request(self, request: Request) -> bool:
+        """
+        Enforces the policy on a request.
+
+        If code is executed for an unrecognized resource, then it
+        should always be denied.
+
+        :param request: The request to enforce the policy on.
+        :return: False.
+        """
+        print(f"Request is unrecognized: {request.url}")
+        return False
+
+    def to_dict(self) -> Dict:
+        """
+        Converts the policy to a dictionary so that it can be stored.
+        :return: The dictionary representation of the policy.
+        """
+        raise NotImplementedError
+    
+    @staticmethod
+    def from_dict(policy_dict: Dict):
+        """
+        Converts a dictionary to a policy.
+        :param policy_dict: The dictionary representation of the policy.
+        :return: The policy representation of the dict.
+        """
+        raise NotImplementedError
+
 class CloudPolicy(ResourcePolicy, ABC):
     """
     A policy is a set of rules that tell what actions can be done on what resources.
