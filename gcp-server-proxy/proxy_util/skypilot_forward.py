@@ -1,13 +1,14 @@
 """
 Forwarding for SkyPilot requests.
 """
+import base64
 import datetime
 import os
-import requests
-
 from collections import namedtuple
+
+import requests
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from flask import Flask, Response, request
 
 from .logging import get_logger, print_and_log
@@ -52,14 +53,19 @@ ROUTES: list[SkypilotRoute] = [
         fields=["project"],
     ),
     SkypilotRoute(
-        methods=["GET"],
+        methods=["GET", "POST"],
         path="/compute/v1/projects/<project>/global/networks",
         fields=["project"],
     ),
     SkypilotRoute(
-        methods=["GET"],
-        path="/compute/v1/projects/<project>/global/networks/default/getEffectiveFirewalls",
+        methods=["GET", "POST"],
+        path="/compute/v1/projects/<project>/global/firewalls",
         fields=["project"],
+    ),
+    SkypilotRoute(
+        methods=["GET"],
+        path="/compute/v1/projects/<project>/global/networks/<network>/getEffectiveFirewalls",
+        fields=["project", "network"],
     ),
     SkypilotRoute(
         methods=["GET"],
@@ -93,10 +99,11 @@ ROUTES: list[SkypilotRoute] = [
     ),
 ]
 
+
 def get_headers_with_signature(request):
     new_headers = {k: v for k, v in request.headers}
 
-    with open("private_key.pem", "rb") as key_file:
+    with open("proxy_util/private_key.pem", "rb") as key_file:
         private_key = serialization.load_pem_private_key(
             key_file.read(),
             password=None,
@@ -104,28 +111,31 @@ def get_headers_with_signature(request):
 
     # assume set, predetermined/agreed upon tolerance on client proxy/receiving end
     # use utc for consistency if server runs in cloud in different region
-    timestamp = datetime.datetime.now(datetime.timezone.utc)
+    timestamp = datetime.datetime.now(datetime.timezone.utc).timestamp()
     host = new_headers.get("Host", "")
     public_key_bytes = private_key.public_key().public_bytes(
         encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
     )
 
     message = f"{str(request.method)}-{host}-{timestamp}-{public_key_bytes}"
-    message_bytes = message.encode('utf-8')
+    message_bytes = message.encode("utf-8")
 
     signature = private_key.sign(
         message_bytes,
         padding.PSS(
-            mgf=padding.MGF1(hashes.SHA256()),
-            salt_length=padding.PSS.MAX_LENGTH
+            mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH
         ),
-        hashes.SHA256()
+        hashes.SHA256(),
     )
 
-    new_headers["X-Signature"] = signature
-    new_headers["X-Timestamp"] = timestamp
-    new_headers["X-PublicKey"] = private_key.public_key()
+    # base64 encode the signature and public key
+    encoded_signature = base64.b64encode(signature)
+    encoded_public_key_bytes = base64.b64encode(public_key_bytes)
+
+    new_headers["X-Signature"] = encoded_signature
+    new_headers["X-Timestamp"] = str(timestamp)
+    new_headers["X-PublicKey"] = encoded_public_key_bytes
 
     return new_headers
 
@@ -150,7 +160,9 @@ def generic_forward_request(request, log_dict=None):
     if len(request.get_data()) > 0:
         new_json = request.json
 
-    gcp_response = forward_to_client(request, new_url, new_headers=new_headers, new_json=new_json)
+    gcp_response = forward_to_client(
+        request, new_url, new_headers=new_headers, new_json=new_json
+    )
     return Response(gcp_response.content, gcp_response.status_code)
 
 
@@ -170,6 +182,10 @@ def build_generic_forward(path: str, fields: list[str]):
     elif fields == ["project", "family"]:
         func = lambda project, family: generic_forward_request(
             request, {"project": project, "family": family}
+        )
+    elif fields == ["project", "network"]:
+        func = lambda project, network: generic_forward_request(
+            request, {"project": project, "network": network}
         )
     elif fields == ["project", "region", "operation"]:
         func = lambda project, region, operation: generic_forward_request(
