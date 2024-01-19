@@ -18,6 +18,7 @@ from flask import Flask, Response, request
 
 from .constants import COMPUTE_API_ENDPOINT, CREDS_PATH, SERVICE_ACCOUNT_EMAIL_FILE
 from .logging import get_logger, print_and_log
+from skydentity.policies.managers.gcp_policy_manager import GCPPolicyManager
 
 SkypilotRoute = namedtuple(
     "SkypilotRoute",
@@ -168,6 +169,12 @@ def generic_forward_request(request, log_dict=None):
         # Not sure if this is the correct status code. This case will only happen when the timestamp
         # associated with the signature is too old at the time when the signature is verified.
         return Response("", HTTPStatus.REQUEST_TIMEOUT, {})
+    # Check the request
+    if not check_request_from_policy(request.headers["X-PublicKey"], request):
+        print_and_log(logger, "Request is unauthorized")
+        return Response("Unauthorized", 401)
+
+    # Get new endpoint and new headers
     new_url = get_new_url(request)
     new_headers = get_headers_with_auth(request)
 
@@ -269,9 +276,6 @@ def get_gcp_creds(cred_file):
     """
     Get GCP credentials from the specified credentials path.
     """
-    # cred_files = [
-    #     f for f in os.listdir(CREDS_PATH) if os.path.isfile(os.path.join(CREDS_PATH, f))
-    # ]
     return os.path.join(CREDS_PATH, cred_file)
 
 
@@ -349,6 +353,15 @@ def get_new_url(request):
     logger = get_logger()
     print_and_log(logger, f"\tNew URL: {new_url}")
     return new_url
+
+
+def check_request_from_policy(public_key, request) -> bool:
+    logger = get_logger()
+    print_and_log(logger, 
+        f"Check request public key: {public_key} (request: {request})")
+    policy = gcp_policy_manager.get_policy(public_key, None)
+    print_and_log(logger, f"Got policy {policy}")
+    return policy.check_request(request)
 
 
 def send_gcp_request(request, new_headers, new_url, new_json=None):
