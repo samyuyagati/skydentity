@@ -3,6 +3,10 @@ Run the following:
 ```
 flask run --host="0.0.0.0" --port=5001
 ```
+or
+```
+./run_proxy_http.sh
+```
 This will run the proxy at http://localhost:5001.
 
 # Run the proxy locally as an HTTPS server:
@@ -30,13 +34,13 @@ cat CA_dir/cacert.pem CA_dir/rootCA.crt > CA_dir/ca_skydentity.pem
 MacOS:
 ```
 cd .. # To serverless-gcp-skydentity
-REQUESTS_CA_BUNDLE=certs/CA_dir/ca_skydentity.pem ./run_proxy.sh
+REQUESTS_CA_BUNDLE=certs/CA_dir/ca_skydentity.pem ./run_proxy_https.sh
 ``` 
 
-Linux (you may need to change the certificate path if it is installed elsewhere):
+Linux (you may need to change the certificate path if it is installed elsewhere; you may also need to modify the certificate path in run_proxy_https.sh to `domain_dir/domain.crt`):
 ```
 cd .. # To serverless-gcp-skydentity
-REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt ./run_proxy.sh
+REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt ./run_proxy_https.sh
 ```
 
 # Testing
