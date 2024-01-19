@@ -330,8 +330,8 @@ class GCPPolicy(CloudPolicy):
                 resource_types.add("virtual_machine")
             elif key in GCPPolicy.ATTACHED_POLICY_KEYS:
                 resource_types.add("attached_policies")
-            else:
-                resource_types.add("unrecognized")
+        if len(resource_types) == 0:
+            resource_types.add("unrecognized")
         return list(resource_types)
     
     def check_resource_type(self, resource_type: str, request: Request) -> bool:
