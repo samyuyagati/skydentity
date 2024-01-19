@@ -16,9 +16,7 @@ import pdb
 
 app = Flask(__name__)
 
-#CERT_DIR = "/certs/"
-#CREDS_DIR = "/cloud_creds/gcp"
-CREDS_DIR = "/Users/samyu/.cloud_creds/gcp"
+CREDS_DIR = "/cloud_creds/gcp"
 COMPUTE_API_ENDPOINT = "https://compute.googleapis.com/"
 
 # Utilities
