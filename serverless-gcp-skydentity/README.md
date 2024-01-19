@@ -26,7 +26,8 @@ cat domain_dir/domain.crt CA_dir/rootCA.crt > ca_certificates.crt
 
 Then, copy and combine your Python site package certs with the certs you just created for your proxy.
 ```
-cp /usr/local/lib/python3.11/site-packages/certifi/cacert.pem CA_dir
+python get_cert_path.py # Prints <CERT_PATH>
+cp <CERT_PATH> CA_dir/cacert.pem
 cat CA_dir/cacert.pem CA_dir/rootCA.crt > CA_dir/ca_skydentity.pem
 ```
 
