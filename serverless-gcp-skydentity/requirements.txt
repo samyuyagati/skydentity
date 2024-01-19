@@ -1,5 +1,4 @@
 # Proxy
-virtualenv
 Flask
 requests
 setuptools

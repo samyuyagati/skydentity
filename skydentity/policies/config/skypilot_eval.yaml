@@ -1,0 +1,23 @@
+virtual_machine:
+  cloud_provider: 
+    - gcp
+  
+  actions:
+    - ALL
+
+  regions:
+    - gcp:
+        - us-west1
+
+  # Can specify max hardware spec or a list of allowed machines
+  instance_type:
+    - gcp:
+      - n1-standard-1
+
+  allowed_images:
+    - gcp:
+      - debian-10-buster-v20200902
+
+attached_policies:
+  - gcp:
+      - terraform@sky-identity.iam.gserviceaccount.com

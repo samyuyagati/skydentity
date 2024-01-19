@@ -1,0 +1,24 @@
+virtual_machine:
+  cloud_provider: 
+    - azure
+  
+  actions:
+    - READ
+
+  regions:
+    - azure:
+        - westus
+        - eastus
+
+  instance_type:
+    - azure:
+      - Standard_D1_v2
+
+  allowed_images:
+    - azure:
+      - UbuntuServer:22.04-LTS
+
+attached_policies:
+  - azure:
+      authorization:
+        - access_data

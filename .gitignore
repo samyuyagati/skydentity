@@ -6,4 +6,9 @@ serverless-gcp-skydentity/tokens/*
 serverless-gcp-skydentity/skyid/*
 serverless-gcp-skydentity/gcloud/*
 serverless-gcp-skydentity/__pycache__/*
-skyid/*
+serverless-gcp-skydentity/skyid/lib/**__pycache__**
+.python_packages
+gcp-env
+**.vscode
+**.egg-info
+__pycache__
