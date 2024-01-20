@@ -16,9 +16,18 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from flask import Flask, Response, request
 
-from .constants import COMPUTE_API_ENDPOINT, CREDS_PATH, SERVICE_ACCOUNT_EMAIL_FILE
-from .logging import get_logger, print_and_log
 from skydentity.policies.managers.gcp_policy_manager import GCPPolicyManager
+
+from .logging import get_logger, print_and_log
+
+# global constants
+COMPUTE_API_ENDPOINT = os.environ.get(
+    "COMPUTE_API_ENDPOINT", "https://compute.googleapis.com/"
+)
+SERVICE_ACCT_INFO_FILE = os.environ.get("SERVICE_ACCOUNT_INFO_FILE", None)
+
+# validate global constants from environment variables
+assert SERVICE_ACCT_INFO_FILE is not None and os.path.isfile(SERVICE_ACCT_INFO_FILE)
 
 SkypilotRoute = namedtuple(
     "SkypilotRoute",
@@ -169,6 +178,7 @@ def generic_forward_request(request, log_dict=None):
         # Not sure if this is the correct status code. This case will only happen when the timestamp
         # associated with the signature is too old at the time when the signature is verified.
         return Response("", HTTPStatus.REQUEST_TIMEOUT, {})
+
     # Check the request
     if not check_request_from_policy(request.headers["X-PublicKey"], request):
         print_and_log(logger, "Request is unauthorized")
@@ -256,27 +266,25 @@ def setup_routes(app: Flask):
 
 
 @cache  # shouldn't change throughout the proxy lifespan
-def get_service_account_email():
+def get_service_account_info():
     """
     Retrieve the service account email from the
     """
-    with open(
-        SERVICE_ACCOUNT_EMAIL_FILE, "r", encoding="utf-8"
-    ) as service_account_file:
+    with open(SERVICE_ACCT_INFO_FILE, "r", encoding="utf-8") as service_account_file:
         service_account_file_json = json.load(service_account_file)
 
     assert "email" in service_account_file_json.keys()
+    assert "credentials" in service_account_file_json.keys()
+
+    service_account_creds = service_account_file_json["credentials"]
+    assert os.path.isfile(
+        service_account_creds
+    ), f"Service account credentials file (from JSON: {service_account_creds}) does not exist."
+
     return (
         service_account_file_json["email"],
-        service_account_file_json["cred_filename"],
+        service_account_creds,
     )
-
-
-def get_gcp_creds(cred_file):
-    """
-    Get GCP credentials from the specified credentials path.
-    """
-    return os.path.join(CREDS_PATH, cred_file)
 
 
 def get_json_with_service_account(request, service_account_email):
@@ -331,9 +339,8 @@ def get_headers_with_auth(request):
     new_headers["Host"] = f"{hostname}"
 
     # Activate service account and get auth token
-    service_acct_email, service_acct_cred_file = get_service_account_email()
-    service_acct_creds = get_gcp_creds(service_acct_cred_file)
-    activate_service_account(service_acct_creds)
+    _, service_acct_cred_file = get_service_account_info()
+    activate_service_account(service_acct_cred_file)
 
     auth_token_process_out_bytes = get_service_account_auth_token()
 
@@ -355,11 +362,20 @@ def get_new_url(request):
     return new_url
 
 
+@cache  # should only be initialized once
+def get_policy_manager():
+    _, service_acct_cred_file = get_service_account_info()
+    return GCPPolicyManager(service_acct_cred_file)
+
+
 def check_request_from_policy(public_key, request) -> bool:
     logger = get_logger()
-    print_and_log(logger, 
-        f"Check request public key: {public_key} (request: {request})")
-    policy = gcp_policy_manager.get_policy(public_key, None)
+    print_and_log(
+        logger, f"Check request public key: {public_key} (request: {request})"
+    )
+
+    policy_manager = get_policy_manager()
+    policy = policy_manager.get_policy(public_key, None)
     print_and_log(logger, f"Got policy {policy}")
     return policy.check_request(request)
 
