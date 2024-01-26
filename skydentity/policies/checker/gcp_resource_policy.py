@@ -3,7 +3,7 @@ from flask import Request
 import re
 import sys
 
-from skydentity.policies.checker.policy import (
+from skydentity.policies.checker.resource_policy import (
     CloudPolicy, 
     ResourcePolicy, 
     VMPolicy,

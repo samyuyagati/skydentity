@@ -1,0 +1,17 @@
+authorization:
+  cloud_provider: 
+    - gcp
+  
+  actions: 
+    - CREATE
+
+  roles:
+    - restricted_role:
+      - role: roles/storage.objectUser
+      - scope: bucket
+      - object: http://storage.googleapis.com/test_bucket_signedurl
+    - restricted_role:
+      - role: roles/logging.bucketWriter
+      - scope: project
+      - object: sky-identity
+    

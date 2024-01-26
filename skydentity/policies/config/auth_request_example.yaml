@@ -1,0 +1,12 @@
+authorization:
+  cloud_provider: 
+    - gcp
+  
+  actions: 
+    - CREATE
+
+  roles:
+    - restricted_role:
+      - role: roles/storage.objectUser
+      - scope: bucket
+      - object: http://storage.googleapis.com/test_bucket_signedurl
