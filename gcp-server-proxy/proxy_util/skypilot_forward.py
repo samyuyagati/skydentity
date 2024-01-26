@@ -118,6 +118,8 @@ def get_headers_with_signature(request):
         format=serialization.PublicFormat.SubjectPublicKeyInfo,
     )
 
+    # TODO we shouldn't be binding the host, the host will be the localhost address
+    # of the server proxy
     message = f"{str(request.method)}-{host}-{timestamp}-{public_key_bytes}"
     message_bytes = message.encode("utf-8")
 
@@ -136,6 +138,10 @@ def get_headers_with_signature(request):
     new_headers["X-Signature"] = encoded_signature
     new_headers["X-Timestamp"] = str(timestamp)
     new_headers["X-PublicKey"] = encoded_public_key_bytes
+
+    # IMPORTANT: do not let the server proxy Host header be forwarded to the serverless client proxy
+    # Deleting the Host header will let urllib choose the correct host automatically
+    del new_headers["Host"]
 
     return new_headers
 

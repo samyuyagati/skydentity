@@ -10,10 +10,9 @@ import os
 import re
 
 skydentity_creds = '../tokens/.cloud_creds/skydentity-token.json'
-
-api_endpoint="https://34.168.128.47:5000"
-#api_endpoint=api_endpoint
->>>>>>> 7107b3050ff49531e6569ae1fab10e01d1ad42ee
+api_endpoint = "http://127.0.0.1:5000"
+#api_endpoint = "https://skyidproxy-service-ozttcth4mq-uw.a.run.app"
+#api_endpoint="https://34.168.128.47:5000"
 def get_skydentity_credentials() -> service_account.Credentials:
     return service_account.Credentials.from_service_account_file(
         skydentity_creds)
@@ -224,6 +223,7 @@ def main():
     os.environ["SSL_CERT_DIR"] = "/Users/samyu/skydentity/certs"
     zone = "us-west1-b"
     newest_debian = get_image_from_family(project="debian-cloud", family="debian-10")
+    print(newest_debian)
     disk_type = f"zones/{zone}/diskTypes/pd-standard"
     disks = [
         disk_from_image(disk_type, 10, True, newest_debian.self_link, True),
