@@ -97,6 +97,11 @@ ROUTES: list[SkypilotRoute] = [
         path="/compute/v1/projects/<project>/zones/<region>/instances/<instance>/start",
         fields=["project", "region", "instance"],
     ),
+    SkypilotRoute(
+        methods=["POST"],
+        path="/skydentity/cloud/<cloud>/create-authorization",
+        fields=["cloud"]
+    ),
 ]
 
 
@@ -146,10 +151,12 @@ def generic_forward_request(request, log_dict=None):
     Forward a generic request to google APIs.
     """
     logger = get_logger()
+    print(log_dict, flush=True)
     if log_dict is not None:
         log_str = f"PATH: {request.full_path}\n"
         for key, val in log_dict.items():
             log_str += f"\t{key}: {val}\n"
+        print(log_str, flush=True)
         print_and_log(logger, log_str.strip())
 
     new_url = get_new_url(request)
@@ -173,7 +180,9 @@ def build_generic_forward(path: str, fields: list[str]):
     The path is only used to create a unique and readable name for the anonymous function.
     """
     func = None
-    if fields == ["project"]:
+    if fields == ["cloud"]:
+        func = lambda cloud: generic_forward_request(request, {"cloud": cloud})
+    elif fields == ["project"]:
         func = lambda project: generic_forward_request(request, {"project": project})
     elif fields == ["project", "region"]:
         func = lambda project, region: generic_forward_request(
@@ -246,9 +255,10 @@ def get_new_url(request):
     Redirect the URL (originally to the proxy) to the correct client proxy.
     """
     redirect_endpoint = get_client_proxy_endpoint(request)
-
-    new_url = request.url.replace(request.host_url, redirect_endpoint)
     logger = get_logger()
+    print_and_log(logger, f"\tOld URL: {request.host_url} (Redirect endpoint: {redirect_endpoint})")
+    new_url = request.url.replace(request.host_url, redirect_endpoint)
+    
     print_and_log(logger, f"\tNew URL: {new_url}")
     return new_url
 

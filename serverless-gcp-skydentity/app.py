@@ -11,12 +11,14 @@ import requests
 import subprocess
 from urllib.parse import urlparse
 from skydentity.policies.managers.gcp_policy_manager import GCPPolicyManager
+from skydentity.policies.checker.gcp_authorization_policy import GCPAuthorizationPolicy
 
 import pdb
 
 app = Flask(__name__)
 
-CREDS_DIR = "/cloud_creds/gcp"
+CREDS_DIR = "/Users/samyu/.cloud_creds/gcp/proxy"
+#CREDS_DIR = "/cloud_creds/gcp"
 COMPUTE_API_ENDPOINT = "https://compute.googleapis.com/"
 
 # Utilities
@@ -118,6 +120,12 @@ def handle_hello():
     logger = get_logger()
     print_and_log(logger, "Hello!")
     return "Hello"
+
+@app.route("/skydentity/cloud/<cloud>/create-authorization", methods=["POST"])
+def create_authorization(cloud):
+    logger = get_logger()
+    print_and_log(logger, f"Creating authorization (json: {request.json})")
+    authorization = GCPAuthorizationPolicy(request.json) # TODO reading raw input probably bad?
 
 @app.route("/compute/v1/projects/<project>/global/images/family/<family>", methods=["GET"])
 def get_image(project, family):

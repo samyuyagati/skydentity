@@ -7,7 +7,7 @@ from typing import Dict, List
 from flask import Request
 
 from skydentity.policies.checker.authorization_policy import AuthorizationPolicy
-from skydentity.policies.iam import GCPServiceAccountManager
+from skydentity.policies.iam.gcp_service_account_manager import GCPServiceAccountManager
 
 
 @dataclass
