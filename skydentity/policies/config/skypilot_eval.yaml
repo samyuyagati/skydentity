@@ -18,7 +18,7 @@ virtual_machine:
     - gcp:
       - debian-10-buster-v20200902
 
-  attached_policies:
+  attached_authorizations:
     - gcp:
       authorization:
         - terraform@sky-identity.iam.gserviceaccount.com

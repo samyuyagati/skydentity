@@ -41,7 +41,7 @@ def get_gcp_creds():
     # Serverless
     return os.path.join(CREDS_DIR, CREDS_FILE)
 
-def check_request_from_policy(public_key, request) -> bool:
+def check_request_from_policy(public_key, request) -> (bool, str):
     logger = get_logger()
     print_and_log(logger, f"Check request public key: {public_key} (request: {request})")
     policy = gcp_policy_manager.get_policy(public_key, None)
@@ -49,9 +49,14 @@ def check_request_from_policy(public_key, request) -> bool:
     print("Request", request)
 #    print("Request json:", request.json)
 #    breakpoint()
-    check_result = policy.check_request(request)
-    print("Check result:", check_result)
-    return check_result
+    valid = policy.check_request(request)
+    if not valid:
+        return (False, None)
+    # Check if a service account should be attached to the VM
+    if policy.valid_authorization:
+        return (True, policy.valid_authorization)
+    # If no service account should be attached, return True
+    return (True, None)
 
 def get_json_with_service_account(request, service_account_email):
     json_dict = request.json
@@ -149,7 +154,7 @@ def get_image(project, family):
 
     # TODO: Take out the public key from the request
     print("Checking request")
-    authorized = check_request_from_policy("skypilot_eval", request)
+    authorized, service_account_id = check_request_from_policy("skypilot_eval", request)
     print("Checked request")
     if not authorized:
         print_and_log(logger, "Request is unauthorized")
@@ -164,9 +169,12 @@ def get_image(project, family):
     print_and_log(logger, f"NEW HEADERS: {new_headers}")
     print_and_log(logger, "Creating proxy request")
     new_url = get_new_url(request)
+    if service_account_id:
+        new_json = get_json_with_service_account(request, service_account_id)
+        print_and_log(logger, f"NEW JSON: {new_json}")
 
     # Send request with new url and headers
-    gcp_response = send_gcp_request(request, new_headers, new_url)
+    gcp_response = send_gcp_request(request, new_headers, new_url, new_json=new_json)
 
     print_and_log(logger, f"Proxied request: {gcp_response}")
     return Response(gcp_response.content, gcp_response.status_code, new_headers)

@@ -11,6 +11,7 @@ from skydentity.policies.checker.resource_policy import (
     PolicyContentException
 )
 from skydentity.policies.checker.policy_actions import PolicyAction
+from skydentity.policies.managers.authorization_policy_manager import GCPAuthorizationPolicyManager
 
 class GCPVMPolicy(VMPolicy):
     """
@@ -162,9 +163,9 @@ class GCPVMPolicy(VMPolicy):
         # TODO(kdharmarajan): Add allowed_setup script inclusion here
         return GCPVMPolicy(cloud_specific_policy)
     
-class GCPAttachedPolicyPolicy(ResourcePolicy):
+class GCPAttachedAuthorizationPolicy(ResourcePolicy):
     """
-    Defines methods for GCP Attached Policies (what GCP policies can be attached to a VM)
+    Defines methods for GCP Attached Authorization Policies (what GCP policies can be attached to a VM)
     """
 
     def __init__(self, policy: Dict):
@@ -173,7 +174,7 @@ class GCPAttachedPolicyPolicy(ResourcePolicy):
         """
         self._policy = policy
     
-    def check_request(self, request: Request) -> bool:
+    def check_request(self, request: Request, auth_policy_manager: GCPAuthorizationPolicyManager, logger=None) -> (str, bool):
         """
         Enforces the policy on a request.
         :param request: The request to enforce the policy on.
@@ -181,15 +182,46 @@ class GCPAttachedPolicyPolicy(ResourcePolicy):
         """
         print("check_request", flush=True)
         sys.stdout.flush()
-        return True
-#        request_contents = request.get_json(cache=True)
-#        print(">>>request:", request_contents)
-#        if "serviceAccounts" in request_contents:
-#            for service_account in request_contents["serviceAccounts"]:
-#                if service_account["email"] not in self._policy["authorization"]:
-#                    return False
-        # TODO(kdharmarajan): Add scope checks here 
-#        return True
+        
+        request_contents = request.get_json(cache=True)
+        print(">>>request:", request_contents)
+
+        # Handle attached service account capability
+        if "serviceAccounts" not in request_contents:
+            return (None, True)
+        
+        # Expect a single attached service account
+        if len(request_contents["serviceAccounts"]) != 1:
+            if logger:
+                logger.log_text("Only one attached service account may be attached", severity="WARNING")
+            else:
+                print("Only one attached service account may be attached")
+            return (None, False)
+
+        # Expect a capability of the form:
+        #   { 'nonce': XX, 'header': XX, 'ciphertext': XX, 'tag': XX }
+        service_account_capability = request_contents["serviceAccounts"][0]
+        if (service_account_capability["nonce"] is None or \
+            service_account_capability["header"] is None or \
+            service_account_capability["ciphertext"] is None or \
+            service_account_capability["tag"] is None):
+            if logger:
+                logger.log_text("Invalid capability format", severity="WARNING")
+            else:
+                print("Invalid capability format")
+            return (None, False)
+        
+        service_account_id, success = auth_policy_manager.check_capability(service_account_capability)
+        if not success:
+            return (None, False)
+
+        # Double-check that the service account is allowed (e.g., if policy changed since
+        # the capability was issued)
+        if service_account_id not in self._policy[GCPPolicy.GCP_CLOUD_NAME]:
+            return (None, False)
+        
+        # If permitted, add the service account to the request
+        return (service_account_id, True)
 
     def to_dict(self) -> Dict:
         """
@@ -202,7 +234,7 @@ class GCPAttachedPolicyPolicy(ResourcePolicy):
         return out_dict
 
     @staticmethod
-    def from_dict(policy_dict_cloud_level: Dict, logger=None) -> 'GCPAttachedPolicyPolicy':
+    def from_dict(policy_dict_cloud_level: Dict, logger=None) -> 'GCPAttachedAuthorizationPolicy':
         """
         Converts a dictionary to a policy.
         :param policy_dict: The dictionary representation of the policy.
@@ -210,9 +242,9 @@ class GCPAttachedPolicyPolicy(ResourcePolicy):
         :return: The policy representation of the dict.
         """
         if logger:
-          logger.log_text("GCPAttachedPolicy", severity="WARNING")
+          logger.log_text("GCPAttachedAuthorization", severity="WARNING")
         else:
-          print("GCPAttachedPolicy")
+          print("GCPAttachedAuthorization")
         cloud_specific_policy = {}
         can_cloud_run = False
         print("Policy dict:", policy_dict_cloud_level)
@@ -233,8 +265,8 @@ class GCPAttachedPolicyPolicy(ResourcePolicy):
               cloud_specific_policy[GCPPolicy.GCP_CLOUD_NAME] = service_accounts
               break
         cloud_specific_policy['can_cloud_run'] = can_cloud_run
-        print("Cloud-specific attached policy:", cloud_specific_policy)
-        return GCPAttachedPolicyPolicy(cloud_specific_policy)
+        print("Cloud-specific attached authorization policy:", cloud_specific_policy)
+        return GCPAttachedAuthorizationPolicy(cloud_specific_policy)
     
 class GCPImageLookupPolicy(ResourcePolicy):
     """
@@ -291,21 +323,22 @@ class GCPPolicy(CloudPolicy):
         "disks",
         "machineType"
     ])
-    ATTACHED_POLICY_KEYS = set([
+    ATTACHED_AUTHORIZATION_KEYS = set([
         "serviceAccounts"
     ])
 
-    def __init__(self, vm_policy: GCPVMPolicy, attached_policy_policy: GCPAttachedPolicyPolicy):
+    def __init__(self, vm_policy: GCPVMPolicy, attached_authorization_policy: GCPAttachedAuthorizationPolicy):
         """
         :param vm_policy: The GCP VM Policy to enforce.
         :param attached_policy_policy: The Attached Policy Policy to enforce.
         """
         self._resource_policies = {
             "virtual_machine": vm_policy,
-            "attached_policies": attached_policy_policy,
+            "attached_authorizations": attached_authorization_policy,
             "image_lookup": GCPImageLookupPolicy(),
             "unrecognized": UnrecognizedResourcePolicy()
         }
+        self.valid_authorization = None
         print("GCPPolicy init:", self._resource_policies["attached_policies"]._policy)
 
     def get_request_resource_types(self, request: Request) -> List[str]:
@@ -328,8 +361,8 @@ class GCPPolicy(CloudPolicy):
         for key in request.get_json(cache=True).keys():
             if key in GCPPolicy.VM_REQUEST_KEYS:
                 resource_types.add("virtual_machine")
-            elif key in GCPPolicy.ATTACHED_POLICY_KEYS:
-                resource_types.add("attached_policies")
+            elif key in GCPPolicy.ATTACHED_AUTHORIZATION_KEYS:
+                resource_types.add("attached_authorizations")
             else:
                 resource_types.add("unrecognized")
         return list(resource_types)
@@ -342,7 +375,13 @@ class GCPPolicy(CloudPolicy):
         :return: True if the request is allowed, False otherwise.
         """
         assert resource_type in self._resource_policies
-        return self._resource_policies[resource_type].check_request(request)
+        result = self._resource_policies[resource_type].check_request(request)
+        # Authorization policies
+        if resource_type == "attached_authorizations":
+            self.valid_authorization = result[0]
+            return result[1]
+        # VM policies
+        return result
 
     def to_dict(self) -> Dict:
         """
@@ -368,9 +407,9 @@ class GCPPolicy(CloudPolicy):
         if "virtual_machine" in policy_dict:
             vm_dict = policy_dict["virtual_machine"]
         vm_policy = GCPVMPolicy.from_dict(vm_dict, logger)
-        attached_policy_dict = {}
-        if "attached_policies" in policy_dict:
-            attached_policy_dict = policy_dict["attached_policies"]
-        print("GCPPolicy attached policies dict:", attached_policy_dict)
-        attached_policy_policy = GCPAttachedPolicyPolicy.from_dict(attached_policy_dict, logger)
-        return GCPPolicy(vm_policy, attached_policy_policy)
+        attached_authorization_dict = {}
+        if "attached_authorizations" in policy_dict:
+            attached_authorization_dict = policy_dict["attached_authorizations"]
+        print("GCPPolicy attached policies dict:", attached_authorization_dict)
+        attached_authorization_policy = GCPAttachedAuthorizationPolicy.from_dict(attached_authorization_dict, logger)
+        return GCPPolicy(vm_policy, attached_authorization_policy)

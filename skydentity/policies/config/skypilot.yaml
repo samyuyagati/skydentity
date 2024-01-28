@@ -36,7 +36,7 @@ virtual_machine:
 
 # TODO  allowed_setup:
 
-attached_policies:
+attached_authorizations:
   - gcp:
       authorization:
         - service_account_x created from a previous step
