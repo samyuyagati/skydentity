@@ -11,7 +11,7 @@ import requests
 import subprocess
 from urllib.parse import urlparse
 from skydentity.policies.managers.gcp_policy_manager import GCPPolicyManager
-from skydentity.policies.checker.gcp_authorization_policy import GCPAuthorizationPolicy
+from skydentity.policies.checker.gcp_authorization_policy import GCPAuthorizationPolicy, GCPAuthorizationPolicyManager
 
 import pdb
 
@@ -112,7 +112,7 @@ def send_gcp_request(request, new_headers, new_url, new_json=None):
 
 # Define policy manager object
 gcp_policy_manager = GCPPolicyManager(get_gcp_creds())
-
+authorization_policy_manager = GCPAuthorizationPolicyManager(get_gcp_creds())
 # Handlers
 
 @app.route("/hello", methods=["GET"])
@@ -125,7 +125,12 @@ def handle_hello():
 def create_authorization(cloud):
     logger = get_logger()
     print_and_log(logger, f"Creating authorization (json: {request.json})")
-    authorization = GCPAuthorizationPolicy(request.json) # TODO reading raw input probably bad?
+    authorization_policy = GCPAuthorizationPolicy(policy_dict=authorization_policy_manager.get_policy_dict("skypilot_eval"))
+    authorization_request, success = authorization_policy.check_request(request)
+    if success:
+        capability_string = authorization_request.create_service_account_with_roles()
+        return Response(capability_string, 200)
+    return Response("Unauthorized", 401)
 
 @app.route("/compute/v1/projects/<project>/global/images/family/<family>", methods=["GET"])
 def get_image(project, family):

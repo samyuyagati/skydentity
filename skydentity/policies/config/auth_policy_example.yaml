@@ -8,14 +8,17 @@ authorization:
   roles:
     - restricted_role:
       - role: roles/storage.objectUser
+      - project: sky-identity
       - scope: bucket
       - object: http://storage.googleapis.com/test_bucket_signedurl
     - restricted_role:
       - role: roles/storage.objectWriter
+      - project: sky-identity
       - scope: bucket
       - object: http://storage.googleapis.com/test_bucket_signedurl
     - restricted_role:
       - role: roles/logging.bucketWriter
+      - project: sky-identity
       - scope: project
       - object: sky-identity
     

@@ -2,6 +2,9 @@ authorization:
   cloud_provider: 
     - gcp
   
+  project:
+    - sky-identity
+
   actions: 
     - CREATE
 

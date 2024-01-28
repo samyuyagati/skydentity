@@ -3,12 +3,17 @@ import yaml
 
 from enum import Enum
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Optional
 from flask import Request
 
+import firebase_admin
+from firebase_admin import credentials
+from firebase_admin import firestore
+from skydentity.policies.checker.resource_policy import CloudPolicy
+
+from skydentity.policies.managers.policy_manager import PolicyManager
 from skydentity.policies.checker.authorization_policy import AuthorizationPolicy
 from skydentity.policies.iam.gcp_service_account_manager import GCPServiceAccountManager
-
 
 @dataclass
 class RestrictedRole:
@@ -16,11 +21,16 @@ class RestrictedRole:
     scope: str
     object: str
 
+    def is_member(self, roles: List[RestrictedRole]) -> bool:
+        for restricted_role in roles:
+            if (restricted_role.role == self.role and \
+                    restricted_role.scope == self.scope and \
+                    restricted_role.object == self.object):
+                return True
+        return False
+
 class Action(Enum):
     CREATE = 1
-    READ = 2
-    DELETE = 3
-    ALL = 4
 
 class CloudProvider(Enum):
     gcp = 1
@@ -64,7 +74,8 @@ class GCPAuthorizationPolicy(AuthorizationPolicy):
 
         roles = []
         for restricted_role in policy_dict['roles']:
-            roles.append(RestrictedRole(restricted_role['role'], restricted_role['scope'], 
+            roles.append(RestrictedRole(restricted_role['role'], 
+                                        restricted_role['scope'], 
                                         restricted_role['object']))
         
         return Authorization(cloud_provider, actions, roles)
@@ -78,20 +89,73 @@ class GCPAuthorizationPolicy(AuthorizationPolicy):
 
             return self.authorization_from_dict(policy_dict)
 
-    def check_request(self, request: Request, logger=None) -> bool:
+    def check_request(self, request: Request, logger=None) -> (GCPAuthorizationPolicy, bool):
         match request.method:
+            # Disallow all reads; currently, this case should never trigger because there is no
+            # handler for authorization GET requests.
             case "GET":
-                pass
+                return (None, False)
+
             case "POST":
-                pass
+                # Parse the request into an Authorization
+                authorization_request = self.authorization_from_dict(request.json)
+
+                # Check the cloud provider matches (TODO: Should always be GCP in GCP auth policy)
+                if authorization_request.cloud_provider != self._policy.cloud_provider:
+                    return (None, False)
+                
+                # Check that the project matches
+                if authorization_request.project != self._policy.project:
+                    return (None, False)
+
+                # Check that the actions are allowed
+                for action in authorization_request.actions:
+                    if action not in self._policy.actions:
+                        return (None, False)
+                    
+                # Check that the roles are allowed
+                for restricted_role in authorization_request.roles:
+                    if not restricted_role.is_member(self._policy.roles):
+                        return (None, False)
+                
+                # All checks passed
+                return (authorization_request, True)
+
             case _:
                 if logger:
                     logger.log_text(f"Request is unrecognized (gcp_authorization_policy.py): {request.url}", severity="WARNING")
                 else:
-                    print(f"Request is unrecognized (gcp_authorization_policy.py): {request.url}")
-    
-    def create_authorization(self, authorization: Authorization):
+                    print(f"Request is unrecognized (gcp_authorization_policy.py): {request.url}, {request.method}")
+                return (None, False)
+
+    def create_service_account_with_roles(self):
         pass
+
+class GCPAuthorizationPolicyManager(PolicyManager):
+    def __init__(self, 
+                 credentials_path: str,
+                 firestore_policy_collection: str = 'authorization_policies'):
+        """
+        Initializes the GCP policy manager.
+        :param credentials_path: The path to the credentials file.
+        """
+        self._cred = credentials.Certificate(credentials_path)
+        self._app = firebase_admin.initialize_app(self._cred)
+        self._db = firestore.client()
+        self._firestore_policy_collection = firestore_policy_collection
+
+    def get_policy_dict(self, public_key: str) -> CloudPolicy | None:
+        """
+        Gets a policy from the cloud vendor.
+        :param public_key: The public key of the policy.
+        :return: The policy.
+        """
+        return self._db \
+            .collection(self._firestore_policy_collection) \
+            .document(public_key) \
+            .get() \
+            .to_dict()
+
 
 def main():
     print("HELLO")
