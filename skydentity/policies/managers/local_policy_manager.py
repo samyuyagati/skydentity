@@ -5,7 +5,7 @@ from typing import Type
 from pathlib import Path
 
 from skydentity.policies.managers.policy_manager import PolicyManager
-from skydentity.policies.checker.policy import CloudPolicy
+from skydentity.policies.checker.resource_policy import CloudPolicy
 
 class LocalPolicyManager(PolicyManager):
     """

@@ -11,6 +11,10 @@ authorization:
       - scope: bucket
       - object: http://storage.googleapis.com/test_bucket_signedurl
     - restricted_role:
+      - role: roles/storage.objectWriter
+      - scope: bucket
+      - object: http://storage.googleapis.com/test_bucket_signedurl
+    - restricted_role:
       - role: roles/logging.bucketWriter
       - scope: project
       - object: sky-identity

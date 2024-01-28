@@ -35,8 +35,13 @@ class GCPAuthorizationPolicy(AuthorizationPolicy):
     """
     Defines methods for checking authorization on GCP.
     """
-    def __init__(self, policy: Dict):
-        self._policy = policy
+    def __init__(self, policy_dict=None, policy_file=None):
+        if policy_dict:
+            self._policy = self.authorization_from_dict(policy_dict)
+        elif policy_file:
+            self._policy = self.authorization_from_yaml(policy_file)
+        else:
+            raise ValueError("Must provide either a policy dictionary or a policy file.")
 
     def authorization_from_dict(self, policy_dict: Dict) -> Authorization:
         """
