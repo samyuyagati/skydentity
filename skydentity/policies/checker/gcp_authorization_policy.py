@@ -38,6 +38,7 @@ class CloudProvider(Enum):
 @dataclass
 class Authorization:
     cloud_provider: str
+    project: str
     actions: List[Action]
     roles: List[RestrictedRole]
 
@@ -78,7 +79,7 @@ class GCPAuthorizationPolicy(AuthorizationPolicy):
                                         restricted_role['scope'], 
                                         restricted_role['object']))
         
-        return Authorization(cloud_provider, actions, roles)
+        return Authorization(cloud_provider, policy_dict["project"], actions, roles)
     
     def authorization_from_yaml(self, file: str) -> Authorization:
         """
