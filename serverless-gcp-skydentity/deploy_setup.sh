@@ -2,6 +2,8 @@
 
 # Script assumes this secret (proxy's service account key) hasn't been added before
 #gcloud secrets create sa-key --data-file=tokens/.cloud_creds/gcp/sky-identity-ac2febc1b9b3.json
+#openssl rand 256 > tokens/.cloud_creds/gcp/capability_enc.key
+#gcloud secrets create enc-key --data-file=tokens/.cloud_creds/gcp/capability_enc.key
 
 # Script assumes this secret (private key corresponding to domain cert) hasn't been added before
 #gcloud secrets create cert-key --data-file=certs/domain_dir/domain.key

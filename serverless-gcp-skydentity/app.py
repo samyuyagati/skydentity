@@ -20,6 +20,7 @@ app = Flask(__name__)
 CREDS_DIR = "/Users/samyu/.cloud_creds/gcp/proxy"
 #CREDS_DIR = "/cloud_creds/gcp"
 COMPUTE_API_ENDPOINT = "https://compute.googleapis.com/"
+CREDS_FILE = "proxy_service_account_key.json"
 
 # Utilities
 def get_logger():
@@ -31,9 +32,14 @@ def print_and_log(logger, text, severity="WARNING"):
     logger.log_text(text, severity=severity)
 
 def get_gcp_creds():
-    cred_files = [f for f in listdir(CREDS_DIR) if isfile(join(CREDS_DIR, f))]
-    assert(len(cred_files) == 1)
-    return os.path.join(CREDS_DIR, cred_files[0])
+    # Local testing
+    if (not CREDS_DIR.startswith("/cloud_creds")):
+        cred_files = [f for f in listdir(CREDS_DIR) if isfile(join(CREDS_DIR, f))]
+        assert(len(cred_files) == 1)
+        return os.path.join(CREDS_DIR, cred_files[0])
+    
+    # Serverless
+    return os.path.join(CREDS_DIR, CREDS_FILE)
 
 def check_request_from_policy(public_key, request) -> bool:
     logger = get_logger()
@@ -112,7 +118,8 @@ def send_gcp_request(request, new_headers, new_url, new_json=None):
 
 # Define policy manager object
 gcp_policy_manager = GCPPolicyManager(get_gcp_creds())
-authorization_policy_manager = GCPAuthorizationPolicyManager(get_gcp_creds())
+authorization_policy_manager = GCPAuthorizationPolicyManager(get_gcp_creds(), 
+                                                             os.path.join(CREDS_DIR, "capability_enc.key"))
 # Handlers
 
 @app.route("/hello", methods=["GET"])
@@ -128,8 +135,9 @@ def create_authorization(cloud):
     authorization_policy = GCPAuthorizationPolicy(policy_dict=authorization_policy_manager.get_policy_dict("skypilot_eval"))
     authorization_request, success = authorization_policy.check_request(request)
     if success:
-        capability_string = authorization_request.create_service_account_with_roles()
-        return Response(capability_string, 200)
+        service_account_id = authorization_policy_manager.create_service_account_with_roles(authorization_request)
+        capability_dict = authorization_policy_manager.create_capability(service_account_id)
+        return Response(json.dumps(capability_dict), 200)
     return Response("Unauthorized", 401)
 
 @app.route("/compute/v1/projects/<project>/global/images/family/<family>", methods=["GET"])
