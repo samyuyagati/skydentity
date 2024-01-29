@@ -219,6 +219,7 @@ class GCPAttachedAuthorizationPolicy(ResourcePolicy):
 
         # Double-check that the service account is allowed (e.g., if policy changed since
         # the capability was issued)
+        print(self._policy[GCPPolicy.GCP_CLOUD_NAME][0]["authorization"])
         if service_account_id not in self._policy[GCPPolicy.GCP_CLOUD_NAME][0]["authorization"]:
             print("Service account id", service_account_id, "not in", self._policy[GCPPolicy.GCP_CLOUD_NAME])
             return (None, False)

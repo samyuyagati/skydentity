@@ -18,8 +18,9 @@ import pdb
 
 app = Flask(__name__)
 
-CREDS_DIR = "/Users/samyu/.cloud_creds/gcp/proxy"
-#CREDS_DIR = "/cloud_creds/gcp"
+#CREDS_DIR = "/Users/samyu/.cloud_creds/gcp/proxy"
+CREDS_DIR = "/cloud_creds/gcp/"
+ENC_DIR = "/cloud_creds/enc/"
 COMPUTE_API_ENDPOINT = "https://compute.googleapis.com/"
 CREDS_FILE = "proxy_service_account_key.json"
 
@@ -48,7 +49,7 @@ def get_enc_key():
         return os.path.join("/Users/samyu/.cloud_creds/gcp/proxy-enc/", "capability_enc.key")
     
     # Serverless
-    return os.path.join(CREDS_DIR, "capability_enc.key")
+    return os.path.join(ENC_DIR, "capability_enc.key")
 
 def check_request_from_policy(public_key, request, authorization_policy_manager) -> (bool, str):
     logger = get_logger()

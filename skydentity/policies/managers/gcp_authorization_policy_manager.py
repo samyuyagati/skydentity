@@ -28,7 +28,7 @@ class GCPAuthorizationPolicyManager(PolicyManager):
         with open(capability_enc_path, 'rb') as f:
             self._capability_enc = f.read()
 
-    def get_policy_dict(self, public_key: str) -> CloudPolicy | None:
+    def get_policy_dict(self, public_key: str) -> dict:
         """
         Gets a policy from the cloud vendor.
         :param public_key: The public key of the policy.

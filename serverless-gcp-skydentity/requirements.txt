@@ -5,6 +5,7 @@ setuptools
 build
 gunicorn
 pyyaml
+pycryptodome
 # Azure
 azure-mgmt-resource 
 azure-mgmt-compute

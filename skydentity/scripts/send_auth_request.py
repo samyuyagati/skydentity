@@ -19,6 +19,17 @@ def send_auth_creation_request(url, json=None, headers=None):
     print(full_url)
     return requests.request("POST", full_url, json=json, headers=headers)
 
+# How to test authorizations:
+# 0. Run server and client proxies; upload skydentity/skydentity/policies/config/auth_policy_example.yaml 
+#    to Firestore using upload_policy.py with the --authorization flag
+# 1. Run this script
+# 2. Check the email address of the created service account in the client proxy logs
+# 3. In skydentity/skydentity/policies/config/skypilot_eval.yaml, modify the email address of the 
+#    service account to match the one in the logs
+# 4. Upload skypilot_eval.yaml to Firestore using upload_policy.py
+# 5. Run skydentity/python-server/test_server.py.
+# 6. Check that the service account attached to the created VM matches the one from step 2.
+
 def main():
     with open(os.path.join(os.path.dirname(os.getcwd()), "policies/config/auth_request_example.yaml"), 'r') as f:
         auth_request_dict = yaml.load(f, Loader=yaml.SafeLoader)

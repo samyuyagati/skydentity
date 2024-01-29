@@ -94,43 +94,42 @@ class GCPAuthorizationPolicy(AuthorizationPolicy):
             return self.authorization_from_dict(policy_dict)
 
     def check_request(self, request: Request, logger=None) -> (Self, bool):
-        match request.method:
+        if request.method == "GET":
             # Disallow all reads; currently, this case should never trigger because there is no
             # handler for authorization GET requests.
-            case "GET":
+            return (None, False)
+
+        elif request.method == "POST":
+            # Parse the request into an Authorization
+            authorization_request = GCPAuthorizationPolicy(policy_dict=request.json)
+
+            # Check the cloud provider matches (TODO: Should always be GCP in GCP auth policy)
+            if authorization_request._policy.cloud_provider != self._policy.cloud_provider:
+                return (None, False)
+            
+            # Check that the project matches
+            if authorization_request._policy.project != self._policy.project:
                 return (None, False)
 
-            case "POST":
-                # Parse the request into an Authorization
-                authorization_request = GCPAuthorizationPolicy(policy_dict=request.json)
-
-                # Check the cloud provider matches (TODO: Should always be GCP in GCP auth policy)
-                if authorization_request._policy.cloud_provider != self._policy.cloud_provider:
+            # Check that the actions are allowed
+            for action in authorization_request._policy.actions:
+                if action not in self._policy.actions:
                     return (None, False)
                 
-                # Check that the project matches
-                if authorization_request._policy.project != self._policy.project:
+            # Check that the roles are allowed
+            for restricted_role in authorization_request._policy.roles:
+                if not restricted_role.is_member(self._policy.roles):
                     return (None, False)
+            
+            # All checks passed
+            return (authorization_request, True)
 
-                # Check that the actions are allowed
-                for action in authorization_request._policy.actions:
-                    if action not in self._policy.actions:
-                        return (None, False)
-                    
-                # Check that the roles are allowed
-                for restricted_role in authorization_request._policy.roles:
-                    if not restricted_role.is_member(self._policy.roles):
-                        return (None, False)
-                
-                # All checks passed
-                return (authorization_request, True)
-
-            case _:
-                if logger:
-                    logger.log_text(f"Request is unrecognized (gcp_authorization_policy.py): {request.url}", severity="WARNING")
-                else:
-                    print(f"Request is unrecognized (gcp_authorization_policy.py): {request.url}, {request.method}")
-                return (None, False)
+        else:
+            if logger:
+                logger.log_text(f"Request is unrecognized (gcp_authorization_policy.py): {request.url}", severity="WARNING")
+            else:
+                print(f"Request is unrecognized (gcp_authorization_policy.py): {request.url}, {request.method}")
+            return (None, False)
 
 def main():
     print("HELLO")

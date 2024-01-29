@@ -143,6 +143,8 @@ def get_headers_with_signature(request):
     new_headers["X-Timestamp"] = str(timestamp)
     new_headers["X-PublicKey"] = encoded_public_key_bytes
 
+    del new_headers["Host"]
+
     return new_headers
 
 
