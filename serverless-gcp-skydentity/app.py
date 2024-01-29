@@ -11,7 +11,8 @@ import requests
 import subprocess
 from urllib.parse import urlparse
 from skydentity.policies.managers.gcp_policy_manager import GCPPolicyManager
-from skydentity.policies.checker.gcp_authorization_policy import GCPAuthorizationPolicy, GCPAuthorizationPolicyManager
+from skydentity.policies.checker.gcp_authorization_policy import GCPAuthorizationPolicy
+from skydentity.policies.managers.gcp_authorization_policy_manager import GCPAuthorizationPolicyManager
 
 import pdb
 
@@ -41,10 +42,19 @@ def get_gcp_creds():
     # Serverless
     return os.path.join(CREDS_DIR, CREDS_FILE)
 
-def check_request_from_policy(public_key, request) -> (bool, str):
+def get_enc_key():
+    # Local testing
+    if (not CREDS_DIR.startswith("/cloud_creds")):
+        return os.path.join("/Users/samyu/.cloud_creds/gcp/proxy-enc/", "capability_enc.key")
+    
+    # Serverless
+    return os.path.join(CREDS_DIR, "capability_enc.key")
+
+def check_request_from_policy(public_key, request, authorization_policy_manager) -> (bool, str):
     logger = get_logger()
     print_and_log(logger, f"Check request public key: {public_key} (request: {request})")
     policy = gcp_policy_manager.get_policy(public_key, None)
+    policy.set_authorization_manager(authorization_policy_manager)
     print("Got policy", policy)
     print("Request", request)
 #    print("Request json:", request.json)
@@ -56,6 +66,7 @@ def check_request_from_policy(public_key, request) -> (bool, str):
     if policy.valid_authorization:
         return (True, policy.valid_authorization)
     # If no service account should be attached, return True
+    print(">>> CHECK REQUEST: No service account should be attached")
     return (True, None)
 
 def get_json_with_service_account(request, service_account_email):
@@ -124,7 +135,7 @@ def send_gcp_request(request, new_headers, new_url, new_json=None):
 # Define policy manager object
 gcp_policy_manager = GCPPolicyManager(get_gcp_creds())
 authorization_policy_manager = GCPAuthorizationPolicyManager(get_gcp_creds(), 
-                                                             os.path.join(CREDS_DIR, "capability_enc.key"))
+                                                             get_enc_key())
 # Handlers
 
 @app.route("/hello", methods=["GET"])
@@ -137,11 +148,13 @@ def handle_hello():
 def create_authorization(cloud):
     logger = get_logger()
     print_and_log(logger, f"Creating authorization (json: {request.json})")
-    authorization_policy = GCPAuthorizationPolicy(policy_dict=authorization_policy_manager.get_policy_dict("skypilot_eval"))
+    request_auth_dict = authorization_policy_manager.get_policy_dict("skypilot_eval")
+    print("Request auth dict:", request_auth_dict)
+    authorization_policy = GCPAuthorizationPolicy(policy_dict=request_auth_dict)
     authorization_request, success = authorization_policy.check_request(request)
     if success:
         service_account_id = authorization_policy_manager.create_service_account_with_roles(authorization_request)
-        capability_dict = authorization_policy_manager.create_capability(service_account_id)
+        capability_dict = authorization_policy_manager.generate_capability(service_account_id)
         return Response(json.dumps(capability_dict), 200)
     return Response("Unauthorized", 401)
 
@@ -154,7 +167,7 @@ def get_image(project, family):
 
     # TODO: Take out the public key from the request
     print("Checking request")
-    authorized, service_account_id = check_request_from_policy("skypilot_eval", request)
+    authorized, _ = check_request_from_policy("skypilot_eval", request, authorization_policy_manager) # Can't attach service acct to image read request
     print("Checked request")
     if not authorized:
         print_and_log(logger, "Request is unauthorized")
@@ -169,12 +182,9 @@ def get_image(project, family):
     print_and_log(logger, f"NEW HEADERS: {new_headers}")
     print_and_log(logger, "Creating proxy request")
     new_url = get_new_url(request)
-    if service_account_id:
-        new_json = get_json_with_service_account(request, service_account_id)
-        print_and_log(logger, f"NEW JSON: {new_json}")
 
     # Send request with new url and headers
-    gcp_response = send_gcp_request(request, new_headers, new_url, new_json=new_json)
+    gcp_response = send_gcp_request(request, new_headers, new_url)
 
     print_and_log(logger, f"Proxied request: {gcp_response}")
     return Response(gcp_response.content, gcp_response.status_code, new_headers)
@@ -187,7 +197,8 @@ def create_vm(project, region):
     print_and_log(logger, f"{region}")
 
     # TODO: Take out the public key from the request
-    if not check_request_from_policy("skypilot_eval", request):
+    authorized, service_account_id = check_request_from_policy("skypilot_eval", request, authorization_policy_manager)
+    if not authorized:
         print_and_log(logger, "Request is unauthorized")
         return Response("Unauthorized", 401)
 
@@ -198,17 +209,18 @@ def create_vm(project, region):
     print(type(data))
     print(type(request.json))
     print("JSON ", request.json)
-    new_json = get_json_with_service_account(request, "terraform@sky-identity.iam.gserviceaccount.com")
-    print("NEW JSON", new_json)
-    print_and_log(logger, f"NEW JSON: {new_json}") 
+
+    ## Attach service account to VM if present
+    new_json = request.json
+    if service_account_id:
+        new_json = get_json_with_service_account(request, service_account_id)
+        print_and_log(logger, f"NEW JSON: {new_json}")
+
     ## Get authorization token and add to headers
     new_headers = get_headers_with_auth(request) 
     
     ## Redirect request to GCP endpoint
     new_url = get_new_url(request) 
-
-    ## Attach service account to VM
-    new_json = get_json_with_service_account(request, "terraform@sky-identity.iam.gserviceaccount.com")
 
     # Send request
     gcp_response = send_gcp_request(request, new_headers, new_url, new_json=new_json) 

@@ -1,11 +1,10 @@
 import os
 import yaml
 
-from base64 import b64encode
 from enum import Enum
-from Crypto.Cipher import AES
 from dataclasses import dataclass
 from typing import Dict, List, Optional
+from typing_extensions import Self
 from flask import Request
 
 from skydentity.policies.checker.authorization_policy import AuthorizationPolicy
@@ -16,7 +15,11 @@ class RestrictedRole:
     scope: str
     object: str
 
-    def is_member(self, roles: List[RestrictedRole]) -> bool:
+    def is_member(self, roles) -> bool:
+        """
+        Checks if this restricted role is a member of the given list of restricted roles.
+        @param roles: The list of RestrictedRole objects to check.
+        """
         for restricted_role in roles:
             if (restricted_role.role == self.role and \
                     restricted_role.scope == self.scope and \
@@ -43,6 +46,7 @@ class GCPAuthorizationPolicy(AuthorizationPolicy):
     """
     def __init__(self, policy_dict=None, policy_file=None):
         if policy_dict:
+            policy_dict = policy_dict['authorization']
             self._policy = self.authorization_from_dict(policy_dict)
         elif policy_file:
             self._policy = self.authorization_from_yaml(policy_file)
@@ -53,28 +57,32 @@ class GCPAuthorizationPolicy(AuthorizationPolicy):
         """
         Parses a dictionary into an Authorization
 
-        Assumes that the dictionary contains keys: cloud_provider, actions, roles.
+        Assumes that the dictionary contains keys: cloud_provider, project, actions, roles.
         """
         try:
-            cloud_provider = CloudProvider[policy_dict["cloud_provider"]]
+            cloud_provider = CloudProvider[policy_dict["cloud_provider"][0]]
         except KeyError:
-            raise ValueError(f"Invalid action type {policy_dict['actions']}; action must be \
-                                one of {[c.name for c in CloudProvider]}. Only one cloud provider \
-                                may be specified per authorization policy.")
+            raise ValueError(f"Invalid cloud provider {policy_dict['cloud_provider'][0]}; provider must be one of {[c.name for c in CloudProvider]}. Only one cloud provider may be specified per authorization policy.")
 
         try:
             actions = [Action[action_string] for action_string in policy_dict["actions"]]
         except KeyError:
-            raise ValueError(f"Invalid action type in action list {policy_dict['actions']}; action must \
-                                be one of {[a.name for a in Action]}")
+            raise ValueError(f"Invalid action type in action list {policy_dict['actions']}; action must be one of {[a.name for a in Action]}")
 
         roles = []
-        for restricted_role in policy_dict['roles']:
-            roles.append(RestrictedRole(restricted_role['role'], 
-                                        restricted_role['scope'], 
-                                        restricted_role['object']))
+        for r in policy_dict['roles']:
+            restricted_role = RestrictedRole(
+                [x['role'] for x in r['restricted_role'] if 'role' in x][0], 
+                [x['scope'] for x in r['restricted_role'] if 'scope' in x][0], 
+                None 
+            )
+
+            object_list = [x['object'] for x in r['restricted_role'] if 'object' in x]
+            if len(object_list) > 0:
+                restricted_role.object = object_list[0]
+            roles.append(restricted_role)
         
-        return Authorization(cloud_provider, policy_dict["project"], actions, roles)
+        return Authorization(cloud_provider, policy_dict["project"][0], actions, roles)
     
     def authorization_from_yaml(self, file: str) -> Authorization:
         """
@@ -85,7 +93,7 @@ class GCPAuthorizationPolicy(AuthorizationPolicy):
 
             return self.authorization_from_dict(policy_dict)
 
-    def check_request(self, request: Request, logger=None) -> (GCPAuthorizationPolicy, bool):
+    def check_request(self, request: Request, logger=None) -> (Self, bool):
         match request.method:
             # Disallow all reads; currently, this case should never trigger because there is no
             # handler for authorization GET requests.
@@ -123,9 +131,6 @@ class GCPAuthorizationPolicy(AuthorizationPolicy):
                 else:
                     print(f"Request is unrecognized (gcp_authorization_policy.py): {request.url}, {request.method}")
                 return (None, False)
-    
-    def create_service_account_with_roles(self):
-        pass
 
 def main():
     print("HELLO")

@@ -3,6 +3,7 @@ Forwarding for SkyPilot requests.
 """
 import base64
 import datetime
+import json
 import os
 from collections import namedtuple
 
@@ -162,10 +163,23 @@ def generic_forward_request(request, log_dict=None):
     new_url = get_new_url(request)
     new_headers = get_headers_with_signature(request)
 
-    # don't modify the body in any way
+    # Only modifies the body to attach the service account capability 
     new_json = None
     if len(request.get_data()) > 0:
-        new_json = request.json
+        old_json = request.json
+        if "serviceAccounts" not in old_json:
+            new_json = request.json
+        else:
+            new_json = old_json
+            # TODO don't hardcode the path to the capability
+            parent_dir = os.path.dirname(os.getcwd())
+            capability_dir = "tokens"
+            capability_file = "capability.json"
+            capability_path = os.path.join(parent_dir, capability_dir, capability_file)
+            with open(capability_path, "r") as f:
+                new_json["serviceAccounts"] = [json.load(f)]
+
+            print("JSON with service acct capability:", new_json, flush=True)
 
     gcp_response = forward_to_client(
         request, new_url, new_headers=new_headers, new_json=new_json

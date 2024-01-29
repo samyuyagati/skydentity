@@ -47,21 +47,25 @@ class VMPolicy(ResourcePolicy, ABC):
 
         # First check the action
         if not standardized_request["actions"].is_allowed_be_performed(standardized_vm_policy["actions"]):
+            print("Action not allowed")
             return False
         
         # Then check the regions
         for region in standardized_request["regions"]:
             if region not in standardized_vm_policy["regions"]:
+                print("Region not allowed")
                 return False
 
         # Then check the instance type
         for instance_type in standardized_request["instance_type"]:
             if instance_type not in standardized_vm_policy["instance_type"]:
+                print("Instance type not allowed")
                 return False
 
         # Then check the allowed images
         for image in standardized_request["allowed_images"]:
             if image not in standardized_vm_policy["allowed_images"]:
+                print("Image not allowed")
                 return False
             
         # TODO(kdharmarajan): Add allowed_setup script inclusion here
@@ -158,7 +162,7 @@ class CloudPolicy(ResourcePolicy, ABC):
                 return False
         return True
     
-    def check_resource_type(self, resource_type: str, request: Request) -> bool:
+    def check_resource_type(self, resource_type: str, request: Request) -> (bool):
         """
         Enforces the policy on a resource type.
         :param resource_type: The resource type to enforce the policy on.

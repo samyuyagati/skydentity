@@ -1,3 +1,4 @@
+import json
 import os
 import requests
 import yaml
@@ -22,7 +23,10 @@ def main():
     with open(os.path.join(os.path.dirname(os.getcwd()), "policies/config/auth_request_example.yaml"), 'r') as f:
         auth_request_dict = yaml.load(f, Loader=yaml.SafeLoader)['authorization']
         print(auth_request_dict)
-    send_auth_creation_request("http://127.0.0.1:5000/skydentity/cloud/gcp/", json=auth_request_dict)
+    response = send_auth_creation_request("http://127.0.0.1:5000/skydentity/cloud/gcp/", json=auth_request_dict)
+    print(response.json())
+    with open("tmp.json", "w") as f:
+        json.dump(response.json(), f)
 
 if __name__== "__main__":
     main()
