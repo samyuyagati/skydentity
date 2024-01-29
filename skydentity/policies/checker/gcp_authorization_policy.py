@@ -31,7 +31,7 @@ class Action(Enum):
     CREATE = 1
 
 class CloudProvider(Enum):
-    gcp = 1
+    GCP = 1
 
 @dataclass
 class Authorization:
@@ -102,23 +102,23 @@ class GCPAuthorizationPolicy(AuthorizationPolicy):
 
             case "POST":
                 # Parse the request into an Authorization
-                authorization_request = self.authorization_from_dict(request.json)
+                authorization_request = GCPAuthorizationPolicy(policy_dict=request.json)
 
                 # Check the cloud provider matches (TODO: Should always be GCP in GCP auth policy)
-                if authorization_request.cloud_provider != self._policy.cloud_provider:
+                if authorization_request._policy.cloud_provider != self._policy.cloud_provider:
                     return (None, False)
                 
                 # Check that the project matches
-                if authorization_request.project != self._policy.project:
+                if authorization_request._policy.project != self._policy.project:
                     return (None, False)
 
                 # Check that the actions are allowed
-                for action in authorization_request.actions:
+                for action in authorization_request._policy.actions:
                     if action not in self._policy.actions:
                         return (None, False)
                     
                 # Check that the roles are allowed
-                for restricted_role in authorization_request.roles:
+                for restricted_role in authorization_request._policy.roles:
                     if not restricted_role.is_member(self._policy.roles):
                         return (None, False)
                 

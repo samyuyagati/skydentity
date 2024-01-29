@@ -1,4 +1,6 @@
 import firebase_admin
+import secrets
+import string
 
 from base64 import b64encode, b64decode
 from Crypto.Cipher import AES
@@ -6,6 +8,7 @@ from firebase_admin import credentials
 from firebase_admin import firestore
 
 from skydentity.policies.checker.resource_policy import CloudPolicy
+from skydentity.policies.checker.gcp_authorization_policy import GCPAuthorizationPolicy
 from skydentity.policies.iam.gcp_service_account_manager import GCPServiceAccountManager
 from skydentity.policies.managers.policy_manager import PolicyManager
 
@@ -18,8 +21,8 @@ class GCPAuthorizationPolicyManager(PolicyManager):
         Initializes the GCP policy manager.
         :param credentials_path: The path to the credentials file.
         """
-        self._cred = credentials.Certificate(credentials_path)
-        self._app = firebase_admin.initialize_app(self._cred, name='authorization_policy_manager')
+        self._credentials_path = credentials_path
+        self._app = firebase_admin.initialize_app(credentials.Certificate(credentials_path), name='authorization_policy_manager')
         self._db = firestore.client()
         self._firestore_policy_collection = firestore_policy_collection
         with open(capability_enc_path, 'rb') as f:
@@ -68,6 +71,29 @@ class GCPAuthorizationPolicyManager(PolicyManager):
             print("Invalid capability: could not decrypt or verify")
             return (None, False)
         
-    def create_service_account_with_roles(self, authorization_request) -> str:
-        # TODO put actual service account creation here
-        return "terraform@sky-identity.iam.gserviceaccount.com"
+    def create_service_account_with_roles(self, authorization: GCPAuthorizationPolicy) -> str:
+        """
+        Creates a service account with the roles specified in the policy.
+        :param authorization: The AuthorizationPolicy specifying the roles for the service account.
+        :return The created service account name.
+        """
+        gcp_service_account_manager = GCPServiceAccountManager(credentials_path=self._credentials_path)
+
+        # Create random service account name from a random 64 bit value
+        account_name = secrets.choice(string.ascii_letters) + secrets.token_hex(8)
+
+        # Create service account
+        gcp_service_account_manager.create_service_account(
+            authorization=authorization,
+            service_account_name=account_name
+        )
+
+        # Add roles to service account
+        gcp_service_account_manager.add_roles_to_service_account(
+            authorization=authorization,
+            service_account_name=account_name
+        )
+
+        account_email = f"{account_name}@{authorization._policy.project}.iam.gserviceaccount.com"
+
+        return account_email
