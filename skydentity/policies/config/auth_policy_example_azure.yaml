@@ -1,0 +1,20 @@
+authorization:
+  cloud_provider: 
+    - azure
+
+  resource_group:
+    - skydentity
+  
+  actions:
+    - CREATE
+
+  roles:
+    - restricted_role:
+      - role: Microsoft.Storage/storageAccounts/blobServices/generateUserDelegationKey/action
+      - scope: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/skydentity/providers/Microsoft.Storage/storageAccounts/skydentity
+    - restricted_role:
+      - role: Microsoft.Storage/storageAccounts/blobServices/write
+      - scope: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/skydentity/providers/Microsoft.Storage/storageAccounts/skydentity
+    - restricted_role:
+      - role: Microsoft.Storage/storageAccounts/blobServices/read
+      - scope: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/skydentity/providers/Microsoft.Storage/storageAccounts/skydentity
