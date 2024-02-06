@@ -16,3 +16,4 @@ attached_authorizations:
   - gcp:
       - authorization:
           - G698ef48e956b5251@sky-identity.iam.gserviceaccount.com
+
