@@ -325,15 +325,16 @@ class GCPReadPolicy(ResourcePolicy):
         "zones": re.compile(r"compute/v1/projects/(?P<project>[^/]+)/zones/(?P<zone>[^/]+)"),
         "reservations": re.compile(r"compute/v1/projects/(?P<project>[^/]+)/aggregated/reservations"),
         "firewalls": re.compile(
-            r"(compute/v1/projects/(?P<project>[^/]+)/global/firewalls)"
+            r"compute/v1/projects/(?P<project>[^/]+)/global/"
+            r"(firewalls"
             "|"
-            r"(compute/v1/projects/(?P<project>[^/]+)/global/networks/(?P<network>[^/]+)/getEffectiveFirewalls)"
+            r"networks/(?P<network>[^/]+)/getEffectiveFirewalls)"
         ),
         "subnetworks": re.compile(r"compute/v1/projects/(?P<project>[^/]+)/regions/(?P<region>[^/]+)/subnetworks"),
         "operations": re.compile(
-            r"compute/v1/projects/(?P<project>[^/]+)/global/operations/(?P<operation>[^/]+)"
-            "|"
-            r"compute/v1/projects/(?P<project>[^/]+)/zones/(?P<zone>[^/]+)/operations/(?P<operation>[^/]+)"
+            r"compute/v1/projects/(?P<project>[^/]+)/"
+            r"(global|zones/(?P<zone>[^/]+))"
+            r"/operations/(?P<operation>[^/]+)"
         )
     }
 
@@ -412,7 +413,7 @@ class GCPReadPolicy(ResourcePolicy):
         """Parse path to get the appropriate request information"""
 
         url_pattern = GCPReadPolicy.READ_TYPE_URL_PATTERNS[read_type]
-        match = url_pattern.match(request.path)
+        match = url_pattern.search(request.path)
 
         assert match, "URL does not match read type pattern"
 
@@ -546,7 +547,7 @@ class GCPPolicy(CloudPolicy):
                 # check all read request paths
                 has_match = False
                 for read_type, read_path_regex in GCPReadPolicy.READ_TYPE_URL_PATTERNS.items():
-                    match = read_path_regex.match(request.path)
+                    match = read_path_regex.search(request.path)
                     if match:
                         has_match = True
                         resource_types.add(("read", read_type))
@@ -554,18 +555,18 @@ class GCPPolicy(CloudPolicy):
                 if not has_match:
                     # if no matches, then add unrecognized
                     resource_types.add(("unrecognized",))
-            return list(resource_types)
-        # Handle POST request
-        print(request.get_json(cache=True))
-        for key in request.get_json(cache=True).keys():
-            print(key)
-            if key in GCPPolicy.VM_REQUEST_KEYS:
-                resource_types.add(("virtual_machine",))
-            elif key in GCPPolicy.ATTACHED_AUTHORIZATION_KEYS:
-                resource_types.add(("attached_authorizations",))
-            else:
-                resource_types.add(("unrecognized",))
-                print(">>>>> UNRECOGNIZED RESOURCE TYPE <<<<<")
+        else:
+            # Handle POST request
+            print(request.get_json(cache=True))
+            for key in request.get_json(cache=True).keys():
+                print(key)
+                if key in GCPPolicy.VM_REQUEST_KEYS:
+                    resource_types.add(("virtual_machine",))
+                elif key in GCPPolicy.ATTACHED_AUTHORIZATION_KEYS:
+                    resource_types.add(("attached_authorizations",))
+                else:
+                    resource_types.add(("unrecognized",))
+                    print(">>>>> UNRECOGNIZED RESOURCE TYPE <<<<<")
         print("All resource types:", list(resource_types))
         return list(resource_types)
     
@@ -632,6 +633,7 @@ class GCPPolicy(CloudPolicy):
         if PolicyAction.READ.is_allowed_be_performed(vm_policy.get_policy_standard_form()["actions"]):
             if "reads" in policy_dict:
                 read_dict = policy_dict["reads"]
+                print("READS_DICT in GCPPolicy:from_dict", read_dict)
                 read_policy = GCPReadPolicy.from_dict(read_dict, logger)
             else:
                 # if reads are allowed, and there is no granular specification, then allow all
