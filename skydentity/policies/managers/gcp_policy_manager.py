@@ -3,7 +3,7 @@ from firebase_admin import credentials
 from firebase_admin import firestore
 
 from skydentity.policies.managers.policy_manager import PolicyManager
-from skydentity.policies.checker.gcp_policy import GCPPolicy
+from skydentity.policies.checker.gcp_resource_policy import GCPPolicy
 
 class GCPPolicyManager(PolicyManager):
     """

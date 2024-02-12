@@ -3,6 +3,7 @@ Forwarding for SkyPilot requests.
 """
 import base64
 import datetime
+import json
 import os
 from collections import namedtuple
 
@@ -97,6 +98,11 @@ ROUTES: list[SkypilotRoute] = [
         path="/compute/v1/projects/<project>/zones/<region>/instances/<instance>/start",
         fields=["project", "region", "instance"],
     ),
+    SkypilotRoute(
+        methods=["POST"],
+        path="/skydentity/cloud/<cloud>/create-authorization",
+        fields=["cloud"]
+    ),
 ]
 
 
@@ -137,6 +143,8 @@ def get_headers_with_signature(request):
     new_headers["X-Timestamp"] = str(timestamp)
     new_headers["X-PublicKey"] = encoded_public_key_bytes
 
+    del new_headers["Host"]
+
     return new_headers
 
 
@@ -146,19 +154,34 @@ def generic_forward_request(request, log_dict=None):
     Forward a generic request to google APIs.
     """
     logger = get_logger()
+    print(log_dict, flush=True)
     if log_dict is not None:
         log_str = f"PATH: {request.full_path}\n"
         for key, val in log_dict.items():
             log_str += f"\t{key}: {val}\n"
+        print(log_str, flush=True)
         print_and_log(logger, log_str.strip())
 
     new_url = get_new_url(request)
     new_headers = get_headers_with_signature(request)
 
-    # don't modify the body in any way
+    # Only modifies the body to attach the service account capability 
     new_json = None
     if len(request.get_data()) > 0:
-        new_json = request.json
+        old_json = request.json
+        if "serviceAccounts" not in old_json:
+            new_json = request.json
+        else:
+            new_json = old_json
+            # TODO don't hardcode the path to the capability
+            parent_dir = os.path.dirname(os.getcwd())
+            capability_dir = "tokens"
+            capability_file = "capability.json"
+            capability_path = os.path.join(parent_dir, capability_dir, capability_file)
+            with open(capability_path, "r") as f:
+                new_json["serviceAccounts"] = [json.load(f)]
+
+            print("JSON with service acct capability:", new_json, flush=True)
 
     gcp_response = forward_to_client(
         request, new_url, new_headers=new_headers, new_json=new_json
@@ -173,7 +196,9 @@ def build_generic_forward(path: str, fields: list[str]):
     The path is only used to create a unique and readable name for the anonymous function.
     """
     func = None
-    if fields == ["project"]:
+    if fields == ["cloud"]:
+        func = lambda cloud: generic_forward_request(request, {"cloud": cloud})
+    elif fields == ["project"]:
         func = lambda project: generic_forward_request(request, {"project": project})
     elif fields == ["project", "region"]:
         func = lambda project, region: generic_forward_request(
@@ -246,9 +271,10 @@ def get_new_url(request):
     Redirect the URL (originally to the proxy) to the correct client proxy.
     """
     redirect_endpoint = get_client_proxy_endpoint(request)
-
-    new_url = request.url.replace(request.host_url, redirect_endpoint)
     logger = get_logger()
+    print_and_log(logger, f"\tOld URL: {request.host_url} (Redirect endpoint: {redirect_endpoint})")
+    new_url = request.url.replace(request.host_url, redirect_endpoint)
+    
     print_and_log(logger, f"\tNew URL: {new_url}")
     return new_url
 

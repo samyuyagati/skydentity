@@ -1,7 +1,7 @@
 from abc import ABC
 from typing import Optional
 
-from skydentity.policies.checker.policy import CloudPolicy
+from skydentity.policies.checker.resource_policy import CloudPolicy
 
 class PolicyManager(ABC):
     """

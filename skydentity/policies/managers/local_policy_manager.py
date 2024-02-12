@@ -5,7 +5,7 @@ from typing import Type
 from pathlib import Path
 
 from skydentity.policies.managers.policy_manager import PolicyManager
-from skydentity.policies.checker.policy import CloudPolicy
+from skydentity.policies.checker.resource_policy import CloudPolicy
 
 class LocalPolicyManager(PolicyManager):
     """
@@ -36,6 +36,7 @@ class LocalPolicyManager(PolicyManager):
         """
         base_file_name = Path(public_key).with_suffix('.yaml')
         policy_file_name = os.path.join(self._policy_dir, base_file_name)
+        print("--------LOCAL POLICY MANAGER--------")
         print("base file name:", base_file_name)
         print("policy file name:", policy_file_name)
         print("policy_dir:", self._policy_dir)
@@ -44,5 +45,6 @@ class LocalPolicyManager(PolicyManager):
             policy_dict = yaml.load(f, Loader=yaml.SafeLoader)
         print("get_policy", policy_dict)
         print("policy type:", self._return_policy_type) 
+        print("--------END LOCAL POLICY MANAGER--------")
         return self._return_policy_type.from_dict(policy_dict)
         
