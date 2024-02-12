@@ -1,7 +1,7 @@
 from typing import Dict, List
 from flask import Request
 
-from skydentity.policies.checker.policy import (
+from skydentity.policies.checker.resource_policy import (
     CloudPolicy, 
     ResourcePolicy, 
     VMPolicy, 
@@ -82,7 +82,7 @@ class AzureVMPolicy(VMPolicy):
                 AzurePolicy.Azure_CLOUD_NAME: self._policy["regions"]
             },
             "instance_type": {
-                AzurePolicy.Azure_CLOUD_NAME: self._policy["instance_types"]
+                AzurePolicy.Azure_CLOUD_NAME: self._policy["instance_type"]
             },
             "allowed_images": {
                 AzurePolicy.Azure_CLOUD_NAME: self._policy["allowed_images"]

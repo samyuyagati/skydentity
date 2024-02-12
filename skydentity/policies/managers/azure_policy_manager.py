@@ -2,7 +2,7 @@ from azure.cosmos import CosmosClient
 from azure.cosmos.partition_key import PartitionKey
 
 from skydentity.policies.managers.policy_manager import PolicyManager
-from skydentity.policies.checker.azure_policy import AzurePolicy
+from skydentity.policies.checker.azure_resource_policy import AzurePolicy
 
 class AzurePolicyManager(PolicyManager):
     """

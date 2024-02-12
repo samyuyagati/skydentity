@@ -1,7 +1,7 @@
 import unittest
 import os
 
-from skydentity.policies.checker.azure_policy import AzurePolicy
+from skydentity.policies.checker.azure_resource_policy import AzurePolicy
 from skydentity.policies.managers.azure_policy_manager import AzurePolicyManager
 from skydentity.policies.managers.local_policy_manager import LocalPolicyManager
 
@@ -26,7 +26,7 @@ class AzurePolicyManagerSuite(unittest.TestCase):
 
     def get_local_policy(self, policy_name: str) -> AzurePolicy:
         """
-        Reads the policy from a file, from resources/policies/gcp/{policy_name}.json
+        Reads the policy from a file, from resources/policies/azure/{policy_name}.json
         """
         return self._local_policy_manager.get_policy(policy_name)
 
