@@ -374,9 +374,8 @@ class GCPPolicy(CloudPolicy):
                 resource_types.add("virtual_machine")
             elif key in GCPPolicy.ATTACHED_AUTHORIZATION_KEYS:
                 resource_types.add("attached_authorizations")
-            else:
-                resource_types.add("unrecognized")
-                print(">>>>> UNRECOGNIZED RESOURCE TYPE <<<<<")
+        if len(resource_types) == 0:
+            resource_types.add("unrecognized")
         print("All resource types:", list(resource_types))
         return list(resource_types)
     
