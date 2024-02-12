@@ -5,6 +5,7 @@ from skydentity.policies.checker.resource_policy import (
     CloudPolicy, 
     ResourcePolicy, 
     VMPolicy, 
+    UnrecognizedResourcePolicy,
     PolicyContentException
 )
 from skydentity.policies.checker.policy_actions import PolicyAction
@@ -208,7 +209,8 @@ class AzurePolicy(CloudPolicy):
     Azure_CLOUD_NAME = "azure"
     VM_REQUEST_KEYS = set([
         # TODO(kdharmarajan): Possibly restrict which keys are allowed here
-        "location"
+        "location",
+        "properties"
     ])
     ATTACHED_POLICY_KEYS = set([
         "identity"
@@ -221,7 +223,8 @@ class AzurePolicy(CloudPolicy):
         """
         self._resource_policies = {
             "virtual_machine": vm_policy,
-            "attached_policies": attached_policy_policy
+            "attached_policies": attached_policy_policy,
+            "unrecognized": UnrecognizedResourcePolicy()
         }
 
     def get_request_resource_types(self, request: Request) -> List[str]:
@@ -231,11 +234,16 @@ class AzurePolicy(CloudPolicy):
         :return: The resource types that the request is trying to access as a list of names.
         """
         resource_types = set([])
+        # TODO(kdharmarajan): Be on the lookout for certain GET requests that need to be allowed
         for key in request.get_json(cache=True).keys():
             if key in AzurePolicy.VM_REQUEST_KEYS:
                 resource_types.add("virtual_machine")
-            if key in AzurePolicy.ATTACHED_POLICY_KEYS:
+            elif key in AzurePolicy.ATTACHED_POLICY_KEYS:
                 resource_types.add("attached_policies")
+            else:
+                resource_types.add("unrecognized")
+                print(">>>>> UNRECOGNIZED RESOURCE TYPE <<<<<")
+        print("All resource types:", list(resource_types))
         return list(resource_types)
     
     def check_resource_type(self, resource_type: str, request: Request) -> bool:
