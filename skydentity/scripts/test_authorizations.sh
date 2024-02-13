@@ -1,6 +1,7 @@
 #!/bin/bash
+# Example usage: ./test_authorizations.sh -l -r <path to dir containing skydentity repo> -c <path to key file of service account w/ firestore access>
+
 ROOT=""
-HOME=""
 CREDS=""
 SKYID_CLIENT_ADDRESS=""
 LOCAL=false
@@ -9,7 +10,6 @@ LOCAL=false
 while getopts "r:c:l" option; do
   case $option in
     r)
-        HOME=$OPTARG
         ROOT=$OPTARG/skydentity
         ;;
     c)
@@ -66,7 +66,7 @@ echo "Sending auth request..."
 python send_auth_request.py --resource_yaml_input="$ROOT/skydentity/policies/config/skypilot.yaml" \
     --resource_yaml_output="$ROOT/skydentity/policies/config/skypilot_eval_with_auth.yaml"\
     --auth_request_yaml="$ROOT/skydentity/policies/config/auth_request_example.yaml" \
-    --capability_enc_key="$HOME/.cloud_creds/gcp/proxy-enc/capability_enc.key"
+    --capability_enc_key="$ROOT/gcp-client-proxy/local_tokens/capability_enc.key"
 
 # 2. Upload skypilot_eval_with_auth.yaml to Firestore using upload_policy.py
 echo "Uploading skypilot_eval_with_auth.yaml to Firestore..."
