@@ -145,7 +145,7 @@ def generic_forward_request(request, log_dict=None):
         return Response("", HTTPStatus.REQUEST_TIMEOUT, {})
 
     # Check the request
-    authorized, _ = check_request_from_policy(request.headers["X-PublicKey"], request)
+    authorized, service_account_id = check_request_from_policy(request.headers["X-PublicKey"], request)
     if not authorized:
         print_and_log(logger, "Request is unauthorized")
         return Response("Unauthorized", 401)
@@ -158,6 +158,9 @@ def generic_forward_request(request, log_dict=None):
     new_json = None
     if len(request.get_data()) > 0:
         new_json = request.json
+        if service_account_id:
+            new_json = get_json_with_service_account(request, service_account_id)
+            print_and_log(logger, f"Json with service account: {new_json}")
 
     gcp_response = send_gcp_request(request, new_headers, new_url, new_json=new_json)
     return Response(gcp_response.content, gcp_response.status_code, new_headers)
