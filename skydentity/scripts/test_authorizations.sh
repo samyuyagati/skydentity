@@ -26,12 +26,12 @@ while getopts "r:c:l" option; do
   esac
 done
 
-if [ $LOCAL ]; then
+if $LOCAL; then
     # local client proxy
-    echo "Running local client proxy"
+    echo "Running local client proxy as HTTP server..."
     echo $ROOT
-    pushd $ROOT/serverless-gcp-skydentity
-    ./run_proxy_http.sh &
+    pushd $ROOT/gcp-client-proxy
+    ./run_proxy.sh &
     CLIENT_PROCESS=$!
     echo "Client proxy process: $CLIENT_PROCESS"
     popd
@@ -86,8 +86,7 @@ echo "Remember to delete the created VM!"
 
 # Cleanup
 echo "Cleaning up..."
-kill -9 $SERVER_PROCESS
-if [ $LOCAL ]; then
-    kill -9 $CLIENT_PROCESS
-fi
+ps | grep "flask run --host=0.0.0.0 --port=5000" | awk '{print $1}' | xargs kill -9
+ps | grep "flask run --host=0.0.0.0 --port=5001" | awk '{print $1}' | xargs kill -9
+
 rm $ROOT/skydentity/policies/config/skypilot_eval_with_auth.yaml

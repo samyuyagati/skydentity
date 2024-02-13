@@ -18,7 +18,7 @@ assert _CAPABILITY_ENC_KEY_FILE is not None and os.path.isfile(_CAPABILITY_ENC_K
 
 
 @cache  # shouldn't change throughout the proxy lifespan
-def get_service_account_info() -> Tuple[str, str]:
+def get_service_account_path() -> str:
     """
     Retrieve the service account email and credentials file from the filesystem.
 
@@ -26,21 +26,22 @@ def get_service_account_info() -> Tuple[str, str]:
     where `credentials_filename` is the path to the file containing the service account credentials,
     relative to the `gcp-client-proxy` directory.
     """
-    with open(_SERVICE_ACCT_INFO_FILE, "r", encoding="utf-8") as service_account_file:
-        service_account_file_json = json.load(service_account_file)
+    return _SERVICE_ACCT_INFO_FILE
+    # with open(_SERVICE_ACCT_INFO_FILE, "r", encoding="utf-8") as service_account_file:
+    #     service_account_file_json = json.load(service_account_file)
 
-    assert "email" in service_account_file_json.keys()
-    assert "credentials" in service_account_file_json.keys()
+    # assert "email" in service_account_file_json.keys()
+    # assert "credentials" in service_account_file_json.keys()
 
-    service_account_creds = service_account_file_json["credentials"]
-    assert os.path.isfile(
-        service_account_creds
-    ), f"Service account credentials file (from JSON: {service_account_creds}) does not exist."
+    # service_account_creds = service_account_file_json["credentials"]
+    # assert os.path.isfile(
+    #     service_account_creds
+    # ), f"Service account credentials file (from JSON: {service_account_creds}) does not exist."
 
-    return (
-        service_account_file_json["email"],
-        service_account_creds,
-    )
+    # return (
+    #     service_account_file_json["email"],
+    #     service_account_creds,
+    # )
 
 
 @cache

@@ -16,7 +16,7 @@ from skydentity.policies.checker.gcp_authorization_policy import GCPAuthorizatio
 from .credentials import (
     activate_service_account,
     get_service_account_auth_token,
-    get_service_account_info,
+    get_service_account_path,
 )
 from .logging import get_logger, print_and_log
 from .policy_check import check_request_from_policy, get_authorization_policy_manager
@@ -261,7 +261,7 @@ def get_headers_with_auth(request):
     new_headers["Host"] = f"{hostname}"
 
     # Activate service account and get auth token
-    _, service_acct_cred_file = get_service_account_info()
+    service_acct_cred_file = get_service_account_path()
     activate_service_account(service_acct_cred_file)
 
     auth_token_process_out_bytes = get_service_account_auth_token()

@@ -10,19 +10,19 @@ from skydentity.policies.managers.gcp_authorization_policy_manager import (
 )
 from skydentity.policies.managers.gcp_policy_manager import GCPPolicyManager
 
-from .credentials import get_capability_enc_key, get_service_account_info
+from .credentials import get_capability_enc_key, get_service_account_path
 from .logging import get_logger, print_and_log
 
 
 @cache
 def get_policy_manager() -> GCPPolicyManager:
-    _, service_acct_cred_file = get_service_account_info()
+    service_acct_cred_file = get_service_account_path()
     return GCPPolicyManager(service_acct_cred_file)
 
 
 @cache
 def get_authorization_policy_manager() -> GCPAuthorizationPolicyManager:
-    _, service_acct_cred_file = get_service_account_info()
+    service_acct_cred_file = get_service_account_path()
     capability_enc_key_file = get_capability_enc_key()
     print("CREATING AUTH POLICY MANAGER")
     print("CRED FILE", service_acct_cred_file)
