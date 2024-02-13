@@ -5,6 +5,8 @@
 export SERVICE_ACCOUNT_INFO_FILE="tokens/.cloud_creds/gcp/service_account.json"
 # official compute api endpoint
 export COMPUTE_API_ENDPOINT="https://compute.googleapis.com/"
+# capability encoding key
+export CAPABILITY_ENC_KEY_FILE="local_tokens/capability_enc.key"
 
 # certificate information
 export CERT_FILE="certs/domain_dir/domain.crt"
