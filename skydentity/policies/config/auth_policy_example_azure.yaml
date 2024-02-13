@@ -11,10 +11,13 @@ authorization:
   roles:
     - restricted_role:
       - role: Microsoft.Storage/storageAccounts/blobServices/generateUserDelegationKey/action
-      - scope: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/skydentity/providers/Microsoft.Storage/storageAccounts/skydentity
+      - scope: storage_account
+      - object: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/skydentity/providers/Microsoft.Storage/storageAccounts/skydentity
     - restricted_role:
       - role: Microsoft.Storage/storageAccounts/blobServices/write
-      - scope: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/skydentity/providers/Microsoft.Storage/storageAccounts/skydentity
+      - scope: container
+      - object: test_container_signedurl
     - restricted_role:
       - role: Microsoft.Storage/storageAccounts/blobServices/read
-      - scope: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/skydentity/providers/Microsoft.Storage/storageAccounts/skydentity
+      - scope: container
+      - object: test_container_signedurl
