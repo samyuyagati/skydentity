@@ -21,4 +21,3 @@ authorization:
       - role: roles/logging.bucketWriter
       - scope: project
       - object: sky-identity
-    

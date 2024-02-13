@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict, List, Tuple, TypedDict, Union, Optional
 from flask import Request
 import re
 import sys
@@ -174,7 +174,7 @@ class GCPAttachedAuthorizationPolicy(ResourcePolicy):
         """
         self._policy = policy
     
-    def check_request(self, request: Request, auth_policy_manager: GCPAuthorizationPolicyManager, logger=None) -> (str, bool):
+    def check_request(self, request: Request, auth_policy_manager: GCPAuthorizationPolicyManager, logger=None) -> Tuple[Union[str, None], bool]:
         """
         Enforces the policy on a request.
         :param request: The request to enforce the policy on.
@@ -315,6 +315,192 @@ class GCPImageLookupPolicy(ResourcePolicy):
                     return False
         return True
 
+class GCPReadPolicy(ResourcePolicy):
+    """Defines methods for GCP read request policies."""
+
+    # TODO: instead of using regex, get information from routing done by the proxy
+    READ_TYPE_URL_PATTERNS: Dict[str, re.Pattern] = {
+        "project": re.compile(r"compute/v1/projects/(?P<project>[^/]+)"),
+        "regions": re.compile(r"compute/v1/projects/(?P<project>[^/]+)/regions/(?P<region>[^/]+)"),
+        "zones": re.compile(r"compute/v1/projects/(?P<project>[^/]+)/zones/(?P<zone>[^/]+)"),
+        "reservations": re.compile(r"compute/v1/projects/(?P<project>[^/]+)/aggregated/reservations"),
+        "firewalls": re.compile(
+            r"compute/v1/projects/(?P<project>[^/]+)/global/"
+            r"(firewalls"
+            "|"
+            r"networks/(?P<network>[^/]+)/getEffectiveFirewalls)"
+        ),
+        "subnetworks": re.compile(r"compute/v1/projects/(?P<project>[^/]+)/regions/(?P<region>[^/]+)/subnetworks"),
+        "operations": re.compile(
+            r"compute/v1/projects/(?P<project>[^/]+)/"
+            r"(global|zones/(?P<zone>[^/]+))"
+            r"/operations/(?P<operation>[^/]+)"
+        )
+    }
+
+    class _PolicyDict(TypedDict):
+        project: Union[str, None]
+        regions: Union[List[str], None]
+        zones: Union[List[str], None]
+        reservations: bool
+        firewalls: bool
+        subnetworks: bool
+        operations: bool
+
+    def __init__(self, policy: _PolicyDict, policy_override: Union[bool, None]=None):
+        """
+        Create a new GCPReadPolicy instance.
+
+        `policy_override` is used to specify DENY_ALL or ALLOW_ALL policies;
+        if not None, then `policy` is ignored and a blanket ALLOW (if True) or DENY (if False) is used.
+        """
+        self._policy = policy
+        self._policy_override = policy_override
+
+    def check_request(self, request: Request) ->  bool:
+        raise NotImplemented("Use `check_read_request` instead.")
+
+    def check_read_request(self, request: Request, *aux_info: str) -> bool:
+        # TODO: allow any non-GET request through?
+        if request.method != "GET":
+            return True
+
+        # check for blanket ALLOW/DENY policy
+        if self._policy_override is not None:
+            return self._policy_override
+
+        assert len(aux_info) > 0 and aux_info[0] in GCPReadPolicy.READ_TYPE_URL_PATTERNS
+        read_type = aux_info[0]
+
+        request_info = self._get_request_info(request, read_type)
+
+        if read_type == "project":
+            if self._policy["project"] is None:
+                # default allow if not specified
+                return True
+
+            # check project with policy
+            request_project = request_info["project"]
+            return request_project == self._policy["project"]
+        elif read_type == "regions":
+            if self._policy["regions"] is None:
+                # default allow if not specified
+                return True
+
+            # check region with policy
+            request_region = request_info["region"]
+            return request_region in self._policy["regions"]
+        elif read_type == "zones":
+            if self._policy["zones"] is None:
+                return True
+
+            # check zone with policy
+            request_zone = request_info["zone"]
+            return request_zone in self._policy["zones"]
+        elif read_type == "reservations":
+            return self._policy["reservations"]
+        elif read_type == "firewalls":
+            return self._policy["firewalls"]
+        elif read_type == "subnetworks":
+            return self._policy["subnetworks"]
+        elif read_type == "operations":
+            return self._policy["operations"]
+
+        # TODO: allow request if unrecognized?
+        return True
+
+    def _get_request_info(self, request: Request, read_type: str):
+        """Parse path to get the appropriate request information"""
+
+        url_pattern = GCPReadPolicy.READ_TYPE_URL_PATTERNS[read_type]
+        match = url_pattern.search(request.path)
+
+        assert match, "URL does not match read type pattern"
+
+        if read_type == "project":
+            return {
+                "project": match.group("project")
+            }
+        elif read_type == "regions":
+            return {
+                "region": match.group("region")
+            }
+        elif read_type == "zones":
+            return {
+                "zone": match.group("zone")
+            }
+
+        # all other read types do not use any auxiliary information from the path
+        return {}
+
+    @staticmethod
+    def _get_default_policy_dict() -> _PolicyDict:
+        """
+        Get default policy dictionary, which allows all requests.
+        """
+        return {
+            "project": None,
+            "regions": None,
+            "zones": None,
+            "reservations": True,
+            "firewalls": True,
+            "subnetworks": True,
+            "operations": True,
+        }
+
+    @staticmethod
+    def get_default_deny_policy():
+        """
+        Get default policy object, which denies all requests.
+        """
+        return GCPReadPolicy(GCPReadPolicy._get_default_policy_dict(), policy_override=False)
+
+    @staticmethod
+    def get_default_allow_policy():
+        """
+        Get default policy object, which allows all requests.
+        """
+        return GCPReadPolicy(GCPReadPolicy._get_default_policy_dict(), policy_override=True)
+
+    @staticmethod
+    def from_dict(policy_dict: Dict, logger=None) -> "GCPReadPolicy":
+        """
+        Parse dictionary to get relevant info.
+
+        Expects a dictionary with the top level key as the cloud name ("gcp").
+        """
+        if GCPPolicy.GCP_CLOUD_NAME not in policy_dict or not isinstance(policy_dict[GCPPolicy.GCP_CLOUD_NAME], dict):
+            # no valid section found
+            return GCPReadPolicy.get_default_deny_policy()
+
+        gcp_policy = policy_dict[GCPPolicy.GCP_CLOUD_NAME]
+
+        # allow if not specified
+        out_dict = GCPReadPolicy._get_default_policy_dict()
+        if "project" in gcp_policy:
+            out_dict["project"] = gcp_policy["project"]
+        if "regions" in gcp_policy:
+            out_dict["regions"] = gcp_policy["regions"]
+        if "zones" in gcp_policy:
+            out_dict["zones"] = gcp_policy["zones"]
+        if "reservations" in gcp_policy:
+            out_dict["reservations"] = gcp_policy["reservations"]
+        if "firewalls" in gcp_policy:
+            out_dict["firewalls"] = gcp_policy["firewalls"]
+        if "subnetworks" in gcp_policy:
+            out_dict["subnetworks"] = gcp_policy["subnetworks"]
+        if "operations" in gcp_policy:
+            out_dict["operations"] = gcp_policy["operations"]
+
+        return GCPReadPolicy(out_dict)
+
+    def to_dict(self):
+        return {
+            GCPPolicy.GCP_CLOUD_NAME: {
+                # filter out None items
+                k: v for k, v in self._policy.items() if v is not None
+            }
+        }
 
 
 class GCPPolicy(CloudPolicy):
@@ -333,7 +519,7 @@ class GCPPolicy(CloudPolicy):
         "serviceAccounts"
     ])
 
-    def __init__(self, vm_policy: GCPVMPolicy, attached_authorization_policy: GCPAttachedAuthorizationPolicy):
+    def __init__(self, vm_policy: GCPVMPolicy, attached_authorization_policy: GCPAttachedAuthorizationPolicy, read_policy: GCPReadPolicy):
         """
         :param vm_policy: The GCP VM Policy to enforce.
         :param attached_policy_policy: The Attached Policy Policy to enforce.
@@ -342,19 +528,21 @@ class GCPPolicy(CloudPolicy):
             "virtual_machine": vm_policy,
             "attached_authorizations": attached_authorization_policy,
             "image_lookup": GCPImageLookupPolicy(),
+            "read": read_policy,
             "unrecognized": UnrecognizedResourcePolicy()
         }
-        self.valid_authorization = None
+        self.valid_authorization: Union[str, None] = None
         print("GCPAuthorizationPolicy init:", self._resource_policies["attached_authorizations"]._policy)
 
     def set_authorization_manager(self, manager: GCPAuthorizationPolicyManager):
         self._authorization_manager = manager
 
-    def get_request_resource_types(self, request: Request) -> List[str]:
+    def get_request_resource_types(self, request: Request) -> List[Tuple[str]]:
         """
         Gets the resource types that the request is trying to access / create / delete.
         :param request: The request to get the resource types from.
-        :return: The resource types that the request is trying to access as a list of names.
+        :return: The resource types that the request is trying to access as a list of tuples
+            to identify the resource type.
         """
         resource_types = set([])
 
@@ -362,40 +550,58 @@ class GCPPolicy(CloudPolicy):
         if request.method == "GET":
             print("NOT JSON")
             if "images" in request.path:
-                resource_types.add("image_lookup")
+                resource_types.add(("image_lookup",))
             else:
-                resource_types.add("unrecognized")
-            return list(resource_types)
-        # Handle POST request
-        print(request.get_json(cache=True))
-        for key in request.get_json(cache=True).keys():
-            print(key)
-            if key in GCPPolicy.VM_REQUEST_KEYS:
-                resource_types.add("virtual_machine")
-            elif key in GCPPolicy.ATTACHED_AUTHORIZATION_KEYS:
-                resource_types.add("attached_authorizations")
-        if len(resource_types) == 0:
-            resource_types.add("unrecognized")
+                # check all read request paths
+                has_match = False
+                for read_type, read_path_regex in GCPReadPolicy.READ_TYPE_URL_PATTERNS.items():
+                    match = read_path_regex.search(request.path)
+                    if match:
+                        has_match = True
+                        resource_types.add(("read", read_type))
+                
+                if not has_match:
+                    # if no matches, then add unrecognized
+                    resource_types.add(("unrecognized",))
+        else:
+            # Handle POST request
+            print(request.get_json(cache=True))
+            for key in request.get_json(cache=True).keys():
+                print(key)
+                if key in GCPPolicy.VM_REQUEST_KEYS:
+                    resource_types.add(("virtual_machine",))
+                elif key in GCPPolicy.ATTACHED_AUTHORIZATION_KEYS:
+                    resource_types.add(("attached_authorizations",))
+                else:
+                    resource_types.add(("unrecognized",))
+                    print(">>>>> UNRECOGNIZED RESOURCE TYPE <<<<<")
         print("All resource types:", list(resource_types))
         return list(resource_types)
     
-    def check_resource_type(self, resource_type: str, request: Request) -> bool:
+    def check_resource_type(self, resource_type: Tuple[str], request: Request) -> bool:
         """
         Enforces the policy on a resource type.
         :param resource_type: The resource type to enforce the policy on.
         :param request: The request to enforce the policy on.
         :return: True if the request is allowed, False otherwise.
         """
-        assert resource_type in self._resource_policies
+        resource_type_key, *resource_type_aux = resource_type
+        assert resource_type_key in self._resource_policies
         print("GCPPolicy check_resource_type:", resource_type)
-        # Authorization policies
-        if resource_type == "attached_authorizations":
-            result = self._resource_policies[resource_type].check_request(request, self._authorization_manager)
+
+        if resource_type_key == "attached_authorizations":
+            # Authorization policies
+            result = self._resource_policies[resource_type_key].check_request(request, self._authorization_manager)
             self.valid_authorization = result[0]
             return result[1]
-        # VM policies
-        result = self._resource_policies[resource_type].check_request(request)
-        return result
+        elif resource_type_key == "read":
+            # read policies
+            result = self._resource_policies[resource_type_key].check_read_request(request, *resource_type_aux)
+            return result
+        else:
+            # VM policies
+            result = self._resource_policies[resource_type_key].check_request(request)
+            return result
 
     def to_dict(self) -> Dict:
         """
@@ -425,9 +631,23 @@ class GCPPolicy(CloudPolicy):
             vm_dict = policy_dict["virtual_machine"]
             print("VM_DICT in GCPPolicy:from_dict", vm_dict)
         vm_policy = GCPVMPolicy.from_dict(vm_dict, logger)
+
         attached_authorization_dict = {}
         if "attached_authorizations" in policy_dict:
             attached_authorization_dict = policy_dict["attached_authorizations"]
         print("GCPPolicy attached authorizations dict:", attached_authorization_dict)
         attached_authorization_policy = GCPAttachedAuthorizationPolicy.from_dict(attached_authorization_dict, logger)
-        return GCPPolicy(vm_policy, attached_authorization_policy)
+
+        if PolicyAction.READ.is_allowed_be_performed(vm_policy.get_policy_standard_form()["actions"]):
+            if "reads" in policy_dict:
+                read_dict = policy_dict["reads"]
+                print("READS_DICT in GCPPolicy:from_dict", read_dict)
+                read_policy = GCPReadPolicy.from_dict(read_dict, logger)
+            else:
+                # if reads are allowed, and there is no granular specification, then allow all
+                read_policy = GCPReadPolicy.get_default_allow_policy()
+        else:
+            # if cannot read, then deny all reads
+            read_policy = GCPReadPolicy.get_default_deny_policy()
+
+        return GCPPolicy(vm_policy, attached_authorization_policy, read_policy)

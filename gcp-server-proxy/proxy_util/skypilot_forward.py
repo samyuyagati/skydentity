@@ -124,7 +124,9 @@ def get_headers_with_signature(request):
         format=serialization.PublicFormat.SubjectPublicKeyInfo,
     )
 
-    message = f"{str(request.method)}-{host}-{timestamp}-{public_key_bytes}"
+    # TODO: use service name
+    # message = f"{str(request.method)}-{host}-{timestamp}-{public_key_bytes}"
+    message = f"{str(request.method)}-{timestamp}-{public_key_bytes}"
     message_bytes = message.encode("utf-8")
 
     signature = private_key.sign(

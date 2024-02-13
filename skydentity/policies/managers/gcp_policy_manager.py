@@ -18,8 +18,8 @@ class GCPPolicyManager(PolicyManager):
         :param credentials_path: The path to the credentials file.
         """
         self._cred = credentials.Certificate(credentials_path)
-        self._app = firebase_admin.initialize_app(self._cred)
-        self._db = firestore.client()
+        self._app = firebase_admin.initialize_app(self._cred, name="policy_manager")
+        self._db = firestore.client(self._app)
         self._firestore_policy_collection = firestore_policy_collection
 
     def upload_policy(self, public_key: str, policy: GCPPolicy):
