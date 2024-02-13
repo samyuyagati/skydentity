@@ -1,4 +1,4 @@
-from typing import Dict, List, Tuple, TypedDict, Union
+from typing import Dict, List, Tuple, TypedDict, Union, Optional
 from flask import Request
 import re
 import sys
@@ -174,7 +174,7 @@ class GCPAttachedAuthorizationPolicy(ResourcePolicy):
         """
         self._policy = policy
     
-    def check_request(self, request: Request, auth_policy_manager: GCPAuthorizationPolicyManager, logger=None) -> (str, bool):
+    def check_request(self, request: Request, auth_policy_manager: GCPAuthorizationPolicyManager, logger=None) -> Tuple[Union[str, None], bool]:
         """
         Enforces the policy on a request.
         :param request: The request to enforce the policy on.
@@ -494,6 +494,14 @@ class GCPReadPolicy(ResourcePolicy):
 
         return GCPReadPolicy(out_dict)
 
+    def to_dict(self):
+        return {
+            GCPPolicy.GCP_CLOUD_NAME: {
+                # filter out None items
+                k: v for k, v in self._policy.items() if v is not None
+            }
+        }
+
 
 class GCPPolicy(CloudPolicy):
     """
@@ -523,7 +531,7 @@ class GCPPolicy(CloudPolicy):
             "read": read_policy,
             "unrecognized": UnrecognizedResourcePolicy()
         }
-        self.valid_authorization = None
+        self.valid_authorization: Union[str, None] = None
         print("GCPAuthorizationPolicy init:", self._resource_policies["attached_authorizations"]._policy)
 
     def set_authorization_manager(self, manager: GCPAuthorizationPolicyManager):

@@ -1,76 +1,59 @@
 virtual_machine:
   cloud_provider:
     - gcp
-    - azure
 
   actions:
     - ALL
 
   regions:
     - gcp:
-        - us-central1
-        - us-east1
-    - azure:
-        - eastus
-        - westus
+        - us-west1
 
   # Can specify max hardware spec or a list of allowed machines
   instance_type:
     - gcp:
         - n1-standard-1
         - n1-standard-2
-    - azure:
-        - max_spec:
-            - max_cpu: 8
-            - max_memory: 16
-            - max_disk_size: 100
-            - gpu: false
 
   allowed_images:
     - gcp:
+        - debian-10-buster-v20240110
         - ubuntu-1604-xenial-v20181029
         - ubuntu-1804-bionic-v20181029
-    - azure:
-        - Canonical:0001-com-ubuntu-server \
-          - jammy-22-04-lts-gen2:latest
 
 # vpcs as a diff fresource type
       
       
 # TODO  allowed_setup:
 
-attached_authorizations:
-  - gcp:
-      authorization:
-        - service_account_x created from a previous step
-  - azure:
-      authorization:
-        - managed identity created from a previous step
+  attached_authorizations:
+    - gcp:
+        authorization:
+          - placeholder
+    
+  # auxiliary read requests made during setup
+  # TODO: if reads is included then check the reads; otherwise disallow all reads
+  reads:
+    gcp:
+      # /compute/v1/projects/<project>/...
+      project: sky-identity
 
-# auxiliary read requests made during setup
-# TODO: if reads is included then check the reads; otherwise disallow all reads
-reads:
-  gcp:
-    # /compute/v1/projects/<project>/...
-    project: project-name
+      # /compute/v1/projects/<project>/regions/<region>/...
+      regions:
+        - us-west1
+      # /compute/v1/projects/<project>/zones/<zone>/...
+      zones:
+        - us-west1-b
 
-    # /compute/v1/projects/<project>/regions/<region>/...
-    regions:
-      - allowed-region
-    # /compute/v1/projects/<project>/zones/<zone>/...
-    zones:
-      - allowed-zone
+      # /compute/v1/projects/<project>/aggregated/reservations
+      reservations: true
+      # /compute/v1/projects/<project>/global/firewalls
+      # /compute/v1/projects/<project>/global/networks/<network>/getEffectiveFirewalls
+      firewalls: true
+      # /compute/v1/projects/<project>/regions/<region>/subnetworks
+      subnetworks: true
 
-    # /compute/v1/projects/<project>/aggregated/reservations
-    reservations: true
-    # /compute/v1/projects/<project>/global/firewalls
-    # /compute/v1/projects/<project>/global/networks/<network>/getEffectiveFirewalls
-    firewalls: true
-    # /compute/v1/projects/<project>/regions/<region>/subnetworks
-    subnetworks: true
-
-    # filter for GET
-    # /compute/v1/projects/<project>/global/operations/<operation>
-    # /compute/v1/projects/<project>/zones/<region>/operations/<operation>
-    operations: true
-
+      # filter for GET
+      # /compute/v1/projects/<project>/global/operations/<operation>
+      # /compute/v1/projects/<project>/zones/<region>/operations/<operation>
+      operations: true

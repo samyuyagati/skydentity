@@ -23,7 +23,7 @@ class GCPAuthorizationPolicyManager(PolicyManager):
         """
         self._credentials_path = credentials_path
         self._app = firebase_admin.initialize_app(credentials.Certificate(credentials_path), name='authorization_policy_manager')
-        self._db = firestore.client()
+        self._db = firestore.client(self._app)
         self._firestore_policy_collection = firestore_policy_collection
         with open(capability_enc_path, 'rb') as f:
             self._capability_enc = f.read()
