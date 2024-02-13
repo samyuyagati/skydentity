@@ -9,13 +9,14 @@ from firebase_admin import firestore
 from skydentity.policies.managers.gcp_policy_manager import GCPPolicyManager
 from skydentity.policies.managers.local_policy_manager import LocalPolicyManager
 from skydentity.policies.checker.gcp_resource_policy import GCPPolicy
+from skydentity.utils.hash_util import hash_public_key_from_file
 
 def main():
     parser = argparse.ArgumentParser(description='Upload a policy to the cloud storage')
     parser.add_argument('--policy', type=str, help='Path to the policy file to upload')
     parser.add_argument('--authorization', action="store_true", help="Upload an authorization policy")
     parser.add_argument('--cloud', type=str, help='Name of the cloud to upload to')
-    parser.add_argument('--public-key', type=str, help='Public key corresponding to the broker')
+    parser.add_argument('--public-key-path', type=str, help='Path to public key pem file corresponding to the broker')
     parser.add_argument('--credentials', type=str, help='Credentials of the cloud to upload to')
     args = parser.parse_args()
 
@@ -26,6 +27,9 @@ def main():
 
     if formatted_cloud != 'gcp':
         raise Exception('Cloud not supported.')
+    
+    hashed_public_key = hash_public_key_from_file(args.public_key_path)
+    print("Hashed public key: ", hashed_public_key)
 
     # Resource policy
     if not args.authorization:
@@ -37,7 +41,7 @@ def main():
 
         policy_name = os.path.basename(args.policy)
         read_from_local_policy = local_policy_manager.get_policy(policy_name)
-        cloud_policy_manager.upload_policy(args.public_key, read_from_local_policy)
+        cloud_policy_manager.upload_policy(hashed_public_key, read_from_local_policy)
         print ("Policy has been uploaded!")
         return
     
@@ -50,7 +54,7 @@ def main():
         print(policy_dict)
         db \
             .collection("authorization_policies") \
-            .document(args.public_key) \
+            .document(hashed_public_key) \
             .set(policy_dict)
 
     print('Policy has been uploaded!')
