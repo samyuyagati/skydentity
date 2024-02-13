@@ -7,7 +7,7 @@ virtual_machine:
 
   regions:
     - gcp:
-        - us-west1
+        - us-west1-b
 
   # Can specify max hardware spec or a list of allowed machines
   instance_type:
@@ -26,34 +26,34 @@ virtual_machine:
       
 # TODO  allowed_setup:
 
-  attached_authorizations:
-    - gcp:
-        authorization:
+attached_authorizations:
+  - gcp:
+      - authorization:
           - placeholder
-    
-  # auxiliary read requests made during setup
-  # TODO: if reads is included then check the reads; otherwise disallow all reads
-  reads:
-    gcp:
-      # /compute/v1/projects/<project>/...
-      project: sky-identity
+  
+# auxiliary read requests made during setup
+# TODO: if reads is included then check the reads; otherwise disallow all reads
+reads:
+  gcp:
+    # /compute/v1/projects/<project>/...
+    project: sky-identity
 
-      # /compute/v1/projects/<project>/regions/<region>/...
-      regions:
-        - us-west1
-      # /compute/v1/projects/<project>/zones/<zone>/...
-      zones:
-        - us-west1-b
+    # /compute/v1/projects/<project>/regions/<region>/...
+    regions:
+      - us-west1
+    # /compute/v1/projects/<project>/zones/<zone>/...
+    zones:
+      - us-west1-b
 
-      # /compute/v1/projects/<project>/aggregated/reservations
-      reservations: true
-      # /compute/v1/projects/<project>/global/firewalls
-      # /compute/v1/projects/<project>/global/networks/<network>/getEffectiveFirewalls
-      firewalls: true
-      # /compute/v1/projects/<project>/regions/<region>/subnetworks
-      subnetworks: true
+    # /compute/v1/projects/<project>/aggregated/reservations
+    reservations: true
+    # /compute/v1/projects/<project>/global/firewalls
+    # /compute/v1/projects/<project>/global/networks/<network>/getEffectiveFirewalls
+    firewalls: true
+    # /compute/v1/projects/<project>/regions/<region>/subnetworks
+    subnetworks: true
 
-      # filter for GET
-      # /compute/v1/projects/<project>/global/operations/<operation>
-      # /compute/v1/projects/<project>/zones/<region>/operations/<operation>
-      operations: true
+    # filter for GET
+    # /compute/v1/projects/<project>/global/operations/<operation>
+    # /compute/v1/projects/<project>/zones/<region>/operations/<operation>
+    operations: true
