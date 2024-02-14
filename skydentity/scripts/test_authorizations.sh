@@ -98,7 +98,7 @@ echo "Remember to delete the created VM!"
 
 # Cleanup
 echo "Cleaning up..."
-ps | grep "flask run --host=0.0.0.0 --port=5000" | awk '{print $1}' | xargs kill -9
-ps | grep "flask run --host=0.0.0.0 --port=5001" | awk '{print $1}' | xargs kill -9
+pgrep -f "flask run --host=0.0.0.0 --port=5000" | awk '{print $1}' | xargs kill -9
+pgrep -f "flask run --host=0.0.0.0 --port=5001" | awk '{print $1}' | xargs kill -9
 
 rm $YAML_DIR/skypilot_eval_with_auth.yaml
