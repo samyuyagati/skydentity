@@ -12,7 +12,7 @@ virtual_machine:
   allowed_images:
     - gcp:
         - debian-10-buster-v20240110
-attached_authorizations:
-  - gcp:
-      - authorization:
-          - G698ef48e956b5251@sky-identity.iam.gserviceaccount.com
+  attached_authorizations:
+    - gcp:
+        - authorization:
+            - placeholder

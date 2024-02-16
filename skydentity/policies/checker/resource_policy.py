@@ -1,5 +1,5 @@
 from abc import ABC
-from typing import Dict, List
+from typing import Dict, List, Tuple
 from flask import Request
 
 class ResourcePolicy(ABC):
@@ -142,7 +142,7 @@ class CloudPolicy(ResourcePolicy, ABC):
     A policy is a set of rules that tell what actions can be done on what resources.
     """
 
-    def get_request_resource_types(self, request: Request) -> List[str]:
+    def get_request_resource_types(self, request: Request) -> List[Tuple[str]]:
         """
         Gets the resource types that the request is trying to access / create / delete.
         :param request: The request to get the resource types from.
@@ -162,7 +162,7 @@ class CloudPolicy(ResourcePolicy, ABC):
                 return False
         return True
     
-    def check_resource_type(self, resource_type: str, request: Request) -> (bool):
+    def check_resource_type(self, resource_type: Tuple[str], request: Request) -> (bool):
         """
         Enforces the policy on a resource type.
         :param resource_type: The resource type to enforce the policy on.

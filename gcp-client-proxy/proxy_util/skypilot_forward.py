@@ -1,24 +1,31 @@
 """
 Forwarding for SkyPilot requests.
 """
-import base64
-import datetime
+
 import json
 import os
-import subprocess
 from collections import namedtuple
-from functools import cache
 from http import HTTPStatus
 from urllib.parse import urlparse
 
 import requests
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from flask import Flask, Response, request
 
-from .constants import COMPUTE_API_ENDPOINT, CREDS_PATH, SERVICE_ACCOUNT_EMAIL_FILE
+from skydentity.policies.checker.gcp_authorization_policy import GCPAuthorizationPolicy
+
+from .credentials import (
+    activate_service_account,
+    get_service_account_auth_token,
+    get_service_account_path,
+)
 from .logging import get_logger, print_and_log
-from skydentity.policies.managers.gcp_policy_manager import GCPPolicyManager
+from .policy_check import check_request_from_policy, get_authorization_policy_manager
+from .signature import strip_signature_headers, verify_request_signature
+
+# global constants
+COMPUTE_API_ENDPOINT = os.environ.get(
+    "COMPUTE_API_ENDPOINT", "https://compute.googleapis.com/"
+)
 
 SkypilotRoute = namedtuple(
     "SkypilotRoute",
@@ -109,48 +116,15 @@ ROUTES: list[SkypilotRoute] = [
         path="/compute/v1/projects/<project>/zones/<region>/instances/<instance>/start",
         fields=["project", "region", "instance"],
     ),
+    # skydentity internal route
+    SkypilotRoute(
+        methods=["POST"],
+        path="/skydentity/cloud/<cloud>/create-authorization",
+        fields=["cloud"],
+        # wrapper to allow for the function to be defined later
+        view_func=lambda cloud: create_authorization_route(cloud),
+    ),
 ]
-
-
-def verify_request_signature(request):
-    encoded_signature = request.headers["X-Signature"]
-    timestamp = request.headers["X-Timestamp"]
-    encoded_public_key_bytes = request.headers["X-PublicKey"]
-
-    try:
-        timestamp = float(timestamp)
-        timestamp_datetime = datetime.datetime.fromtimestamp(
-            timestamp, tz=datetime.timezone.utc
-        )
-    except ValueError:
-        # invalid timestamp
-        return False
-
-    # decode signature and public key using base64
-    signature = base64.b64decode(encoded_signature, validate=True)
-    public_key_bytes = base64.b64decode(encoded_public_key_bytes, validate=True)
-
-    now = datetime.datetime.now(datetime.timezone.utc)
-    if now - datetime.timedelta(seconds=60) > timestamp_datetime:
-        # if timestamp when request was sent is > 60 seconds old, deny the request
-        return False
-
-    host = request.headers.get("Host", "")
-    reformed_message = f"{str(request.method)}-{host}-{timestamp}-{public_key_bytes}"
-    reformed_message_bytes = reformed_message.encode("utf-8")
-
-    public_key = serialization.load_pem_public_key(public_key_bytes)
-    # raises InvalidSignature exception if the signature does not match
-    public_key.verify(
-        signature,
-        reformed_message_bytes,
-        padding.PSS(
-            mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH
-        ),
-        hashes.SHA256(),
-    )
-
-    return True
 
 
 def generic_forward_request(request, log_dict=None):
@@ -169,8 +143,10 @@ def generic_forward_request(request, log_dict=None):
         # Not sure if this is the correct status code. This case will only happen when the timestamp
         # associated with the signature is too old at the time when the signature is verified.
         return Response("", HTTPStatus.REQUEST_TIMEOUT, {})
+
     # Check the request
-    if not check_request_from_policy(request.headers["X-PublicKey"], request):
+    authorized, service_account_id = check_request_from_policy(request.headers["X-PublicKey"], request)
+    if not authorized:
         print_and_log(logger, "Request is unauthorized")
         return Response("Unauthorized", 401)
 
@@ -182,6 +158,9 @@ def generic_forward_request(request, log_dict=None):
     new_json = None
     if len(request.get_data()) > 0:
         new_json = request.json
+        if service_account_id:
+            new_json = get_json_with_service_account(request, service_account_id)
+            print_and_log(logger, f"Json with service account: {new_json}")
 
     gcp_response = send_gcp_request(request, new_headers, new_url, new_json=new_json)
     return Response(gcp_response.content, gcp_response.status_code, new_headers)
@@ -238,7 +217,9 @@ def setup_routes(app: Flask):
     """
     for route in ROUTES:
         if route.view_func is not None:
-            # use view_func if specified
+            # use view_func if specified; change name to be consistent with generic
+            # (also allows lambda functions to be passed in)
+            route.view_func.__name__ = route.path
             app.add_url_rule(
                 route.path, view_func=route.view_func, methods=route.methods
             )
@@ -255,30 +236,6 @@ def setup_routes(app: Flask):
             )
 
 
-@cache  # shouldn't change throughout the proxy lifespan
-def get_service_account_email():
-    """
-    Retrieve the service account email from the
-    """
-    with open(
-        SERVICE_ACCOUNT_EMAIL_FILE, "r", encoding="utf-8"
-    ) as service_account_file:
-        service_account_file_json = json.load(service_account_file)
-
-    assert "email" in service_account_file_json.keys()
-    return (
-        service_account_file_json["email"],
-        service_account_file_json["cred_filename"],
-    )
-
-
-def get_gcp_creds(cred_file):
-    """
-    Get GCP credentials from the specified credentials path.
-    """
-    return os.path.join(CREDS_PATH, cred_file)
-
-
 def get_json_with_service_account(request, service_account_email):
     """
     Modify the JSON of the request to include service account details.
@@ -291,30 +248,6 @@ def get_json_with_service_account(request, service_account_email):
     new_dict = json_dict.copy()
     new_dict["serviceAccounts"] = [service_account_dict]
     return new_dict
-
-
-@cache
-def activate_service_account(credential_file):
-    auth_command = f"gcloud auth activate-service-account --key-file={credential_file}"
-    auth_process = subprocess.Popen(auth_command.split())
-    auth_process.wait()
-
-
-@cache
-def get_service_account_auth_token():
-    auth_token_command = "gcloud auth print-access-token"
-    auth_token_process = subprocess.Popen(
-        auth_token_command.split(), stdout=subprocess.PIPE
-    )
-    auth_token_process_out_bytes, _ = auth_token_process.communicate()
-
-    return auth_token_process_out_bytes
-
-
-def strip_signature_headers(headers):
-    signature_headers = set(["X-Signature", "X-Timestamp", "X-PublicKey"])
-    new_headers = {k: v for k, v in headers.items() if k not in signature_headers}
-    return new_headers
 
 
 def get_headers_with_auth(request):
@@ -331,9 +264,8 @@ def get_headers_with_auth(request):
     new_headers["Host"] = f"{hostname}"
 
     # Activate service account and get auth token
-    service_acct_email, service_acct_cred_file = get_service_account_email()
-    service_acct_creds = get_gcp_creds(service_acct_cred_file)
-    activate_service_account(service_acct_creds)
+    service_acct_cred_file = get_service_account_path()
+    activate_service_account(service_acct_cred_file)
 
     auth_token_process_out_bytes = get_service_account_auth_token()
 
@@ -353,15 +285,6 @@ def get_new_url(request):
     logger = get_logger()
     print_and_log(logger, f"\tNew URL: {new_url}")
     return new_url
-
-
-def check_request_from_policy(public_key, request) -> bool:
-    logger = get_logger()
-    print_and_log(logger, 
-        f"Check request public key: {public_key} (request: {request})")
-    policy = gcp_policy_manager.get_policy(public_key, None)
-    print_and_log(logger, f"Got policy {policy}")
-    return policy.check_request(request)
 
 
 def send_gcp_request(request, new_headers, new_url, new_json=None):
@@ -385,3 +308,25 @@ def send_gcp_request(request, new_headers, new_url, new_json=None):
         cookies=request.cookies,
         allow_redirects=False,
     )
+
+
+def create_authorization_route(cloud):
+    logger = get_logger()
+    authorization_policy_manager = get_authorization_policy_manager()
+    print_and_log(logger, f"Creating authorization (json: {request.json})")
+    # TODO: change hard coded name
+    request_auth_dict = authorization_policy_manager.get_policy_dict("skypilot_eval")
+    print("Request auth dict:", request_auth_dict)
+    authorization_policy = GCPAuthorizationPolicy(policy_dict=request_auth_dict)
+    authorization_request, success = authorization_policy.check_request(request)
+    if success:
+        service_account_id = (
+            authorization_policy_manager.create_service_account_with_roles(
+                authorization_request
+            )
+        )
+        capability_dict = authorization_policy_manager.generate_capability(
+            service_account_id
+        )
+        return Response(json.dumps(capability_dict), 200)
+    return Response("Unauthorized", 401)
