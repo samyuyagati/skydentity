@@ -1,5 +1,6 @@
-from typing import Dict, List
+from typing import Dict, List, Tuple, TypedDict, Union, Optional
 from flask import Request
+import sys
 
 from skydentity.policies.checker.resource_policy import (
     CloudPolicy, 
@@ -9,6 +10,7 @@ from skydentity.policies.checker.resource_policy import (
     PolicyContentException
 )
 from skydentity.policies.checker.policy_actions import PolicyAction
+from skydentity.policies.managers.azure_authorization_policy_manager import AzureAuthorizationPolicyManager
 
 class AzureVMPolicy(VMPolicy):
     """
@@ -137,7 +139,7 @@ class AzureVMPolicy(VMPolicy):
         # TODO(kdharmarajan): Add allowed_setup script inclusion here
         return AzureVMPolicy(cloud_specific_policy)
     
-class AzureAttachedPolicyPolicy(ResourcePolicy):
+class AzureAttachedAuthorizationPolicy(ResourcePolicy):
     """
     Defines methods for Azure Attached Policies (what Azure policies can be attached to a VM)
     """
@@ -148,29 +150,58 @@ class AzureAttachedPolicyPolicy(ResourcePolicy):
         """
         self._policy = policy
     
-    def check_request(self, request: Request) -> bool:
+    def check_request(self, request: Request, auth_policy_manager: AzureAuthorizationPolicyManager, logger=None) -> Tuple[Union[str, None], bool]:
         """
         Enforces the policy on a request.
         :param request: The request to enforce the policy on.
         :return: True if the request is allowed, False otherwise.
         """
+        print("check_request", flush=True)
+        sys.stdout.flush()
+        
         request_contents = request.get_json(cache=True)
+        print(">>>request:", request_contents)
 
-        if "identity" in request_contents:
-            # Check that this is a user assigned identity
-            # TODO(kdharmarajan): Do checking for system assigned identities later
-            vm_identity = request_contents["identity"]
-            if vm_identity["type"] != "UserAssigned":
-                return False
+        # Handle attached managed identity capability
+        if "managedIdentities" not in request_contents:
+            return (None, True)
+        
+        # Expect a single attached managed identity
+        if len(request_contents["managedIdentities"]) != 1:
+            if logger:
+                logger.log_text("Only one managed identity may be attached", severity="WARNING")
+            else:
+                print("Only one managed identity may be attached")
+            return (None, False)
 
-            for assigned_user_identity in vm_identity["userAssignedIdentities"]:
-                individual_identity_name = assigned_user_identity.split("/")[-1]
+        # Expect a capability of the form:
+        #   { 'nonce': XX, 'header': XX, 'ciphertext': XX, 'tag': XX }
+        managed_identity_capability = request_contents["managedIdentities"][0]
+        print(">>>managed_identity_capability:", managed_identity_capability)
+        if (managed_identity_capability["nonce"] is None or \
+            managed_identity_capability["header"] is None or \
+            managed_identity_capability["ciphertext"] is None or \
+            managed_identity_capability["tag"] is None):
+            if logger:
+                logger.log_text("Invalid capability format", severity="WARNING")
+            else:
+                print("Invalid capability format")
+            return (None, False)
+        
+        managed_identity_id, success = auth_policy_manager.check_capability(managed_identity_capability)
+        if not success:
+            print("Unsuccessful in checking capability")
+            return (None, False)
 
-                if individual_identity_name not in self._policy["authorization"]:
-                    return False
-
-        # TODO(kdharmarajan): Add scope checks here 
-        return True
+        # Double-check that the managed identity is allowed (e.g., if policy changed since
+        # the capability was issued)
+        print(self._policy[AzurePolicy.Azure_CLOUD_NAME][0]["authorization"])
+        if managed_identity_id not in self._policy[AzurePolicy.Azure_CLOUD_NAME][0]["authorization"]:
+            print("managed identity id", managed_identity_id, "not in", self._policy[AzurePolicy.Azure_CLOUD_NAME])
+            return (None, False)
+        
+        # If permitted, add the managed identity to the request
+        return (managed_identity_id, True)
 
     def to_dict(self) -> Dict:
         """
@@ -178,28 +209,44 @@ class AzureAttachedPolicyPolicy(ResourcePolicy):
         :return: The dictionary representation of the policy.
         """
         out_dict = {}
-        if "authorization" in self._policy:
-            out_dict["authorization"] = self._policy["authorization"]
+        if AzurePolicy.Azure_CLOUD_NAME in self._policy:
+            out_dict[AzurePolicy.Azure_CLOUD_NAME] = self._policy[AzurePolicy.Azure_CLOUD_NAME]
         return out_dict
 
     @staticmethod
-    def from_dict(policy_dict_cloud_level: Dict) -> 'AzureAttachedPolicyPolicy':
+    def from_dict(policy_dict_cloud_level: Dict, logger=None) -> 'AzureAttachedAuthorizationPolicy':
         """
         Converts a dictionary to a policy.
         :param policy_dict: The dictionary representation of the policy.
+        :param logger: optional. azure.cloud logger object.
         :return: The policy representation of the dict.
         """
+        if logger:
+            logger.log_text("GCPAttachedAuthorization", severity="WARNING")
+        else:
+            print("GCPAttachedAuthorization")
         cloud_specific_policy = {}
         can_cloud_run = False
-        for cloud_auth in policy_dict_cloud_level:
-            if AzurePolicy.Azure_CLOUD_NAME \
-                            in cloud_auth:
+        print("Policy dict:", policy_dict_cloud_level)
+        if isinstance(policy_dict_cloud_level, list):
+            for cloud_auth in policy_dict_cloud_level:
+                if AzurePolicy.Azure_CLOUD_NAME \
+                              in cloud_auth:
+                    can_cloud_run = True
+                    service_accounts = cloud_auth[AzurePolicy.Azure_CLOUD_NAME]
+                    cloud_specific_policy[AzurePolicy.Azure_CLOUD_NAME] = service_accounts
+                    break
+        else:
+            for cloud_name in policy_dict_cloud_level:
+                if not (cloud_name == AzurePolicy.Azure_CLOUD_NAME):
+                    continue
                 can_cloud_run = True
-                service_accounts = cloud_auth[AzurePolicy.Azure_CLOUD_NAME]["authorization"]
-                cloud_specific_policy["authorization"] = service_accounts
+                service_accounts = policy_dict_cloud_level[cloud_name]
+                cloud_specific_policy[AzurePolicy.Azure_CLOUD_NAME] = service_accounts
                 break
         cloud_specific_policy['can_cloud_run'] = can_cloud_run
-        return AzureAttachedPolicyPolicy(cloud_specific_policy)
+        print("Cloud-specific attached authorization policy:", cloud_specific_policy)
+        return AzureAttachedAuthorizationPolicy(cloud_specific_policy)
 
 class AzurePolicy(CloudPolicy):
     """
@@ -212,18 +259,18 @@ class AzurePolicy(CloudPolicy):
         "location",
         "properties"
     ])
-    ATTACHED_POLICY_KEYS = set([
-        "identity"
+    ATTACHED_AUTHORIZATION_KEYS = set([
+        "managedIdentities"
     ])
 
-    def __init__(self, vm_policy: AzureVMPolicy, attached_policy_policy: AzureAttachedPolicyPolicy):
+    def __init__(self, vm_policy: AzureVMPolicy, attached_authorization_policy: AzureAttachedAuthorizationPolicy):
         """
         :param vm_policy: The Azure VM Policy to enforce.
-        :param attached_policy_policy: The Attached Policy Policy to enforce.
+        :param attached_authorization_policy: The Attached Policy Policy to enforce.
         """
         self._resource_policies = {
             "virtual_machine": vm_policy,
-            "attached_policies": attached_policy_policy,
+            "attached_authorizations": attached_authorization_policy,
             "unrecognized": UnrecognizedResourcePolicy()
         }
 
@@ -238,8 +285,8 @@ class AzurePolicy(CloudPolicy):
         for key in request.get_json(cache=True).keys():
             if key in AzurePolicy.VM_REQUEST_KEYS:
                 resource_types.add("virtual_machine")
-            elif key in AzurePolicy.ATTACHED_POLICY_KEYS:
-                resource_types.add("attached_policies")
+            elif key in AzurePolicy.ATTACHED_AUTHORIZATION_KEYS:
+                resource_types.add("attached_authorizations")
             else:
                 resource_types.add("unrecognized")
                 print(">>>>> UNRECOGNIZED RESOURCE TYPE <<<<<")
@@ -278,7 +325,7 @@ class AzurePolicy(CloudPolicy):
             vm_dict = policy_dict["virtual_machine"]
         vm_policy = AzureVMPolicy.from_dict(vm_dict)
         attached_policy_dict = {}
-        if "attached_policies" in policy_dict:
-            attached_policy_dict = policy_dict["attached_policies"]
-        attached_policy_policy = AzureAttachedPolicyPolicy.from_dict(attached_policy_dict)
-        return AzurePolicy(vm_policy, attached_policy_policy)
+        if "attached_authorizations" in policy_dict:
+            attached_policy_dict = policy_dict["attached_authorizations"]
+        attached_authorization_policy = AzureAttachedAuthorizationPolicy.from_dict(attached_policy_dict)
+        return AzurePolicy(vm_policy, attached_authorization_policy)
