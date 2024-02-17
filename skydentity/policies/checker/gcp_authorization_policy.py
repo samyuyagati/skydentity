@@ -148,7 +148,7 @@ class GCPAuthorizationPolicy(AuthorizationPolicy):
             roles_dicts.append(role_dict)
         return {
             "authorization": {
-                "cloud_provider": [self._policy.cloud_provider],
+                "cloud_provider": [self._policy.cloud_provider.name],
                 "project": [self._policy.project],
                 "actions": [a.name for a in self._policy.actions],
                 "roles": roles_dicts

@@ -130,6 +130,34 @@ class AzureAuthorizationPolicy(AuthorizationPolicy):
             else:
                 print(f"Request is unrecognized (Azure_authorization_policy.py): {request.url}, {request.method}")
             return (None, False)
+        
+    def to_dict(self) -> Dict:
+        """
+        Converts the policy to a dictionary so that it can be stored.
+        :return: The dictionary representation of the policy.
+        """
+        roles_dicts = []
+        for r in self._policy.roles:
+            role_dict = {
+                "restricted_role": [
+                    {"role": r.role},
+                    {"scope": r.scope},
+                    {"object": r.object}
+                ]
+            }
+            roles_dicts.append(role_dict)
+        return {
+            "authorization": {
+                "cloud_provider": [self._policy.cloud_provider.name],
+                "resource_group": [self._policy.resource_group],
+                "actions": [a.name for a in self._policy.actions],
+                "roles": roles_dicts
+            }
+        }
+
+    @staticmethod
+    def from_dict(policy_dict: Dict) -> Self:
+        return AzureAuthorizationPolicy(policy_dict=policy_dict)
 
 def main():
     print("HELLO")
