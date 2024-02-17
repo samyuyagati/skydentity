@@ -222,9 +222,9 @@ class AzureAttachedAuthorizationPolicy(ResourcePolicy):
         :return: The policy representation of the dict.
         """
         if logger:
-            logger.log_text("GCPAttachedAuthorization", severity="WARNING")
+            logger.log_text("AzureAttachedAuthorization", severity="WARNING")
         else:
-            print("GCPAttachedAuthorization")
+            print("AzureAttachedAuthorization")
         cloud_specific_policy = {}
         can_cloud_run = False
         print("Policy dict:", policy_dict_cloud_level)
