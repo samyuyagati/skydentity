@@ -1,6 +1,7 @@
 """
 Forwarding for SkyPilot requests.
 """
+
 import base64
 import json
 import os
@@ -46,6 +47,16 @@ ROUTES: list[SkypilotRoute] = [
         methods=["GET"],
         path="/compute/v1/projects/<project>/global/images/family/<family>",
         fields=["project", "family"],
+    ),
+    SkypilotRoute(
+        methods=["GET"],
+        path="/compute/v1/projects/<project>/global/images/<image>",
+        fields=["project", "image"],
+    ),
+    SkypilotRoute(
+        methods=["GET"],
+        path="/compute/v1/projects/<project>/aggregated/instances",
+        fields=["project"],
     ),
     SkypilotRoute(
         methods=["POST", "GET"],
@@ -147,7 +158,9 @@ def generic_forward_request(request, log_dict=None):
 
     # Check the request against the policy for this workload orchestrator
     public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
-    authorized, service_account_id = check_request_from_policy(public_key_bytes, request)
+    authorized, service_account_id = check_request_from_policy(
+        public_key_bytes, request
+    )
     if not authorized:
         print_and_log(logger, "Request is unauthorized (policy check failed)")
         return Response("Unauthorized", 401)
@@ -174,37 +187,41 @@ def build_generic_forward(path: str, fields: list[str]):
 
     The path is only used to create a unique and readable name for the anonymous function.
     """
-    func = None
-    if fields == ["project"]:
-        func = lambda project: generic_forward_request(request, {"project": project})
-    elif fields == ["project", "region"]:
-        func = lambda project, region: generic_forward_request(
-            request, {"project": project, "region": region}
-        )
-    elif fields == ["project", "family"]:
-        func = lambda project, family: generic_forward_request(
-            request, {"project": project, "family": family}
-        )
-    elif fields == ["project", "network"]:
-        func = lambda project, network: generic_forward_request(
-            request, {"project": project, "network": network}
-        )
-    elif fields == ["project", "operation"]:
-        func = lambda project, operation: generic_forward_request(
-            request, {"project": project, "operation": operation}
-        )
-    elif fields == ["project", "region", "operation"]:
-        func = lambda project, region, operation: generic_forward_request(
-            request, {"project": project, "region": region, "operation": operation}
-        )
-    elif fields == ["project", "region", "instance"]:
-        func = lambda project, region, instance: generic_forward_request(
-            request, {"project": project, "region": region, "instance": instance}
-        )
-    else:
-        raise ValueError(
-            f"Invalid list of variables to build generic forward for: {fields}"
-        )
+    func = lambda **kwargs: generic_forward_request(request, kwargs)
+    # if fields == ["project"]:
+    #     func = lambda project: generic_forward_request(request, {"project": project})
+    # elif fields == ["project", "region"]:
+    #     func = lambda project, region: generic_forward_request(
+    #         request, {"project": project, "region": region}
+    #     )
+    # elif fields == ["project", "family"]:
+    #     func = lambda project, family: generic_forward_request(
+    #         request, {"project": project, "family": family}
+    #     )
+    # elif fields == ["projdct", "image"]:
+    #     func = lambda project, image: generic_forward_request(
+    #         request, {"project": project, "image": image}
+    #     )
+    # elif fields == ["project", "network"]:
+    #     func = lambda project, network: generic_forward_request(
+    #         request, {"project": project, "network": network}
+    #     )
+    # elif fields == ["project", "operation"]:
+    #     func = lambda project, operation: generic_forward_request(
+    #         request, {"project": project, "operation": operation}
+    #     )
+    # elif fields == ["project", "region", "operation"]:
+    #     func = lambda project, region, operation: generic_forward_request(
+    #         request, {"project": project, "region": region, "operation": operation}
+    #     )
+    # elif fields == ["project", "region", "instance"]:
+    #     func = lambda project, region, instance: generic_forward_request(
+    #         request, {"project": project, "region": region, "instance": instance}
+    #     )
+    # else:
+    #     raise ValueError(
+    #         f"Invalid list of variables to build generic forward for: {fields}"
+    #     )
 
     # Flask expects all view functions to have unique names
     # (otherwise it complains about overriding view functions)
@@ -236,6 +253,43 @@ def setup_routes(app: Flask):
             raise ValueError(
                 "Invalid route specification; missing either `view_func` or `fields`"
             )
+
+    # set up default route
+    default_view = lambda path: default_route_deny(request, path)
+    default_view.__name__ = "default_view"
+    app.add_url_rule("/", view_func=default_view, defaults={"path": ""})
+    app.add_url_rule("/<path:path>", view_func=default_view)
+
+
+def default_route_deny(request, path=None):
+    """
+    Default deny all unknown routes.
+    """
+    logger = get_logger()
+    print_and_log(logger, f"UNKNOWN ROUTE: /{path}")
+    return Response("Unknown route; permission denied", 401)
+
+
+def forward_request_unchecked(request, path=None):
+    """
+    Default forward to google APIs, with no request or policy checking.
+
+    Attaches credentials for the service account; this function should be used with caution,
+    since credentials will be passed along to unchecked requests.
+    """
+    logger = get_logger()
+    print_and_log(logger, f"UNCHECKED FORWARD: /{path}")
+
+    new_url = get_new_url(request)
+    new_headers = get_headers_with_auth(request)
+
+    # don't modify the body in any way
+    new_json = None
+    if len(request.get_data()) > 0:
+        new_json = request.json
+
+    gcp_response = send_gcp_request(request, new_headers, new_url, new_json=new_json)
+    return Response(gcp_response.content, gcp_response.status_code, new_headers)
 
 
 def get_json_with_service_account(request, service_account_email):

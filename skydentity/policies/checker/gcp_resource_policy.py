@@ -19,13 +19,19 @@ class GCPVMPolicy(VMPolicy):
     Defines methods for GCP VM policies.
     """
 
+    REGION_AND_INSTANCE_TYPE_REGEX = re.compile(r'zones/(?P<region>[a-z0-9-]+)/machineTypes/(?P<instance_type>[a-z0-9-]+)')
+    IMAGE_REGEX = re.compile(r'.*/(?P<image>[a-z0-9-]+)$')
+
+    VM_URL_REGEX = {
+        "create": re.compile(r'compute/v1/projects/(?P<project>[^/]+)/zones/<region>/instances'),
+        "set_labels": re.compile(r'compute/v1/projects/(?P<project>[^/]+)/zones/(?P<zone>[^/]+)/instances/(?P<instance>[^/]+)/setLabels'),
+    }
+
     def __init__(self, policy: Dict):
         """
         :param policy: The dict of the policy to enforce.
         """
         self._policy = policy
-        self._region_and_instance_type_regex = re.compile(r'zones/(?P<region>[a-z0-9-]+)/machineTypes/(?P<instance_type>[a-z0-9-]+)')
-        self._image_regex = re.compile(r'.*/(?P<image>[a-z0-9-]+)$')
     
     def get_policy_standard_form(self) -> Dict:
         """
@@ -54,7 +60,10 @@ class GCPVMPolicy(VMPolicy):
             "startup_script": None,
         }
         if request.method == 'POST':
-            out_dict["actions"] = PolicyAction.CREATE
+            if re.search(GCPVMPolicy.VM_URL_REGEX["create"], request.path) is not None:
+                out_dict["actions"] = PolicyAction.CREATE
+            else:
+                out_dict["actions"] = PolicyAction.WRITE
         elif request.method == 'GET':
             out_dict["actions"] = PolicyAction.READ
 
@@ -63,7 +72,7 @@ class GCPVMPolicy(VMPolicy):
             full_machine_type = request_contents["machineType"]
 
             # Extract the region from the machine type
-            extracted_region_and_machine_type = self._region_and_instance_type_regex.match(full_machine_type)
+            extracted_region_and_machine_type = GCPVMPolicy.REGION_AND_INSTANCE_TYPE_REGEX.match(full_machine_type)
 
             out_dict["instance_type"].append(extracted_region_and_machine_type.group("instance_type"))
             out_dict["regions"].append(extracted_region_and_machine_type.group("region"))
@@ -73,7 +82,7 @@ class GCPVMPolicy(VMPolicy):
             for disk in request_contents["disks"]:
                 if "initializeParams" in disk:
                     if "sourceImage" in disk["initializeParams"]:
-                        extracted_image = self._image_regex.match(disk["initializeParams"]["sourceImage"])
+                        extracted_image = GCPVMPolicy.IMAGE_REGEX.match(disk["initializeParams"]["sourceImage"])
                         out_dict["allowed_images"].append(extracted_image.group("image"))
 
         # Parse the setup script, if it exists
@@ -276,8 +285,7 @@ class GCPAttachedAuthorizationPolicy(ResourcePolicy):
         print("Policy dict:", policy_dict_cloud_level)
         if isinstance(policy_dict_cloud_level, list):
           for cloud_auth in policy_dict_cloud_level:
-              if GCPPolicy.GCP_CLOUD_NAME \
-                              in cloud_auth:
+              if GCPPolicy.GCP_CLOUD_NAME in cloud_auth:
                   can_cloud_run = True
                   service_accounts = cloud_auth[GCPPolicy.GCP_CLOUD_NAME]
                   cloud_specific_policy[GCPPolicy.GCP_CLOUD_NAME] = service_accounts
@@ -402,6 +410,10 @@ class GCPReadPolicy(ResourcePolicy):
 
             # check project with policy
             request_project = request_info["project"]
+            if request_project in GCPImageLookupPolicy.PUBLIC_PROJECTS:
+                # allow if public project
+                return True
+
             return request_project == self._policy["project"]
         elif read_type == "regions":
             if self._policy["regions"] is None:
@@ -585,18 +597,27 @@ class GCPPolicy(CloudPolicy):
                 if not has_match:
                     # if no matches, then add unrecognized
                     resource_types.add(("unrecognized",))
-        else:
+        elif request.method == "POST":
             # Handle POST request
             print(request.get_json(cache=True))
-            for key in request.get_json(cache=True).keys():
-                print(key)
-                if key in GCPPolicy.VM_REQUEST_KEYS:
-                    resource_types.add(("virtual_machine",))
-                elif key in GCPPolicy.ATTACHED_AUTHORIZATION_KEYS:
-                    resource_types.add(("attached_authorizations",))
-                else:
+            if re.search(GCPVMPolicy.VM_URL_REGEX["set_labels"], request.path) is not None:
+                resource_types.add(("virtual_machine",))
+            else:
+                for key in request.get_json(cache=True).keys():
+                    print(key)
+                    if key in GCPPolicy.VM_REQUEST_KEYS:
+                        resource_types.add(("virtual_machine",))
+                    elif key in GCPPolicy.ATTACHED_AUTHORIZATION_KEYS:
+                        resource_types.add(("attached_authorizations",))
+
+                # only add unrecognized if nothing  yet
+                if len(resource_types) == 0:
                     resource_types.add(("unrecognized",))
-                    print(">>>>> UNRECOGNIZED RESOURCE TYPE <<<<<")
+                    print(">>>>> ALL UNRECOGNIZED RESOURCE TYPES <<<<<")
+        else:
+            # unrecognized request method
+            resource_types.add(("unrecognized,"))
+            print(f"UNRECOGNIZED REQUEST METHOD: {request.method}")
         print("All resource types:", list(resource_types))
         return list(resource_types)
     
