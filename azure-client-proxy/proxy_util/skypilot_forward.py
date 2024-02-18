@@ -15,7 +15,7 @@ from skydentity.policies.checker.azure_authorization_policy import AzureAuthoriz
 
 from .credentials import (
     activate_service_account,
-    get_service_account_auth_token,
+    get_managed_identity_auth_token,
     get_service_account_path,
 )
 from .logging import get_logger, print_and_log
@@ -105,7 +105,7 @@ def generic_forward_request(request, log_dict=None):
         return Response("", HTTPStatus.REQUEST_TIMEOUT, {})
 
     # Check the request
-    authorized, service_account_id = check_request_from_policy(request.headers["X-PublicKey"], request)
+    authorized, managed_identity_id = check_request_from_policy(request.headers["X-PublicKey"], request)
     if not authorized:
         print_and_log(logger, "Request is unauthorized")
         return Response("Unauthorized", 401)
@@ -118,9 +118,8 @@ def generic_forward_request(request, log_dict=None):
     new_json = None
     if len(request.get_data()) > 0:
         new_json = request.json
-        if service_account_id:
-            # TODO(kdharmarajan): replace this with what works for Azure
-            new_json = get_json_with_service_account(request, service_account_id)
+        if managed_identity_id:
+            new_json = get_json_with_managed_identity(request, managed_identity_id)
             print_and_log(logger, f"Json with service account: {new_json}")
 
     azure_response = send_azure_request(request, new_headers, new_url, new_json=new_json)
@@ -133,33 +132,32 @@ def build_generic_forward(path: str, fields: list[str]):
 
     The path is only used to create a unique and readable name for the anonymous function.
     """
-    # TODO(kdharmarajan): Fix the fields here
     func = None
-    if fields == ["project"]:
-        func = lambda project: generic_forward_request(request, {"project": project})
-    elif fields == ["project", "region"]:
-        func = lambda project, region: generic_forward_request(
-            request, {"project": project, "region": region}
+    if fields == ["subscriptionId"]:
+        func = lambda subscriptionId: generic_forward_request(request, {"subscriptionId": subscriptionId})
+    elif fields == ["subscriptionId", "resourceGroupName"]:
+        func = lambda subscriptionId, resourceGroupName: generic_forward_request(
+            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName}
         )
-    elif fields == ["project", "family"]:
-        func = lambda project, family: generic_forward_request(
-            request, {"project": project, "family": family}
+    elif fields == ["subscriptionId", "resourceGroupName", "nicName"]:
+        func = lambda subscriptionId, resourceGroupName, nicName: generic_forward_request(
+            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "nicName": nicName}
         )
-    elif fields == ["project", "network"]:
-        func = lambda project, network: generic_forward_request(
-            request, {"project": project, "network": network}
+    elif fields == ["subscriptionId", "resourceGroupName", "ipName"]:
+        func = lambda subscriptionId, resourceGroupName, ipName: generic_forward_request(
+            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "ipName": ipName}
         )
-    elif fields == ["project", "operation"]:
-        func = lambda project, operation: generic_forward_request(
-            request, {"project": project, "operation": operation}
+    elif fields == ["subscriptionId", "region", "operationId"]:
+        func = lambda subscriptionId, region, operationId: generic_forward_request(
+            request, {"subscriptionId": subscriptionId, "region": region, "operationId": operationId}
         )
-    elif fields == ["project", "region", "operation"]:
-        func = lambda project, region, operation: generic_forward_request(
-            request, {"project": project, "region": region, "operation": operation}
+    elif fields == ["subscriptionId", "resourceGroupName", "virtualNetworkName"]:
+        func = lambda subscriptionId, resourceGroupName, virtualNetworkName: generic_forward_request(
+            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "virtualNetworkName": virtualNetworkName}
         )
-    elif fields == ["project", "region", "instance"]:
-        func = lambda project, region, instance: generic_forward_request(
-            request, {"project": project, "region": region, "instance": instance}
+    elif fields == ["subscriptionId", "resourceGroupName", "virtualNetworkName", "subnetName"]:
+        func = lambda subscriptionId, resourceGroupName, virtualNetworkName, subnetName: generic_forward_request(
+            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "virtualNetworkName": virtualNetworkName, "subnetName": subnetName}
         )
     else:
         raise ValueError(
@@ -198,17 +196,19 @@ def setup_routes(app: Flask):
             )
 
 
-def get_json_with_service_account(request, service_account_email):
+def get_json_with_managed_identity(request, managed_identity_id):
     """
     Modify the JSON of the request to include service account details.
     """
     json_dict = request.json
-    service_account_dict = {
-        "email": f"{service_account_email}",
-        "scopes": [f"https://www.Azureapis.com/auth/cloud-platform"],
+    managed_identity_dict = {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+            "id": managed_identity_id
+        }
     }
     new_dict = json_dict.copy()
-    new_dict["serviceAccounts"] = [service_account_dict]
+    new_dict["identity"] = managed_identity_dict
     return new_dict
 
 
@@ -225,13 +225,9 @@ def get_headers_with_auth(request):
     hostname = parsed_compute_api_endpoint.netloc
     new_headers["Host"] = f"{hostname}"
 
-    # Activate service account and get auth token
-    service_acct_cred_file = get_service_account_path()
-    activate_service_account(service_acct_cred_file)
+    auth_token_process_out_bytes = get_managed_identity_auth_token()
 
-    auth_token_process_out_bytes = get_service_account_auth_token()
-
-    auth_token = auth_token_process_out_bytes.strip().decode("utf-8")
+    auth_token = auth_token_process_out_bytes.strip()
     # print_and_log(logger, f"AUTH TOKEN: {auth_token}")
     new_headers["Authorization"] = f"Bearer {auth_token}"
 
@@ -282,13 +278,13 @@ def create_authorization_route(cloud):
     authorization_policy = AzureAuthorizationPolicy(policy_dict=request_auth_dict)
     authorization_request, success = authorization_policy.check_request(request)
     if success:
-        service_account_id = (
-            authorization_policy_manager.create_service_account_with_roles(
+        managed_identity_id = (
+            authorization_policy_manager.create_managed_identity_with_roles(
                 authorization_request
             )
         )
         capability_dict = authorization_policy_manager.generate_capability(
-            service_account_id
+            managed_identity_id
         )
         return Response(json.dumps(capability_dict), 200)
     return Response("Unauthorized", 401)

@@ -273,6 +273,8 @@ class AzurePolicy(CloudPolicy):
             "attached_authorizations": attached_authorization_policy,
             "unrecognized": UnrecognizedResourcePolicy()
         }
+        self.valid_authorization: Union[str, None] = None
+        print("AzureAuthorizationPolicy init:", self._resource_policies["attached_authorizations"]._policy)
 
     def get_request_resource_types(self, request: Request) -> List[str]:
         """
@@ -300,8 +302,17 @@ class AzurePolicy(CloudPolicy):
         :param request: The request to enforce the policy on.
         :return: True if the request is allowed, False otherwise.
         """
-        assert resource_type in self._resource_policies
-        return self._resource_policies[resource_type].check_request(request)
+        resource_type_key, *resource_type_aux = resource_type
+        assert resource_type_key in self._resource_policies
+        if resource_type_key == "attached_authorizations":
+            # Authorization policies
+            result = self._resource_policies[resource_type_key].check_request(request, self._authorization_manager)
+            self.valid_authorization = result[0]
+            return result[1]
+        return self._resource_policies[resource_type_key].check_request(request)
+
+    def set_authorization_manager(self, manager: AzureAuthorizationPolicyManager):
+        self._authorization_manager = manager
 
     def to_dict(self) -> Dict:
         """
