@@ -1,10 +1,8 @@
-from azure.cosmos import CosmosClient
-from azure.cosmos.partition_key import PartitionKey
-
 from base64 import b64encode, b64decode
 from Crypto.Cipher import AES
 import secrets
 import string
+from typing import Dict
 
 from skydentity.policies.managers.policy_manager import PolicyManager
 from skydentity.policies.checker.azure_authorization_policy import AzureAuthorizationPolicy
@@ -16,17 +14,23 @@ class AzureAuthorizationPolicyManager(PolicyManager):
     """
 
     def __init__(self,
+                 db_endpoint: str,
+                 db_key: str,
                  capability_enc_path: str,
                  ):
         """
         Initializes the Azure policy manager.
         :param db_endpoint: The endpoint of the Azure database.
         :param db_key: The key of the Azure database.
-        :param db_name: The name of the database.
-        :param db_container_name: The name of the container.
+        :param capability_enc_path: The path to the capability encryption key.
         """
+        from skydentity.policies.managers.azure_policy_manager import AzurePolicyManager
+        self._internal_policy_manager = AzurePolicyManager(db_endpoint, db_key, db_container_name='authorization_policies')
         with open(capability_enc_path, 'rb') as f:
             self._capability_enc = f.read()
+
+    def get_policy_dict(self, public_key: str) -> Dict:
+        return self._internal_policy_manager.get_policy(public_key).to_dict()
     
     def generate_capability(self, managed_identity_id: str) -> dict:
         """

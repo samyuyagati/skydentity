@@ -20,6 +20,7 @@ parser.add_argument("--resource_yaml_input", type=str, help="The path to the inp
 parser.add_argument("--resource_yaml_output", type=str, help="The path to write the output resource yaml file")
 parser.add_argument("--auth_request_yaml", type=str, help="The path to the auth request yaml file")
 parser.add_argument("--capability_enc_key", type=str, help="The path to the capability encryption key file")
+parser.add_argument("--cloud", type=str, help="The cloud to send the request to")
 args = parser.parse_args()
 
 
@@ -71,14 +72,14 @@ def main():
     with open(args.auth_request_yaml, 'r') as f:
         auth_request_dict = yaml.load(f, Loader=yaml.SafeLoader)
         print(auth_request_dict)
-    response = send_auth_creation_request("http://127.0.0.1:5000/skydentity/cloud/gcp/", json=auth_request_dict)
+    response = send_auth_creation_request(f"http://127.0.0.1:5000/skydentity/cloud/{args.cloud}/", json=auth_request_dict)
     print("RESPONSE", response)
     out_path = os.path.join(os.path.dirname(os.path.dirname(os.getcwd())), "tokens/")
     service_acct_id, _ = check_capability(response.json(), args.capability_enc_key)
     with open(args.resource_yaml_input, 'r') as f:
         resource_dict = yaml.load(f, Loader=yaml.SafeLoader)
         print(resource_dict)
-        resource_dict["attached_authorizations"][0]["gcp"][0]["authorization"] = [service_acct_id]
+        resource_dict["attached_authorizations"][0][args.cloud][0]["authorization"] = [service_acct_id]
         with open(args.resource_yaml_output, 'w') as f:
             yaml.dump(resource_dict, f)
     with open(os.path.join(out_path, "capability.json"), "w") as f:

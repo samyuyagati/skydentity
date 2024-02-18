@@ -1,12 +1,11 @@
 #!/bin/bash
 
 # service account information;
-# JSON file containing an "email" key and a "cred_filename" key
-export SERVICE_ACCOUNT_INFO_FILE="tokens/.cloud_creds/gcp/service_account.json"
 # official compute api endpoint
-export COMPUTE_API_ENDPOINT="https://compute.googleapis.com/"
+export COMPUTE_API_ENDPOINT="https://management.azure.com/"
 # capability encoding key
 export CAPABILITY_ENC_KEY_FILE="local_tokens/capability_enc.key"
+# db endpoint
 
 # Default to HTTP
 SECURE=false
