@@ -1,5 +1,5 @@
 #!/bin/bash
-# Example usage: ./test_authorizations.sh -l -r <path to dir containing skydentity repo> -p <path to public key file> -s <path to corresponding secret key> -c <path to key file of service account w/ firestore access> -y <yaml-dir>
+# Example usage: ./test_authorizations.sh -l -r <path to dir containing skydentity repo> -k <path to public key file> -s <path to corresponding secret key> -c <path to key file of service account w/ firestore access> -y <yaml-dir> -p <project id> -t <test script dir>
 
 ROOT=""
 CREDS=""
@@ -8,9 +8,13 @@ SECRET_KEY_PATH=""
 CLIENT_ADDRESS=""
 YAML_DIR=""
 LOCAL=false
+PROJECT=""
+TEST_SCRIPT_DIR=""
+DEFAULT_TEST=true
+TEST_SCRIPT="test_server.py"
 
 # 0a. Run server and client proxies.
-while getopts "r:c:p:s:y:l" option; do
+while getopts "r:c:k:s:y:p:t:l" option; do
   case $option in
     r)
         ROOT=$OPTARG/skydentity
@@ -18,7 +22,7 @@ while getopts "r:c:p:s:y:l" option; do
     c)
         CREDS=$OPTARG
         ;;
-    p)
+    k)
         PUBLIC_KEY_PATH=$OPTARG
         ;;
     s)
@@ -31,8 +35,15 @@ while getopts "r:c:p:s:y:l" option; do
     y)
         YAML_DIR=$OPTARG
         ;;
+    p)
+        PROJECT=$OPTARG
+        ;;
+    t)
+        TEST_SCRIPT_DIR=$OPTARG
+        DEFAULT_TEST=false
+        ;;
     *)
-        echo "Usage: test_authorizations.sh -r <root> -c <credentials> -p <public-key-path> -s <private-key-path> [-l]"
+        echo "Usage: test_authorizations.sh -r <root> -c <credentials> -k <public-key-path> -s <private-key-path> -p <gcp-project-id> [-l]"
         exit 1
         ;;
   esac
@@ -50,9 +61,9 @@ if $LOCAL; then
     CLIENT_ADDRESS="http://127.0.0.1:5001/"
 else
     # serverless client proxy
-    pushd $ROOT/serverless-gcp-skydentity
-    ./deploy_setup.sh
-    ./deploy.sh
+    pushd $ROOT/gcp-client-proxy
+    ./deploy_setup.sh -p $PROJECT
+    ./deploy.sh $PROJECT
     CLIENT_ADDRESS=$(gcloud run services list | grep "https://skyidproxy-service")
 fi
 
@@ -85,10 +96,16 @@ echo "Uploading skypilot_eval_with_auth.yaml to Firestore..."
 python upload_policy.py --policy $YAML_DIR/skypilot_eval_with_auth.yaml --cloud gcp --public-key $PUBLIC_KEY_PATH --credentials $CREDS
 
 # 3. Run skydentity/python-server/test_server.py.
-echo "Attempting to start VM..."
-pushd $ROOT/python-server
-python test_server.py
-popd
+if $DEFAULT_TEST; then
+  echo "Attempting to start VM..."
+  pushd $ROOT/python-server
+  python $TEST_SCRIPT
+  popd
+else
+  pushd $ROOT/$TEST_SCRIPT_DIR
+  python $TEST_SCRIPT
+  popd
+fi
 
 # 4. Check that the service account attached to the created VM matches the one from step 2.
 ATTACHED=$(gcloud compute instances describe gcp-clilib | grep -F3 "serviceAccounts:" | grep "email" | cut -c 10-)
