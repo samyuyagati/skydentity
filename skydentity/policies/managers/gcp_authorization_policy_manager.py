@@ -28,17 +28,17 @@ class GCPAuthorizationPolicyManager(PolicyManager):
         with open(capability_enc_path, 'rb') as f:
             self._capability_enc = f.read()
 
-    def get_policy_dict(self, public_key: str) -> dict:
+    def get_policy_dict(self, public_key_hash) -> dict:
         """
         Gets a policy from the cloud vendor.
-        :param public_key: The public key of the policy.
+        :param public_key_hash: The hash of the public key tied to the policy.
         :return: The policy.
         """
         print(self._firestore_policy_collection)
-        print(public_key)
+        print(public_key_hash)
         return self._db \
             .collection(self._firestore_policy_collection) \
-            .document(public_key) \
+            .document(public_key_hash) \
             .get() \
             .to_dict()
 
