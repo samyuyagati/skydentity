@@ -1,5 +1,6 @@
 from typing import Dict, List, Tuple, TypedDict, Union, Optional
 from flask import Request
+import hashlib
 import re
 import sys
 
@@ -42,6 +43,7 @@ class GCPVMPolicy(VMPolicy):
             "regions": <regions>,
             "instance_type": <instance_type>,
             "allowed_images": [list of allowed images],
+            "startup_script": <startup script hash>,
         }
         """
         out_dict = {
@@ -49,6 +51,7 @@ class GCPVMPolicy(VMPolicy):
             "regions": [],
             "instance_type": [],
             "allowed_images": [],
+            "startup_script": None,
         }
         if request.method == 'POST':
             out_dict["actions"] = PolicyAction.CREATE
@@ -73,6 +76,13 @@ class GCPVMPolicy(VMPolicy):
                         extracted_image = self._image_regex.match(disk["initializeParams"]["sourceImage"])
                         out_dict["allowed_images"].append(extracted_image.group("image"))
 
+        # Parse the setup script, if it exists
+        if "metadata" in request_contents:
+            if "items" in request_contents["metadata"]:
+                for item in request_contents["metadata"]["items"]:
+                    if item["key"] == "startup-script":
+                        out_dict["startup_script"] = hashlib.sha256(item["value"].encode()).hexdigest()
+
         return out_dict
 
     def to_dict(self) -> Dict:
@@ -94,6 +104,9 @@ class GCPVMPolicy(VMPolicy):
             "allowed_images": {
                 GCPPolicy.GCP_CLOUD_NAME: self._policy["allowed_images"]
             },
+            "startup_scripts": {
+                GCPPolicy.GCP_CLOUD_NAME: self._policy["startup_scripts"]
+            }
         }
         return out_dict
     
@@ -160,7 +173,15 @@ class GCPVMPolicy(VMPolicy):
 
         cloud_specific_policy["allowed_images"] = gcp_allowed_images
 
-        # TODO(kdharmarajan): Add allowed_setup script inclusion here
+        # Handle startup scripts
+        gcp_startup_scripts = []
+        for startup_scripts_group in policy_dict_cloud_level["startup_scripts"]:
+            if GCPPolicy.GCP_CLOUD_NAME in startup_scripts_group:
+                if isinstance(policy_dict_cloud_level["startup_scripts"], list):
+                  gcp_startup_scripts = startup_scripts_group[GCPPolicy.GCP_CLOUD_NAME]
+                else:
+                  gcp_startup_scripts = policy_dict_cloud_level["startup_scripts"][GCPPolicy.GCP_CLOUD_NAME]
+        cloud_specific_policy["startup_scripts"] = gcp_startup_scripts
         return GCPVMPolicy(cloud_specific_policy)
     
 class GCPAttachedAuthorizationPolicy(ResourcePolicy):
@@ -513,7 +534,8 @@ class GCPPolicy(CloudPolicy):
         "name", # TODO should name really indicate VM?
         "networkInterfaces",
         "disks",
-        "machineType"
+        "machineType",
+        "metadata",
     ])
     ATTACHED_AUTHORIZATION_KEYS = set([
         "serviceAccounts"

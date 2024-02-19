@@ -197,6 +197,16 @@ def create_instance(
     instance.machine_type = f"zones/{zone}/machineTypes/{machine_type}"
     instance.disks = disks
     instance.service_accounts = [compute_v1.ServiceAccount(email="dummy_account")]
+
+    # Cloud init script    
+    instance.metadata = compute_v1.Metadata()
+    instance.metadata.items = [
+        compute_v1.Items(
+            key="startup-script",
+            value="#! /bin/bash\nsudo echo \"success\" > startup_script.out\n",
+        )
+    ] 
+
     # Prepare the request to insert an instance.
     request = compute_v1.InsertInstanceRequest()
     request.zone = zone

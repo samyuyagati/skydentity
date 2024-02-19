@@ -67,8 +67,13 @@ class VMPolicy(ResourcePolicy, ABC):
             if image not in standardized_vm_policy["allowed_images"]:
                 print("Image not allowed")
                 return False
+        
+        # Then check the startup script
+        if standardized_request["startup_script"] is not None and \
+                not standardized_request["startup_script"] in standardized_vm_policy["startup_scripts"]:
+            print("Startup script not allowed")
+            return False
             
-        # TODO(kdharmarajan): Add allowed_setup script inclusion here
         return True
 
     def get_standard_request_form(self, request: Request) -> Dict:
