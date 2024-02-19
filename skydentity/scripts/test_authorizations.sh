@@ -49,6 +49,11 @@ while getopts "r:c:k:s:y:p:t:l" option; do
   esac
 done
 
+# Clean up previously running client and/or server proxies
+pgrep -f "flask run --host=0.0.0.0 --port=5000" | awk '{print $1}' | xargs kill -9
+pgrep -f "flask run --host=0.0.0.0 --port=5001" | awk '{print $1}' | xargs kill -9
+
+# Start client proxy
 if $LOCAL; then
     # local client proxy
     echo "Running local client proxy as HTTP server..."
@@ -68,6 +73,8 @@ else
 fi
 
 echo "Client proxy address: $CLIENT_ADDRESS"
+
+# Start server proxy
 pushd $ROOT/gcp-server-proxy
 SKYID_CLIENT_ADDRESS=$CLIENT_ADDRESS PRIVATE_KEY_PATH=$SECRET_KEY_PATH ./run_proxy_http.sh &
 SERVER_PROCESS=$!
