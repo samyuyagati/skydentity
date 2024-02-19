@@ -79,7 +79,8 @@ def main():
     with open(args.resource_yaml_input, 'r') as f:
         resource_dict = yaml.load(f, Loader=yaml.SafeLoader)
         print(resource_dict)
-        resource_dict["attached_authorizations"][0][args.cloud][0]["authorization"] = [service_acct_id]
+        import pdb; pdb.set_trace()
+        resource_dict["virtual_machine"]["attached_authorizations"][0][args.cloud][0]["authorization"] = [service_acct_id]
         with open(args.resource_yaml_output, 'w') as f:
             yaml.dump(resource_dict, f)
     with open(os.path.join(out_path, "capability.json"), "w") as f:

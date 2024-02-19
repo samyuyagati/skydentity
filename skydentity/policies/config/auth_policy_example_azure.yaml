@@ -1,6 +1,6 @@
 authorization:
   cloud_provider: 
-    - Azure
+    - azure
 
   resource_group:
     - skydentity

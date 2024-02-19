@@ -3,10 +3,14 @@ from Crypto.Cipher import AES
 import secrets
 import string
 from typing import Dict
+from functools import cache
 
 from skydentity.policies.managers.policy_manager import PolicyManager
 from skydentity.policies.checker.azure_authorization_policy import AzureAuthorizationPolicy
 from skydentity.policies.iam.azure_managed_identity_manager import AzureManagedIdentityManager
+
+from azure.identity import DefaultAzureCredential
+from azure.mgmt.subscription import SubscriptionClient
 
 class AzureAuthorizationPolicyManager(PolicyManager):
     """
@@ -25,7 +29,7 @@ class AzureAuthorizationPolicyManager(PolicyManager):
         :param capability_enc_path: The path to the capability encryption key.
         """
         from skydentity.policies.managers.azure_policy_manager import AzurePolicyManager
-        self._internal_policy_manager = AzurePolicyManager(db_endpoint, db_key, db_container_name='authorization_policies')
+        self._internal_policy_manager = AzurePolicyManager(db_endpoint, db_key, policy_type=AzureAuthorizationPolicy, db_container_name='authorization_policies')
         with open(capability_enc_path, 'rb') as f:
             self._capability_enc = f.read()
 
@@ -60,6 +64,17 @@ class AzureAuthorizationPolicyManager(PolicyManager):
         except ValueError:
             print("Invalid capability: could not decrypt or verify")
             return (None, False)
+
+    @cache  
+    def get_subscription_id(self) -> str:
+        """
+        Gets the subscription id from the Azure database.
+        :return: The subscription id.
+        """
+        credential = DefaultAzureCredential()
+        subscription_client = SubscriptionClient(credential)
+        subscription = next(subscription_client.subscriptions.list())
+        return subscription.subscription_id
         
     def create_managed_identity_with_roles(self, authorization: AzureAuthorizationPolicy) -> str:
         """
@@ -67,7 +82,7 @@ class AzureAuthorizationPolicyManager(PolicyManager):
         :param authorization: The AuthorizationPolicy specifying the roles for the managed identity.
         :return The created managed identity name.
         """
-        azure_managed_identity_manager = AzureManagedIdentityManager()
+        azure_managed_identity_manager = AzureManagedIdentityManager(self.get_subscription_id())
 
         # Create random managed identity name from a random 64 bit value
         account_name = secrets.choice(string.ascii_letters) + secrets.token_hex(8)

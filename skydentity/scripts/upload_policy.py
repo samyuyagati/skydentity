@@ -32,12 +32,13 @@ def main():
                                                 firestore_policy_collection=policy_container_name)
         policy_type = GCPPolicy if not args.authorization else GCPAuthorizationPolicy
     elif formatted_cloud == 'azure':
+        policy_type = AzurePolicy if not args.authorization else AzureAuthorizationPolicy
         cloud_policy_manager = AzurePolicyManager(
             db_endpoint = args.db_endpoint,
             db_key = args.credentials,
+            policy_type = policy_type,
             db_container_name = policy_container_name
         )
-        policy_type = AzurePolicy if not args.authorization else AzureAuthorizationPolicy
     else:
         raise Exception('Cloud not supported. Supported types are gcp and azure')
 

@@ -31,7 +31,7 @@ class Action(Enum):
     CREATE = 1
 
 class CloudProvider(Enum):
-    Azure = 1
+    azure = 1
 
 @dataclass
 class AzureAuthorization:
@@ -151,7 +151,8 @@ class AzureAuthorizationPolicy(AuthorizationPolicy):
                 "cloud_provider": [self._policy.cloud_provider.name],
                 "resource_group": [self._policy.resource_group],
                 "actions": [a.name for a in self._policy.actions],
-                "roles": roles_dicts
+                "roles": roles_dicts,
+                "region": [self._policy.region]
             }
         }
 

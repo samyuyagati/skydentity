@@ -321,6 +321,8 @@ class AzurePolicy(CloudPolicy):
         """
         out_dict = {}
         for resource_type, policy in self._resource_policies.items():
+            if resource_type == "unrecognized":
+                continue
             out_dict[resource_type] = policy.to_dict()
         return out_dict
 

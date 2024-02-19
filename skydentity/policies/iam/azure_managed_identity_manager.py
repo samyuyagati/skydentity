@@ -1,3 +1,5 @@
+import uuid
+
 #import httplib2
 #httplib2.debuglevel = 4
 from azure.identity import DefaultAzureCredential
@@ -30,14 +32,14 @@ class AzureManagedIdentityManager:
             try:
                 self._managed_identity_client.user_assigned_identities.get(
                     resource_group_name=auth.resource_group,
-                    identity_name=managed_identity_name
+                    resource_name=managed_identity_name
                 )
                 return
             except:
                 self._managed_identities[managed_identity_name] = (
                     self._managed_identity_client.user_assigned_identities.create_or_update(
                         resource_group_name=auth.resource_group,
-                        identity_name=managed_identity_name,
+                        resource_name=managed_identity_name,
                         parameters=Identity(location=auth.region)
                     )
                 )
@@ -61,31 +63,27 @@ class AzureManagedIdentityManager:
 
         # Get current policy to modify and add roles
         print("Resource Group:", auth.resource_group)
-        permissions = []      
+        permissions = [
+            {
+                "actions": [],
+                "notActions": [],
+                "dataActions": [],
+                "notDataActions": [],
+                "conditions": []
+            }
+        ]      
         for new_binding in auth.roles:
 
-            conditions = []
-            possible_condition = self.get_object_condition(auth, new_binding)
+            possible_condition = self.get_object_condition(new_binding)
             if possible_condition:
-                conditions.append(possible_condition)
-
-            actions = []
-            dataActions = []
+                permissions[0]["conditions"].append(possible_condition)
 
             # Azure has a distinction between actions and data actions, where the later is for reading/writing blobs,
             # so we need to handle that here.
             if "blobs" in new_binding.role:
-                dataActions.append(new_binding.role)
+                permissions[0]["dataActions"].append(new_binding.role)
             else:
-                actions.append(new_binding.role)
-
-            permissions.append({
-                "actions": actions,
-                "notActions": [],
-                "dataActions": dataActions,
-                "notDataActions": [],
-                "conditions": conditions
-            })
+                permissions[0]["actions"].append(new_binding.role)
 
         role_definition = RoleDefinition(
             assignable_scopes=[f"/subscriptions/{self._subscription_id}/resourceGroups/{auth.resource_group}"],
@@ -96,17 +94,18 @@ class AzureManagedIdentityManager:
 
         role_definition = self._authorization_client.role_definitions.create_or_update(
             scope=f"/subscriptions/{self._subscription_id}/resourceGroups/{auth.resource_group}",
-            role_definition_id=role_definition.role_name,
+            role_definition_id=str(uuid.uuid4()),
             role_definition=role_definition
         )
 
         # Assign role to service account
         role_assignment = self._authorization_client.role_assignments.create(
             scope=f"/subscriptions/{self._subscription_id}/resourceGroups/{auth.resource_group}",
-            role_assignment_name=f"{role_definition.id}_Assignment",
+            role_assignment_name=str(uuid.uuid4()),
             parameters=RoleAssignmentCreateParameters(
                 role_definition_id=role_definition.id,
-                principal_id=managed_identity.principal_id
+                principal_id=managed_identity.principal_id,
+                principal_type="ServicePrincipal"
             ))
 
 

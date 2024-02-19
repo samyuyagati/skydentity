@@ -235,7 +235,7 @@ def get_client_proxy_endpoint(request):
     # print(f"USER AGENT: {user_agent}")
 
     # TODO: replace with actual fetch
-    return os.environ.get("SKYID_CLIENT_ADDRESS", "https://127.0.0.1:5001/")
+    return os.environ.get("SKYID_CLIENT_ADDRESS", "http://127.0.0.1:5001/")
 
 
 def get_new_url(request):
