@@ -12,6 +12,7 @@ import requests
 from flask import Flask, Response, request
 
 from skydentity.policies.checker.gcp_authorization_policy import GCPAuthorizationPolicy
+from skydentity.utils.hash_util import hash_public_key
 
 from .credentials import (
     activate_service_account,
@@ -139,23 +140,23 @@ def generic_forward_request(request, log_dict=None):
             log_str += f"\t{key}: {val}\n"
         print_and_log(logger, log_str.strip())
 
+    # Verify the request signature
     if not verify_request_signature(request):
-        # Not sure if this is the correct status code. This case will only happen when the timestamp
-        # associated with the signature is too old at the time when the signature is verified.
-        return Response("", HTTPStatus.REQUEST_TIMEOUT, {})
+        print_and_log(logger, "Request is unauthorized (signature verification failed)")
+        return Response("Unauthorized", 401)
 
-    # Check the request
+    # Check the request against the policy for this workload orchestrator
     public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
     authorized, service_account_id = check_request_from_policy(public_key_bytes, request)
     if not authorized:
-        print_and_log(logger, "Request is unauthorized")
+        print_and_log(logger, "Request is unauthorized (policy check failed)")
         return Response("Unauthorized", 401)
 
     # Get new endpoint and new headers
     new_url = get_new_url(request)
     new_headers = get_headers_with_auth(request)
 
-    # don't modify the body in any way
+    # If a valid service account was provided, attach it to the request
     new_json = None
     if len(request.get_data()) > 0:
         new_json = request.json
@@ -315,9 +316,18 @@ def create_authorization_route(cloud):
     logger = get_logger()
     authorization_policy_manager = get_authorization_policy_manager()
     print_and_log(logger, f"Creating authorization (json: {request.json})")
-    # TODO: change hard coded name
-    request_auth_dict = authorization_policy_manager.get_policy_dict("skypilot_eval")
+
+    # Get hash of public key
+    public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
+    # Compute hash of public key
+    public_key_hash = hash_public_key(public_key_bytes)
+    print_and_log(logger, f"Public key hash: {public_key_hash}")
+
+    # Retrieve authorization policy from firestore with public key hash
+    request_auth_dict = authorization_policy_manager.get_policy_dict(public_key_hash)
     print("Request auth dict:", request_auth_dict)
+
+    # Check request against authorization policy
     authorization_policy = GCPAuthorizationPolicy(policy_dict=request_auth_dict)
     authorization_request, success = authorization_policy.check_request(request)
     if success:
