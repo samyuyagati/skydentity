@@ -1,0 +1,15 @@
+authorization:
+  cloud_provider: 
+    - GCP 
+  
+  project:
+    - sky-identity
+
+  actions: 
+    - CREATE
+
+  roles:
+    - restricted_role:
+      - role: roles/storage.objectUser
+      - scope: bucket
+      - object: test_bucket_signedurl

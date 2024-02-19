@@ -34,18 +34,23 @@ class GCPPolicyManager(PolicyManager):
             .document(public_key) \
             .set(policy.to_dict())
 
-    def get_policy(self, public_key: str, logger=None) -> GCPPolicy:
+    def get_policy(self, public_key_hash: str, logger=None) -> GCPPolicy:
         """
         Gets a policy from the cloud vendor.
         :param public_key: The public key of the policy.
         :param logger: optional. google.cloud logger
         :return: The policy.
         """
-        return GCPPolicy.from_dict(
-            self._db \
-                .collection(self._firestore_policy_collection) \
-                .document(public_key) \
-                .get() \
-                .to_dict(),
-            logger
-        )
+        try:
+            policy = GCPPolicy.from_dict(
+                self._db \
+                    .collection(self._firestore_policy_collection) \
+                    .document(public_key_hash) \
+                    .get() \
+                    .to_dict(),
+                logger
+            )
+            return policy
+        except Exception as e:
+            print("Failed to get policy from GCP, possibly due to invalid public key:", e)
+            return None
