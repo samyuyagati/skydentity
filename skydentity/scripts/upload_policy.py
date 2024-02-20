@@ -10,6 +10,8 @@ from skydentity.policies.checker.azure_resource_policy import AzurePolicy
 from skydentity.policies.checker.azure_authorization_policy import AzureAuthorizationPolicy
 from skydentity.policies.managers.azure_policy_manager import AzurePolicyManager 
 
+from skydentity.utils.hash_util import hash_public_key_from_file
+
 def main():
     parser = argparse.ArgumentParser(description='Upload a policy to the cloud storage')
     parser.add_argument('--policy', type=str, help='Path to the policy file to upload')
@@ -26,7 +28,10 @@ def main():
     policy_type = None
 
     policy_container_name = 'policies' if not args.authorization else 'authorization_policies'
- 
+
+    hashed_public_key = hash_public_key_from_file(args.public_key_path)
+    print("Hashed public key: ", hashed_public_key)
+
     if formatted_cloud == 'gcp':
         cloud_policy_manager = GCPPolicyManager(credentials_path=args.credentials, 
                                                 firestore_policy_collection=policy_container_name)
@@ -46,7 +51,7 @@ def main():
 
     policy_name = os.path.basename(args.policy)
     read_from_local_policy = local_policy_manager.get_policy(policy_name)
-    cloud_policy_manager.upload_policy(args.public_key, read_from_local_policy)
+    cloud_policy_manager.upload_policy(hashed_public_key, read_from_local_policy)
     print('Policy has been uploaded!')
 
 if __name__ == "__main__":

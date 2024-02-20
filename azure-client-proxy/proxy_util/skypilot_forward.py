@@ -2,6 +2,7 @@
 Forwarding for SkyPilot requests.
 """
 
+import base64
 import json
 import os
 from collections import namedtuple
@@ -103,7 +104,8 @@ def generic_forward_request(request, log_dict=None):
         return Response("", HTTPStatus.REQUEST_TIMEOUT, {})
 
     # Check the request
-    authorized, managed_identity_id = check_request_from_policy(request.headers["X-PublicKey"], request)
+    public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
+    authorized, managed_identity_id = check_request_from_policy(public_key_bytes, request)
     if not authorized:
         print_and_log(logger, "Request is unauthorized")
         return Response("Unauthorized", 401)
@@ -112,7 +114,7 @@ def generic_forward_request(request, log_dict=None):
     new_url = get_new_url(request)
     new_headers = get_headers_with_auth(request)
 
-    # don't modify the body in any way
+    # Only modify the JSON if a valid service account capability was provided
     new_json = None
     if len(request.get_data()) > 0:
         new_json = request.json
