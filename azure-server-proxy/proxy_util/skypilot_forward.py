@@ -34,18 +34,23 @@ ROUTES: list[SkypilotRoute] = [
         fields=["subscriptionId"],
     ),
     SkypilotRoute(
+        methods=["GET", "PUT"],
+        path="/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/virtualMachines/<vmName>",
+        fields=["subscriptionId", "resourceGroupName", "vmName"],
+    ),
+    SkypilotRoute(
         methods=["PUT"],
         path="/subscriptions/<subscriptionId>/resourcegroups/<resourceGroupName>",
         fields=["subscriptionId", "resourceGroupName"],
     ),
     SkypilotRoute(
-        methods=["GET"],
+        methods=["GET", "PUT"],
         path="/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/networkInterfaces/<nicName>",
         fields=["subscriptionId", "resourceGroupName", "nicName"],
     ),
     SkypilotRoute(
         methods=["GET", "PUT"],
-        path="/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/publicIpAddresses/<ipName>",
+        path="/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/publicIPAddresses/<ipName>",
         fields=["subscriptionId", "resourceGroupName", "ipName"],
     ),
     SkypilotRoute(
@@ -137,7 +142,7 @@ def generic_forward_request(request, log_dict=None):
     new_json = None
     if len(request.get_data()) > 0:
         old_json = request.json
-        if "serviceAccounts" not in old_json:
+        if "identity" not in old_json:
             new_json = request.json
         else:
             new_json = old_json
@@ -147,14 +152,14 @@ def generic_forward_request(request, log_dict=None):
             capability_file = "capability.json"
             capability_path = os.path.join(parent_dir, capability_dir, capability_file)
             with open(capability_path, "r") as f:
-                new_json["serviceAccounts"] = [json.load(f)]
+                new_json["identity"] = [json.load(f)]
 
             print("JSON with service acct capability:", new_json, flush=True)
 
-    gcp_response = forward_to_client(
+    azure_response = forward_to_client(
         request, new_url, new_headers=new_headers, new_json=new_json
     )
-    return Response(gcp_response.content, gcp_response.status_code)
+    return Response(azure_response.content, azure_response.status_code, content_type=azure_response.headers["Content-Type"])
 
 
 def build_generic_forward(path: str, fields: list[str]):
@@ -191,6 +196,10 @@ def build_generic_forward(path: str, fields: list[str]):
     elif fields == ["subscriptionId", "resourceGroupName", "virtualNetworkName", "subnetName"]:
         func = lambda subscriptionId, resourceGroupName, virtualNetworkName, subnetName: generic_forward_request(
             request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "virtualNetworkName": virtualNetworkName, "subnetName": subnetName}
+        )
+    elif fields == ["subscriptionId", "resourceGroupName", "vmName"]:
+        func = lambda subscriptionId, resourceGroupName, vmName: generic_forward_request(
+            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "vmName": vmName}
         )
     else:
         raise ValueError(
@@ -235,7 +244,7 @@ def get_client_proxy_endpoint(request):
     # print(f"USER AGENT: {user_agent}")
 
     # TODO: replace with actual fetch
-    return os.environ.get("SKYID_CLIENT_ADDRESS", "http://127.0.0.1:5001/")
+    return os.environ.get("SKYID_CLIENT_ADDRESS", "https://192.168.117.58:5001/")
 
 
 def get_new_url(request):

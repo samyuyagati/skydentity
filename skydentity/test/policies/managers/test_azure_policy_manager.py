@@ -22,20 +22,21 @@ class AzurePolicyManagerSuite(unittest.TestCase):
             db_name = os.environ['AZURE_DB_NAME'],
             db_container_name = os.environ['AZURE_DB_CONTAINER_NAME']
         )
-        self._local_policy_manager = LocalPolicyManager(self._policy_dir, AzurePolicy)
+        self._local_policy_manager = LocalPolicyManager(AzurePolicy)
 
-    def get_local_policy(self, policy_name: str) -> AzurePolicy:
+    def get_local_policy(self, policy_path: str) -> AzurePolicy:
         """
-        Reads the policy from a file, from resources/policies/azure/{policy_name}.json
+        Reads the policy from a file, from policy_path
         """
-        return self._local_policy_manager.get_policy(policy_name)
+        return self._local_policy_manager.get_policy(policy_path)
 
     def test_write_get_policy(self):
         """
         Tests a simple write / get policy.
         """
         print('Testing write / get policy.')
-        test_policy = self.get_local_policy('loose_vm')
+        policy_path = os.path.join(self._policy_dir, 'loose_vm.yaml')
+        test_policy = self.get_local_policy(policy_path)
         self._policy_manager.upload_policy('skypilot', test_policy)
         out_policy = self._policy_manager.get_policy('skypilot')
         self.assertEqual(out_policy.to_dict(), test_policy.to_dict())

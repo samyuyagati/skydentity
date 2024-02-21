@@ -77,7 +77,7 @@ class AzureVMPolicy(VMPolicy):
         :return: The dictionary representation of the policy.
         """
         out_dict = {
-            "actions": self._policy["actions"].value,
+            "actions": [self._policy["actions"].value],
             "cloud_provider": [
                 AzurePolicy.Azure_CLOUD_NAME
             ],
@@ -116,8 +116,12 @@ class AzureVMPolicy(VMPolicy):
 
         Azure_cloud_regions = []
         for region_group in policy_dict_cloud_level["regions"]:
+            print("REGION GROUP", region_group)
             if AzurePolicy.Azure_CLOUD_NAME in region_group:
-                Azure_cloud_regions = region_group[AzurePolicy.Azure_CLOUD_NAME]
+                if isinstance(policy_dict_cloud_level["regions"], list):
+                  Azure_cloud_regions = region_group[AzurePolicy.Azure_CLOUD_NAME] 
+                else: 
+                  Azure_cloud_regions = policy_dict_cloud_level["regions"][region_group] 
                 break
 
         # TODO(kdharmarajan): Check that the regions are valid later (not essential)
@@ -126,13 +130,18 @@ class AzureVMPolicy(VMPolicy):
         Azure_instance_types = []
         for instance_type_group in policy_dict_cloud_level["instance_type"]:
             if AzurePolicy.Azure_CLOUD_NAME in instance_type_group:
-                Azure_instance_types = instance_type_group[AzurePolicy.Azure_CLOUD_NAME]
+                if isinstance(policy_dict_cloud_level["instance_type"], list):
+                  Azure_instance_types = instance_type_group[AzurePolicy.Azure_CLOUD_NAME]
+                else:
+                  Azure_instance_types = policy_dict_cloud_level["instance_type"][AzurePolicy.Azure_CLOUD_NAME]
         cloud_specific_policy["instance_type"] = Azure_instance_types
 
         Azure_allowed_images = []
         for allowed_images_group in policy_dict_cloud_level["allowed_images"]:
-            if AzurePolicy.Azure_CLOUD_NAME in allowed_images_group:
+            if isinstance(policy_dict_cloud_level["allowed_images"], list):
                 Azure_allowed_images = allowed_images_group[AzurePolicy.Azure_CLOUD_NAME]
+            else:
+                Azure_allowed_images = policy_dict_cloud_level["allowed_images"][AzurePolicy.Azure_CLOUD_NAME]
 
         cloud_specific_policy["allowed_images"] = Azure_allowed_images
 
@@ -284,18 +293,22 @@ class AzurePolicy(CloudPolicy):
         """
         resource_types = set([])
         # TODO(kdharmarajan): Be on the lookout for certain GET requests that need to be allowed
+        # TODO: Make sure we don't get to get_json for GET requests and instead use separate ReadPolicy
+        # TODO(later): Refactoring the logic to reuse better
+        if request.method == 'GET':
+            return list(resource_types)
         for key in request.get_json(cache=True).keys():
             if key in AzurePolicy.VM_REQUEST_KEYS:
-                resource_types.add("virtual_machine")
+                resource_types.add(("virtual_machine",))
             elif key in AzurePolicy.ATTACHED_AUTHORIZATION_KEYS:
-                resource_types.add("attached_authorizations")
-            else:
-                resource_types.add("unrecognized")
-                print(">>>>> UNRECOGNIZED RESOURCE TYPE <<<<<")
+                resource_types.add(("attached_authorizations",))
+        if len(resource_types) == 0:
+            resource_types.add(("unrecognized",))
+            print(">>>>> UNRECOGNIZED RESOURCE TYPE <<<<<")
         print("All resource types:", list(resource_types))
         return list(resource_types)
     
-    def check_resource_type(self, resource_type: str, request: Request) -> bool:
+    def check_resource_type(self, resource_type: Tuple[str], request: Request) -> bool:
         """
         Enforces the policy on a resource type.
         :param resource_type: The resource type to enforce the policy on.
@@ -340,5 +353,6 @@ class AzurePolicy(CloudPolicy):
         attached_policy_dict = {}
         if "attached_authorizations" in policy_dict:
             attached_policy_dict = policy_dict["attached_authorizations"]
+        # TODO: Check for reading the attached authorization, also look for GCP code
         attached_authorization_policy = AzureAttachedAuthorizationPolicy.from_dict(attached_policy_dict)
         return AzurePolicy(vm_policy, attached_authorization_policy)

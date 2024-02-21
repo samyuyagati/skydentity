@@ -9,7 +9,7 @@ authorization:
     - CREATE
 
   region: 
-    - westus2
+    - westus
 
   roles:
     - restricted_role:

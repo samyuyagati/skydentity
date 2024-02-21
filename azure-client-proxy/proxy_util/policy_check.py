@@ -49,7 +49,7 @@ def check_request_from_policy(public_key, request) -> Tuple[bool, Union[str, Non
 
     policy_manager = get_policy_manager()
     authorization_policy_manager = get_authorization_policy_manager()
-    policy = policy_manager.get_policy(public_key, None)
+    policy = policy_manager.get_policy(public_key)
     print_and_log(logger, f"Got policy {policy}")
     policy.set_authorization_manager(authorization_policy_manager)
 

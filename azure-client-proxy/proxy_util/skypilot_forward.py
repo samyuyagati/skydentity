@@ -45,18 +45,23 @@ ROUTES: list[SkypilotRoute] = [
         fields=["subscriptionId"],
     ),
     SkypilotRoute(
+        methods=["GET", "PUT"],
+        path="/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/virtualMachines/<vmName>",
+        fields=["subscriptionId", "resourceGroupName", "vmName"],
+    ),
+    SkypilotRoute(
         methods=["PUT"],
         path="/subscriptions/<subscriptionId>/resourcegroups/<resourceGroupName>",
         fields=["subscriptionId", "resourceGroupName"],
     ),
     SkypilotRoute(
-        methods=["GET"],
+        methods=["GET", "PUT"],
         path="/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/networkInterfaces/<nicName>",
         fields=["subscriptionId", "resourceGroupName", "nicName"],
     ),
     SkypilotRoute(
         methods=["GET", "PUT"],
-        path="/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/publicIpAddresses/<ipName>",
+        path="/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/publicIPAddresses/<ipName>",
         fields=["subscriptionId", "resourceGroupName", "ipName"],
     ),
     SkypilotRoute(
@@ -90,6 +95,7 @@ def generic_forward_request(request, log_dict=None):
     [SkyPilot Integration]
     Forward a generic request to Azure APIs.
     """
+    import pdb; pdb.set_trace()
     logger = get_logger()
     if log_dict is not None:
         log_str = f"PATH: {request.full_path}\n"
@@ -121,7 +127,7 @@ def generic_forward_request(request, log_dict=None):
             print_and_log(logger, f"Json with service account: {new_json}")
 
     azure_response = send_azure_request(request, new_headers, new_url, new_json=new_json)
-    return Response(azure_response.content, azure_response.status_code, new_headers)
+    return Response(azure_response.content, azure_response.status_code, headers=new_headers, content_type=azure_response.headers["Content-Type"])
 
 
 def build_generic_forward(path: str, fields: list[str]):
@@ -158,6 +164,10 @@ def build_generic_forward(path: str, fields: list[str]):
     elif fields == ["subscriptionId", "resourceGroupName", "virtualNetworkName", "subnetName"]:
         func = lambda subscriptionId, resourceGroupName, virtualNetworkName, subnetName: generic_forward_request(
             request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "virtualNetworkName": virtualNetworkName, "subnetName": subnetName}
+        )
+    elif fields == ["subscriptionId", "resourceGroupName", "vmName"]:
+        func = lambda subscriptionId, resourceGroupName, vmName: generic_forward_request(
+            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "vmName": vmName}
         )
     else:
         raise ValueError(

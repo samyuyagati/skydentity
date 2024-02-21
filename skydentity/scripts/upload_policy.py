@@ -42,11 +42,8 @@ def main():
     else:
         raise Exception('Cloud not supported. Supported types are gcp and azure')
 
-    policy_dir = os.path.dirname(args.policy)
-    local_policy_manager = LocalPolicyManager(policy_dir, policy_type)
-
-    policy_name = os.path.basename(args.policy)
-    read_from_local_policy = local_policy_manager.get_policy(policy_name)
+    local_policy_manager = LocalPolicyManager(policy_type)
+    read_from_local_policy = local_policy_manager.get_policy(args.policy)
     cloud_policy_manager.upload_policy(args.public_key, read_from_local_policy)
     print('Policy has been uploaded!')
 

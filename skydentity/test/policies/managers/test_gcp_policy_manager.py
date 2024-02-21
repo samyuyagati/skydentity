@@ -19,21 +19,21 @@ class GCPPolicyManagerSuite(unittest.TestCase):
         self._policy_manager = GCPPolicyManager(
             credentials_path = os.environ['GCP_CREDENTIALS'],
         )
-        self._local_policy_manager = LocalPolicyManager(self._policy_dir, GCPPolicy)
+        self._local_policy_manager = LocalPolicyManager(GCPPolicy)
 
-    def get_local_policy(self, policy_name: str) -> GCPPolicy:
+    def get_local_policy(self, policy_path: str) -> GCPPolicy:
         """
-        Reads the policy from a file, from resources/policies/gcp/{policy_name}.json
+        Reads the policy from a file, from policy_path
         """
-        return self._local_policy_manager.get_policy(policy_name)
+        return self._local_policy_manager.get_policy(policy_path)
 
     def test_write_get_policy(self):
         """
         Tests a simple write / get policy.
         """
         print('Testing write / get policy.')
-        import pdb; pdb.set_trace()
-        test_policy = self.get_local_policy('loose_vm')
+        local_policy_location = os.path.join(self._policy_dir, 'loose_vm.yaml')
+        test_policy = self.get_local_policy(local_policy_location)
         self._policy_manager.upload_policy('skypilot', test_policy)
         out_policy = self._policy_manager.get_policy('skypilot')
         self.assertEqual(out_policy.to_dict(), test_policy.to_dict())

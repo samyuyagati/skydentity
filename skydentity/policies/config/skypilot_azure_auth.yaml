@@ -8,7 +8,7 @@ virtual_machine:
   attached_authorizations:
   - azure:
     - authorization:
-      - F14fcb8aee115e11a
+      - F9508cac64568c588
   cloud_provider:
   - azure
   instance_type:

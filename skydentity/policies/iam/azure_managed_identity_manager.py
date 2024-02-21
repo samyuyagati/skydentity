@@ -75,6 +75,7 @@ class AzureManagedIdentityManager:
         for new_binding in auth.roles:
 
             possible_condition = self.get_object_condition(new_binding)
+            # TODO: Fix inserting conditions for a role
             if possible_condition:
                 permissions[0]["conditions"].append(possible_condition)
 
