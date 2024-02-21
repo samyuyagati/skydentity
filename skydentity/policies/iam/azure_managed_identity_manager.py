@@ -63,21 +63,21 @@ class AzureManagedIdentityManager:
 
         # Get current policy to modify and add roles
         print("Resource Group:", auth.resource_group)
-        permissions = [
-            {
-                "actions": [],
-                "notActions": [],
-                "dataActions": [],
-                "notDataActions": [],
-                "conditions": []
-            }
-        ]      
-        for new_binding in auth.roles:
 
-            possible_condition = self.get_object_condition(new_binding)
-            # TODO: Fix inserting conditions for a role
-            if possible_condition:
-                permissions[0]["conditions"].append(possible_condition)
+        # Strategy for creating Managed Identity with roles and granular conditions is to first create the roles, then assign roles to managed identity with conditions
+
+        azure_role_objects = []
+        # TODO(kdharmarajan): Later prioritization but can optimize this to group by condition and then create roles in bulk with fewer requests
+        for i, new_binding in enumerate(auth.roles):
+            permissions = [
+                {
+                    "actions": [],
+                    "notActions": [],
+                    "dataActions": [],
+                    "notDataActions": [],
+                    "conditions": []
+                }
+            ]
 
             # Azure has a distinction between actions and data actions, where the later is for reading/writing blobs,
             # so we need to handle that here.
@@ -86,28 +86,38 @@ class AzureManagedIdentityManager:
             else:
                 permissions[0]["actions"].append(new_binding.role)
 
-        role_definition = RoleDefinition(
-            assignable_scopes=[f"/subscriptions/{self._subscription_id}/resourceGroups/{auth.resource_group}"],
-            role_name=f"{managed_identity.id}_Custom_Role",
-            description="Skydentity created custom role",
-            permissions=permissions
-        )
+            managed_identity_id_suffix = managed_identity.id.split("/")[-1]
 
-        role_definition = self._authorization_client.role_definitions.create_or_update(
-            scope=f"/subscriptions/{self._subscription_id}/resourceGroups/{auth.resource_group}",
-            role_definition_id=str(uuid.uuid4()),
-            role_definition=role_definition
-        )
+            role_definition = RoleDefinition(
+                assignable_scopes=[f"/subscriptions/{self._subscription_id}/resourceGroups/{auth.resource_group}"],
+                role_name=f"{managed_identity_id_suffix}_Custom_Role_{i}",
+                description="Skydentity created custom role",
+                permissions=permissions
+            )
 
-        # Assign role to service account
-        role_assignment = self._authorization_client.role_assignments.create(
-            scope=f"/subscriptions/{self._subscription_id}/resourceGroups/{auth.resource_group}",
-            role_assignment_name=str(uuid.uuid4()),
-            parameters=RoleAssignmentCreateParameters(
-                role_definition_id=role_definition.id,
-                principal_id=managed_identity.principal_id,
-                principal_type="ServicePrincipal"
-            ))
+            role_definition = self._authorization_client.role_definitions.create_or_update(
+                scope=f"/subscriptions/{self._subscription_id}/resourceGroups/{auth.resource_group}",
+                role_definition_id=str(uuid.uuid4()),
+                role_definition=role_definition
+            )
+
+            azure_role_objects.append(role_definition)
+
+        for i, new_binding in enumerate(auth.roles):
+            azure_role = azure_role_objects[i]
+
+            possible_condition = self.get_object_condition(new_binding)
+
+            # Assign role to service account
+            role_assignment = self._authorization_client.role_assignments.create(
+                scope=f"/subscriptions/{self._subscription_id}/resourceGroups/{auth.resource_group}",
+                role_assignment_name=str(uuid.uuid4()),
+                parameters=RoleAssignmentCreateParameters(
+                    role_definition_id=azure_role.id,
+                    principal_id=managed_identity.principal_id,
+                    principal_type="ServicePrincipal",
+                    condition=possible_condition
+                ))
 
 
     def get_object_condition(self, binding):
@@ -118,12 +128,6 @@ class AzureManagedIdentityManager:
         if binding.scope == "project":
             return None
         elif binding.scope == "container":
-            return {
-                "operator": "Equals",
-                "values": [binding.object],
-                "data": {
-                    "field": "Microsoft.Storage/storageAccounts/blobServices/containers/name"
-                }
-            }
+            return f"@Resource[Microsoft.Storage/storageAccounts/blobServices/containers:name] StringEquals '{binding.object}'"
         else:
             raise ValueError(f"Unsupported object {binding.object}")

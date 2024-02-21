@@ -16,7 +16,7 @@ def main():
     parser.add_argument('--authorization', action="store_true", help="Upload an authorization policy")
     parser.add_argument('--cloud', type=str, help='Name of the cloud to upload to')
     parser.add_argument('--public-key', type=str, help='Public key corresponding to the broker')
-    parser.add_argument('--credentials', type=str, help='Credentials of the cloud to upload to')
+    parser.add_argument('--credentials', type=str, default=None, help='Credentials of the cloud to upload to')
     parser.add_argument('--db-endpoint', type=str, help='Endpoint of the Azure database (Required for azure)')
     args = parser.parse_args()
 

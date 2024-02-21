@@ -108,7 +108,6 @@ class AzureVMPolicy(VMPolicy):
             raise PolicyContentException("Policy does not accept Azure")
 
         try:
-            # TODO(kdharmarajan): Generalize this policy action
             action = PolicyAction[policy_dict_cloud_level["actions"][0]]
             cloud_specific_policy["actions"] = action
         except KeyError:
@@ -242,16 +241,16 @@ class AzureAttachedAuthorizationPolicy(ResourcePolicy):
                 if AzurePolicy.Azure_CLOUD_NAME \
                               in cloud_auth:
                     can_cloud_run = True
-                    service_accounts = cloud_auth[AzurePolicy.Azure_CLOUD_NAME]
-                    cloud_specific_policy[AzurePolicy.Azure_CLOUD_NAME] = service_accounts
+                    managed_identities = cloud_auth[AzurePolicy.Azure_CLOUD_NAME]
+                    cloud_specific_policy[AzurePolicy.Azure_CLOUD_NAME] = managed_identities
                     break
         else:
             for cloud_name in policy_dict_cloud_level:
                 if not (cloud_name == AzurePolicy.Azure_CLOUD_NAME):
                     continue
                 can_cloud_run = True
-                service_accounts = policy_dict_cloud_level[cloud_name]
-                cloud_specific_policy[AzurePolicy.Azure_CLOUD_NAME] = service_accounts
+                managed_identities = policy_dict_cloud_level[cloud_name]
+                cloud_specific_policy[AzurePolicy.Azure_CLOUD_NAME] = managed_identities
                 break
         cloud_specific_policy['can_cloud_run'] = can_cloud_run
         print("Cloud-specific attached authorization policy:", cloud_specific_policy)
@@ -264,7 +263,6 @@ class AzurePolicy(CloudPolicy):
 
     Azure_CLOUD_NAME = "azure"
     VM_REQUEST_KEYS = set([
-        # TODO(kdharmarajan): Possibly restrict which keys are allowed here
         "location",
         "properties"
     ])
@@ -353,6 +351,7 @@ class AzurePolicy(CloudPolicy):
         attached_policy_dict = {}
         if "attached_authorizations" in policy_dict:
             attached_policy_dict = policy_dict["attached_authorizations"]
-        # TODO: Check for reading the attached authorization, also look for GCP code
+        if "attached_authorizations" in vm_dict:
+            attached_policy_dict = vm_dict["attached_authorizations"]
         attached_authorization_policy = AzureAttachedAuthorizationPolicy.from_dict(attached_policy_dict)
         return AzurePolicy(vm_policy, attached_authorization_policy)

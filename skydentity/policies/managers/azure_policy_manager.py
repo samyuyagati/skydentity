@@ -13,7 +13,7 @@ class AzurePolicyManager(PolicyManager):
 
     def __init__(self,
                  db_endpoint: str,
-                 db_key: str,
+                 db_key: str = None,
                  policy_type = AzurePolicy,
                  db_name = 'skydentity',
                  db_container_name = 'policies'):
@@ -25,6 +25,8 @@ class AzurePolicyManager(PolicyManager):
         :param db_container_name: The name of the container.
         """
         self._policy_type = policy_type
+        if db_key is None:
+            db_key = DefaultAzureCredential()
         self._client = CosmosClient(db_endpoint, db_key)
         self._db = self._client.create_database_if_not_exists(db_name)
         partition_key = PartitionKey(path = '/id')
