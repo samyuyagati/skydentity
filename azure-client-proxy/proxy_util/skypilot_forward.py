@@ -95,7 +95,6 @@ def generic_forward_request(request, log_dict=None):
     [SkyPilot Integration]
     Forward a generic request to Azure APIs.
     """
-    import pdb; pdb.set_trace()
     logger = get_logger()
     if log_dict is not None:
         log_str = f"PATH: {request.full_path}\n"
@@ -214,11 +213,12 @@ def get_json_with_managed_identity(request, managed_identity_id):
     managed_identity_dict = {
         "type": "UserAssigned",
         "userAssignedIdentities": {
-            "id": managed_identity_id
+            managed_identity_id: {}
         }
     }
     new_dict = json_dict.copy()
     new_dict["identity"] = managed_identity_dict
+    del new_dict["managedIdentities"]
     return new_dict
 
 

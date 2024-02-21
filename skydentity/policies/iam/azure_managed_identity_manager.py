@@ -22,7 +22,10 @@ class AzureManagedIdentityManager:
         self._authorization_client = AuthorizationManagementClient(self._credentials, subscription_id)
         self._subscription_id = subscription_id
 
-    def create_managed_identity(self, authorization: AzureAuthorizationPolicy, managed_identity_name: str):
+    def create_managed_identity(self, authorization: AzureAuthorizationPolicy, managed_identity_name: str) -> str:
+        """
+        Attempts to get or create a managed identity given its name and returns the fully qualified id.
+        """
         auth: AzureAuthorization = authorization._policy
 
         # Create service account if it doesn't exist
@@ -30,11 +33,10 @@ class AzureManagedIdentityManager:
             
             # Check if service account exists
             try:
-                self._managed_identity_client.user_assigned_identities.get(
+                self._managed_identities[managed_identity_name] = self._managed_identity_client.user_assigned_identities.get(
                     resource_group_name=auth.resource_group,
                     resource_name=managed_identity_name
                 )
-                return
             except:
                 self._managed_identities[managed_identity_name] = (
                     self._managed_identity_client.user_assigned_identities.create_or_update(
@@ -43,6 +45,7 @@ class AzureManagedIdentityManager:
                         parameters=Identity(location=auth.region)
                     )
                 )
+        return self._managed_identities[managed_identity_name].id
 
 
     def add_roles_to_managed_identity(self, authorization: AzureAuthorizationPolicy, managed_identity_name):
@@ -116,7 +119,8 @@ class AzureManagedIdentityManager:
                     role_definition_id=azure_role.id,
                     principal_id=managed_identity.principal_id,
                     principal_type="ServicePrincipal",
-                    condition=possible_condition
+                    condition=possible_condition,
+                    condition_version="2.0"
                 ))
 
 

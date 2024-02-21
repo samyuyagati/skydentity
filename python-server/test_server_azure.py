@@ -2,7 +2,7 @@ from azure.identity import AzureCliCredential
 from azure.mgmt.resource import ResourceManagementClient
 from azure.mgmt.network import NetworkManagementClient
 from azure.mgmt.compute import ComputeManagementClient
-from azure.mgmt.compute.models import OSProfile, NetworkProfile, ImageReference, ManagedDiskParameters, OSDisk, StorageProfile, HardwareProfile, VirtualMachine, OperatingSystemTypes, DiskCreateOptionTypes
+from azure.mgmt.compute.models import OSProfile, NetworkProfile, ImageReference, ManagedDiskParameters, OSDisk, StorageProfile, HardwareProfile, VirtualMachine, OperatingSystemTypes, DiskCreateOptionTypes, VirtualMachineIdentity
 
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.subscription import SubscriptionClient
@@ -10,14 +10,13 @@ from azure.mgmt.resource.resources.models import ResourceGroup
 
 # TODO: Handle secret management + remove uses of 'AzureCliCredential()'
 credential = DefaultAzureCredential()
-# subscription_client = SubscriptionClient(credential)
-# subscription_id = next(subscription_client.subscriptions.list()).subscription_id
-subscription_id = "5ba551fd-4339-4bc8-834e-0dc4b031aa3d"
+subscription_client = SubscriptionClient(credential)
+subscription_id = next(subscription_client.subscriptions.list()).subscription_id
 USERNAME = "skydentity"
 PASSWORD = "$kyD3ntity"
 NUM_VMS_TO_CREATE = 1
 
-BASE_URL = "https://192.168.117.58:5000"
+BASE_URL = "https://127.0.0.1:5000"
 # BASE_URL = "https://management.azure.com"
 
 """
@@ -162,6 +161,8 @@ def create_instance(resource_group_name, subscription_id, nic_id, vm_name, vm_si
     credential = AzureCliCredential()
     compute_client = ComputeManagementClient(credential, subscription_id, base_url=BASE_URL)
 
+    identity_name = input("Enter the name of the identity to use: ")
+
     vm = VirtualMachine(
         location=location,
         os_profile=OSProfile(
@@ -174,6 +175,12 @@ def create_instance(resource_group_name, subscription_id, nic_id, vm_name, vm_si
             network_interfaces=[{
                 'id': nic_id
             }]
+        ),
+        identity=VirtualMachineIdentity(
+            type='UserAssigned',
+            user_assigned_identities={
+                f"/subscriptions/{subscription_id}/resourceGroups/{resource_group_name}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identity_name}": {}
+            }
         )
     )
 

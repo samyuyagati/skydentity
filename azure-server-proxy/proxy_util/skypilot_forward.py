@@ -142,6 +142,7 @@ def generic_forward_request(request, log_dict=None):
     new_json = None
     if len(request.get_data()) > 0:
         old_json = request.json
+        print("Old JSON:", old_json, flush=True)
         if "identity" not in old_json:
             new_json = request.json
         else:
@@ -152,7 +153,7 @@ def generic_forward_request(request, log_dict=None):
             capability_file = "capability.json"
             capability_path = os.path.join(parent_dir, capability_dir, capability_file)
             with open(capability_path, "r") as f:
-                new_json["identity"] = [json.load(f)]
+                new_json["managedIdentities"] = [json.load(f)]
 
             print("JSON with service acct capability:", new_json, flush=True)
 
@@ -244,7 +245,7 @@ def get_client_proxy_endpoint(request):
     # print(f"USER AGENT: {user_agent}")
 
     # TODO: replace with actual fetch
-    return os.environ.get("SKYID_CLIENT_ADDRESS", "https://192.168.117.58:5001/")
+    return os.environ.get("SKYID_CLIENT_ADDRESS", "https://127.0.0.1:5001/")
 
 
 def get_new_url(request):

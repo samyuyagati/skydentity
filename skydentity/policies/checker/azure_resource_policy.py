@@ -1,6 +1,7 @@
 from typing import Dict, List, Tuple, TypedDict, Union, Optional
 from flask import Request
 import sys
+import re
 
 from skydentity.policies.checker.resource_policy import (
     CloudPolicy, 
@@ -256,6 +257,150 @@ class AzureAttachedAuthorizationPolicy(ResourcePolicy):
         print("Cloud-specific attached authorization policy:", cloud_specific_policy)
         return AzureAttachedAuthorizationPolicy(cloud_specific_policy)
 
+class AzureReadPolicy(ResourcePolicy):
+    """Defines methods for Azure read request policies."""
+
+    # TODO: instead of using regex, get information from routing done by the proxy
+    READ_TYPE_URL_PATTERNS: Dict[str, re.Pattern] = {
+        "virtualMachinesGeneral": re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/providers/Microsoft.Compute/virtualMachines"),
+        "virtualMachines": re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/resourceGroups/(?P<resourceGroupName>[^/]+)/providers/Microsoft.Compute/virtualMachines/(?P<vmName>[^/]+)"),
+        "networkInterfaces": re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/resourceGroups/(?P<resourceGroupName>[^/]+)/providers/Microsoft.Network/networkInterfaces/(?P<nicName>[^/]+)"),
+        "ipAddresses": re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/resourceGroups/(?P<resourceGroupName>[^/]+)/providers/Microsoft.Network/publicIPAddresses/(?P<ipName>[^/]+)"),
+        "operations": re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/providers/Microsoft.Compute/locations/(?P<region>[^/]+)/operations/(?P<operationId>[^/]+)"),
+        "virtualNetworks": re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/resourceGroups/(?P<resourceGroupName>[^/]+)/providers/Microsoft.Network/virtualNetworks/(?P<virtualNetworkName>[^/]+)"),
+        "subnets": re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/resourceGroups/(?P<resourceGroupName>[^/]+)/providers/Microsoft.Network/virtualNetworks/(?P<virtualNetworkName>[^/]+)/subnets/(?P<subnetName>[^/]+)"),
+    }
+
+    class _PolicyDict(TypedDict):
+        resource_group: Union[str, None]
+        regions: Union[List[str], None]
+        virtual_machines: bool
+        network_interfaces: bool
+        ip_addresses: bool
+        operations: bool
+        virtual_networks: bool
+        subnets: bool
+
+    def __init__(self, policy: _PolicyDict, policy_override: Union[bool, None]=None):
+        """
+        Create a new AzureReadPolicy instance.
+
+        `policy_override` is used to specify DENY_ALL or ALLOW_ALL policies;
+        if not None, then `policy` is ignored and a blanket ALLOW (if True) or DENY (if False) is used.
+        """
+        self._policy = policy
+        self._policy_override = policy_override
+
+    def check_request(self, request: Request) ->  bool:
+        raise NotImplemented("Use `check_read_request` instead.")
+
+    def check_read_request(self, request: Request, *aux_info: str) -> bool:
+        # TODO: allow any non-GET request through?
+        if request.method != "GET":
+            return True
+
+        # check for blanket ALLOW/DENY policy
+        if self._policy_override is not None:
+            return self._policy_override
+
+        assert len(aux_info) > 0 and aux_info[0] in AzureReadPolicy.READ_TYPE_URL_PATTERNS
+        read_type = aux_info[0]
+
+        request_info = self._get_request_info(request, read_type)
+
+        if read_type == "virtualMachinesGeneral":
+            return self._policy["virtual_machines"]
+        elif read_type == "operations":
+            return self._policy["operations"] and request_info["region"] in self._policy["regions"]
+        else:
+            # The rest of the read types should include a resource group
+            # TODO: Optionally specify resource group constraint on the GET requests
+            return self._policy[read_type]
+
+        # TODO: allow request if unrecognized?
+        return True
+
+    def _get_request_info(self, request: Request, read_type: str):
+        """Parse path to get the appropriate request information"""
+
+        url_pattern = AzureReadPolicy.READ_TYPE_URL_PATTERNS[read_type]
+        match = url_pattern.search(request.path)
+
+        assert match, "URL does not match read type pattern"
+
+        possible_resource_group = match.group("resourceGroupName")
+        # Only need to check the resource group also
+        if possible_resource_group:
+            return {
+                "resource_group": possible_resource_group,
+            }
+        elif read_type == "operations":
+            return {
+                "region": match.group("region")
+            }
+
+        # all other read types do not use any auxiliary information from the path
+        return {}
+
+    @staticmethod
+    def _get_default_policy_dict() -> _PolicyDict:
+        """
+        Get default policy dictionary, which allows all requests.
+        """
+        return {
+            "resource_group": None,
+            "regions": None,
+            "virtual_machines": True,
+            "network_interfaces": True,
+            "ip_addresses": True,
+            "operations": True,
+            "virtual_networks": True,
+            "subnets": True
+        }
+
+    @staticmethod
+    def get_default_deny_policy():
+        """
+        Get default policy object, which denies all requests.
+        """
+        return AzureReadPolicy(AzureReadPolicy._get_default_policy_dict(), policy_override=False)
+
+    @staticmethod
+    def get_default_allow_policy():
+        """
+        Get default policy object, which allows all requests.
+        """
+        return AzureReadPolicy(AzureReadPolicy._get_default_policy_dict(), policy_override=True)
+
+    @staticmethod
+    def from_dict(policy_dict: Dict, logger=None) -> "AzureReadPolicy":
+        """
+        Parse dictionary to get relevant info.
+
+        Expects a dictionary with the top level key as the cloud name ("azure").
+        """
+        if AzurePolicy.Azure_CLOUD_NAME not in policy_dict or not isinstance(policy_dict[AzurePolicy.Azure_CLOUD_NAME], dict):
+            # no valid section found
+            return AzureReadPolicy.get_default_deny_policy()
+
+        azure_policy = policy_dict[AzurePolicy.Azure_CLOUD_NAME]
+
+        # allow if not specified
+        out_dict = AzureReadPolicy._get_default_policy_dict()
+        for key in out_dict:
+            if key in azure_policy:
+                out_dict[key] = azure_policy[key]
+
+        return AzureReadPolicy(out_dict)
+
+    def to_dict(self):
+        return {
+            AzurePolicy.Azure_CLOUD_NAME: {
+                # filter out None items
+                k: v for k, v in self._policy.items() if v is not None
+            }
+        }
+
 class AzurePolicy(CloudPolicy):
     """
     Defines methods for Azure policies.
@@ -270,7 +415,7 @@ class AzurePolicy(CloudPolicy):
         "managedIdentities"
     ])
 
-    def __init__(self, vm_policy: AzureVMPolicy, attached_authorization_policy: AzureAttachedAuthorizationPolicy):
+    def __init__(self, vm_policy: AzureVMPolicy, attached_authorization_policy: AzureAttachedAuthorizationPolicy, read_policy: AzureReadPolicy):
         """
         :param vm_policy: The Azure VM Policy to enforce.
         :param attached_authorization_policy: The Attached Policy Policy to enforce.
@@ -278,6 +423,7 @@ class AzurePolicy(CloudPolicy):
         self._resource_policies = {
             "virtual_machine": vm_policy,
             "attached_authorizations": attached_authorization_policy,
+            "read": read_policy,
             "unrecognized": UnrecognizedResourcePolicy()
         }
         self.valid_authorization: Union[str, None] = None
@@ -294,12 +440,24 @@ class AzurePolicy(CloudPolicy):
         # TODO: Make sure we don't get to get_json for GET requests and instead use separate ReadPolicy
         # TODO(later): Refactoring the logic to reuse better
         if request.method == 'GET':
+            print("NOT JSON")
+            has_match = False
+            for read_type, read_path_regex in AzureReadPolicy.READ_TYPE_URL_PATTERNS.items():
+                match = read_path_regex.search(request.path)
+                if match:
+                    has_match = True
+                    resource_types.add(("read", read_type))
+            
+            if not has_match:
+                # if no matches, then add unrecognized
+                resource_types.add(("unrecognized",))
             return list(resource_types)
-        for key in request.get_json(cache=True).keys():
-            if key in AzurePolicy.VM_REQUEST_KEYS:
-                resource_types.add(("virtual_machine",))
-            elif key in AzurePolicy.ATTACHED_AUTHORIZATION_KEYS:
-                resource_types.add(("attached_authorizations",))
+        else:
+            for key in request.get_json(cache=True).keys():
+                if key in AzurePolicy.VM_REQUEST_KEYS:
+                    resource_types.add(("virtual_machine",))
+                elif key in AzurePolicy.ATTACHED_AUTHORIZATION_KEYS:
+                    resource_types.add(("attached_authorizations",))
         if len(resource_types) == 0:
             resource_types.add(("unrecognized",))
             print(">>>>> UNRECOGNIZED RESOURCE TYPE <<<<<")
@@ -320,6 +478,9 @@ class AzurePolicy(CloudPolicy):
             result = self._resource_policies[resource_type_key].check_request(request, self._authorization_manager)
             self.valid_authorization = result[0]
             return result[1]
+        elif resource_type_key == "read":
+            # Read policies
+            return self._resource_policies[resource_type_key].check_read_request(request, *resource_type_aux)
         return self._resource_policies[resource_type_key].check_request(request)
 
     def set_authorization_manager(self, manager: AzureAuthorizationPolicyManager):
@@ -354,4 +515,17 @@ class AzurePolicy(CloudPolicy):
         if "attached_authorizations" in vm_dict:
             attached_policy_dict = vm_dict["attached_authorizations"]
         attached_authorization_policy = AzureAttachedAuthorizationPolicy.from_dict(attached_policy_dict)
-        return AzurePolicy(vm_policy, attached_authorization_policy)
+
+        if PolicyAction.READ.is_allowed_be_performed(vm_policy.get_policy_standard_form()["actions"]):
+            if "reads" in policy_dict:
+                read_dict = policy_dict["reads"]
+                print("READS_DICT in AzurePolicy:from_dict", read_dict)
+                read_policy = AzureReadPolicy.from_dict(read_dict, logger)
+            else:
+                # if reads are allowed, and there is no granular specification, then allow all
+                read_policy = AzureReadPolicy.get_default_allow_policy()
+        else:
+            # if cannot read, then deny all reads
+            read_policy = AzureReadPolicy.get_default_deny_policy()
+
+        return AzurePolicy(vm_policy, attached_authorization_policy, read_policy)

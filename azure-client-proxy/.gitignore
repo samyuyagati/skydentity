@@ -4,6 +4,7 @@ certs/domain_dir/*
 certs/configs/domain.ext
 certs/configs/domain.cnf
 tokens/*
+local_tokens/*
 
 # Serverless
 .serverless

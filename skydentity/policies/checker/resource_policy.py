@@ -65,7 +65,7 @@ class VMPolicy(ResourcePolicy, ABC):
         # Then check the allowed images
         for image in standardized_request["allowed_images"]:
             if image not in standardized_vm_policy["allowed_images"]:
-                print("Image not allowed")
+                print(f"Image {image} not allowed")
                 return False
             
         # TODO(kdharmarajan): Add allowed_setup script inclusion here

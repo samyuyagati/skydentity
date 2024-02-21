@@ -72,7 +72,7 @@ def main():
     with open(args.auth_request_yaml, 'r') as f:
         auth_request_dict = yaml.load(f, Loader=yaml.SafeLoader)
         print(auth_request_dict)
-    response = send_auth_creation_request(f"https://192.168.117.58:5000/skydentity/cloud/{args.cloud}/", json=auth_request_dict)
+    response = send_auth_creation_request(f"https://127.0.0.1:5000/skydentity/cloud/{args.cloud}/", json=auth_request_dict)
     print("RESPONSE", response)
     out_path = os.path.join(os.path.dirname(os.path.dirname(os.getcwd())), "tokens/")
     service_acct_id, _ = check_capability(response.json(), args.capability_enc_key)

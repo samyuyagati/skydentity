@@ -88,7 +88,7 @@ class AzureAuthorizationPolicyManager(PolicyManager):
         account_name = secrets.choice(string.ascii_letters) + secrets.token_hex(8)
 
         # Create managed identity
-        azure_managed_identity_manager.create_managed_identity(
+        full_id = azure_managed_identity_manager.create_managed_identity(
             authorization=authorization,
             managed_identity_name=account_name
         )
@@ -99,4 +99,4 @@ class AzureAuthorizationPolicyManager(PolicyManager):
             managed_identity_name=account_name
         )
 
-        return account_name
+        return full_id

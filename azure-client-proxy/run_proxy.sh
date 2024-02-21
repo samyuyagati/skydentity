@@ -6,6 +6,14 @@ export COMPUTE_API_ENDPOINT="https://management.azure.com/"
 # capability encoding key
 export CAPABILITY_ENC_KEY_FILE="local_tokens/capability_enc.key"
 # db endpoint
+if [ -z "$AZURE_DB_ENDPOINT" ]; then
+    export AZURE_DB_ENDPOINT=""
+fi
+
+# db key
+if [ -z "$AZURE_DB_KEY" ]; then
+    export AZURE_DB_KEY=""
+fi
 
 # Default to HTTP
 SECURE=false
