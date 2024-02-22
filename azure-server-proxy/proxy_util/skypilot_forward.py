@@ -8,11 +8,17 @@ import os
 from collections import namedtuple
 
 import requests
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from Crypto.PublicKey import RSA
+from Crypto.Signature import pkcs1_15
+from Crypto.Hash import SHA256
 from flask import Flask, Response, request
 
 from .logging import get_logger, print_and_log
+
+# global constants
+PRIVATE_KEY_PATH = os.environ.get(
+    "PRIVATE_KEY_PATH", "proxy_util/private_key.pem" 
+)
 
 SkypilotRoute = namedtuple(
     "SkypilotRoute",
@@ -80,41 +86,28 @@ ROUTES: list[SkypilotRoute] = [
 def get_headers_with_signature(request):
     new_headers = {k: v for k, v in request.headers}
 
-    with open("proxy_util/private_key.pem", "rb") as key_file:
-        private_key = serialization.load_pem_private_key(
-            key_file.read(),
-            password=None,
-        )
-
+    with open(PRIVATE_KEY_PATH, "rb") as key_file:
+        private_key = RSA.import_key(key_file.read())
+           
     # assume set, predetermined/agreed upon tolerance on client proxy/receiving end
     # use utc for consistency if server runs in cloud in different region
     timestamp = datetime.datetime.now(datetime.timezone.utc).timestamp()
-    host = new_headers.get("Host", "")
-    public_key_bytes = private_key.public_key().public_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo,
-    )
+    public_key_string = private_key.public_key().export_key()
 
-    # TODO: use service name
-    # message = f"{str(request.method)}-{host}-{timestamp}-{public_key_bytes}"
-    message = f"{str(request.method)}-{timestamp}-{public_key_bytes}"
+    message = f"{str(request.method)}-{timestamp}-{public_key_string}"    
     message_bytes = message.encode("utf-8")
 
-    signature = private_key.sign(
-        message_bytes,
-        padding.PSS(
-            mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH
-        ),
-        hashes.SHA256(),
-    )
+    h = SHA256.new(message_bytes)
+    # TODO should we be using PSS?
+    signature = pkcs1_15.new(private_key).sign(h)
 
     # base64 encode the signature and public key
     encoded_signature = base64.b64encode(signature)
-    encoded_public_key_bytes = base64.b64encode(public_key_bytes)
+    encoded_public_key_string = base64.b64encode(public_key_string)
 
     new_headers["X-Signature"] = encoded_signature
     new_headers["X-Timestamp"] = str(timestamp)
-    new_headers["X-PublicKey"] = encoded_public_key_bytes
+    new_headers["X-PublicKey"] = encoded_public_key_string
 
     del new_headers["Host"]
 

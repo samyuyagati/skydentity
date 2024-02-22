@@ -9,6 +9,7 @@ from skydentity.policies.managers.azure_authorization_policy_manager import (
     AzureAuthorizationPolicyManager,
 )
 from skydentity.policies.managers.azure_policy_manager import AzurePolicyManager
+from skydentity.utils.hash_util import hash_public_key
 
 from .credentials import get_capability_enc_key, get_db_endpoint, get_db_key
 from .logging import get_logger, print_and_log
@@ -16,7 +17,6 @@ from .logging import get_logger, print_and_log
 
 @cache
 def get_policy_manager() -> AzurePolicyManager:
-    # TODO(kdharmarajan): Create this AzurePolicyManager properly
     return AzurePolicyManager(
         db_endpoint=get_db_endpoint(),
         db_key=get_db_key()
@@ -34,31 +34,39 @@ def get_authorization_policy_manager() -> AzureAuthorizationPolicyManager:
     )
 
 
-def check_request_from_policy(public_key, request) -> Tuple[bool, Union[str, None]]:
+def check_request_from_policy(public_key_bytes, request) -> Tuple[bool, Union[str, None]]:
     """
     Check the request using the predefined policy manager.
 
     Returns a tuple
     """
-    # TODO: don't hard code public key
-    public_key = "skypilot_eval"
     logger = get_logger()
     print_and_log(
-        logger, f"Check request public key: {public_key} (request: {request})"
+        logger, f"Check request public key: {public_key_bytes} (request: {request})"
     )
 
     policy_manager = get_policy_manager()
     authorization_policy_manager = get_authorization_policy_manager()
-    policy = policy_manager.get_policy(public_key)
+    
+    # Compute the hash of the public key
+    public_key_hash = hash_public_key(public_key_bytes)
+    print_and_log(logger, f"Hashed public key: {public_key_hash}")
+
+    # Retrieve policy from CosmosDB
+    policy = policy_manager.get_policy(public_key_hash)
+    if not policy:
+        return (False, None)
+
     print_and_log(logger, f"Got policy {policy}")
     policy.set_authorization_manager(authorization_policy_manager)
 
+    # Check if the request is valid against the policy
     valid = policy.check_request(request)
     if not valid:
         return (False, None)
-    # Check if a service account should be attached to the VM
+    # Check if a managed identity should be attached to the VM
     if policy.valid_authorization:
         return (True, policy.valid_authorization)
-    # If no service account should be attached, return True
-    print(">>> CHECK REQUEST: No service account should be attached")
+    # If no managed identity should be attached, return True
+    print(">>> CHECK REQUEST: No managed identity should be attached")
     return (True, None)

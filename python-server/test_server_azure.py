@@ -30,7 +30,6 @@ def create_resource_group(resource_group_name, subscription_id, location="westus
 
     # Create resource group
     resource_client = ResourceManagementClient(credential, subscription_id, base_url=BASE_URL)
-    import pdb; pdb.set_trace()
     resource_group_params = ResourceGroup(location=location)
 
     resource_group = resource_client.resource_groups.create_or_update(
@@ -161,7 +160,7 @@ def create_instance(resource_group_name, subscription_id, nic_id, vm_name, vm_si
     credential = AzureCliCredential()
     compute_client = ComputeManagementClient(credential, subscription_id, base_url=BASE_URL)
 
-    identity_name = input("Enter the name of the identity to use: ")
+    identity_name = "test"
 
     vm = VirtualMachine(
         location=location,

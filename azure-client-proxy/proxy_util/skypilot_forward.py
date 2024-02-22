@@ -2,6 +2,7 @@
 Forwarding for SkyPilot requests.
 """
 
+import base64
 import json
 import os
 from collections import namedtuple
@@ -12,6 +13,7 @@ import requests
 from flask import Flask, Response, request
 
 from skydentity.policies.checker.azure_authorization_policy import AzureAuthorizationPolicy
+from skydentity.utils.hash_util import hash_public_key
 
 from .credentials import (
     get_managed_identity_auth_token,
@@ -108,7 +110,8 @@ def generic_forward_request(request, log_dict=None):
         return Response("", HTTPStatus.REQUEST_TIMEOUT, {})
 
     # Check the request
-    authorized, managed_identity_id = check_request_from_policy(request.headers["X-PublicKey"], request)
+    public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
+    authorized, managed_identity_id = check_request_from_policy(public_key_bytes, request)
     if not authorized:
         print_and_log(logger, "Request is unauthorized")
         return Response("Unauthorized", 401)
@@ -117,7 +120,7 @@ def generic_forward_request(request, log_dict=None):
     new_url = get_new_url(request)
     new_headers = get_headers_with_auth(request)
 
-    # don't modify the body in any way
+    # Only modify the JSON if a valid service account capability was provided
     new_json = None
     if len(request.get_data()) > 0:
         new_json = request.json
@@ -282,8 +285,12 @@ def create_authorization_route(cloud):
     logger = get_logger()
     authorization_policy_manager = get_authorization_policy_manager()
     print_and_log(logger, f"Creating authorization (json: {request.json})")
-    # TODO: change hard coded name
-    request_auth_dict = authorization_policy_manager.get_policy_dict("skypilot_eval")
+
+    public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
+    # Compute hash of public key
+    public_key_hash = hash_public_key(public_key_bytes)
+    print("Attempting to get public key hash:", public_key_hash)
+    request_auth_dict = authorization_policy_manager.get_policy_dict(public_key_hash)
     print("Request auth dict:", request_auth_dict)
     authorization_policy = AzureAuthorizationPolicy(policy_dict=request_auth_dict)
     authorization_request, success = authorization_policy.check_request(request)

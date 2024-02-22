@@ -32,28 +32,33 @@ class AzurePolicyManager(PolicyManager):
         partition_key = PartitionKey(path = '/id')
         self._container = self._db.create_container_if_not_exists(db_container_name, partition_key = partition_key)
 
-    def upload_policy(self, public_key: str, policy: AzurePolicy | AzureAuthorizationPolicy):
+    def upload_policy(self, public_key_hash: str, policy: AzurePolicy | AzureAuthorizationPolicy):
         """
         Uploads a policy to Azure.
-        :param public_key: The public key of the policy.
+        :param public_key_hash: The public key of the policy.
         :param policy: The policy to upload.
         """
         self._container.upsert_item(
             body = {
-                'id': public_key,
+                'id': public_key_hash,
                 'policy': policy.to_dict()
             },
         )
 
-    def get_policy(self, public_key: str) -> AzurePolicy | AzureAuthorizationPolicy:
+    def get_policy(self, public_key_hash: str) -> AzurePolicy | AzureAuthorizationPolicy:
         """
         Gets a policy from the cloud vendor.
-        :param public_key: The public key of the policy.
+        :param public_key_hash: The public key of the policy.
         :return: The policy.
         """
-        return self._policy_type.from_dict(
-            self._container.read_item(
-                item = public_key,
-                partition_key = public_key
-            )['policy']
-        )
+        try:
+            policy = self._policy_type.from_dict(
+                self._container.read_item(
+                    item = public_key_hash,
+                    partition_key = public_key_hash,
+                )['policy']
+            )
+            return policy
+        except Exception as e:
+            print("Failed to get policy from Azure, possibly due to invalid public key:", e)
+            return None

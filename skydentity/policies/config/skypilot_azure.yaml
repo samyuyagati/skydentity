@@ -3,12 +3,11 @@ virtual_machine:
   - ALL
   allowed_images:
   - azure:
-    - Canonical:0001-com-ubuntu-server
-    - jammy-22-04-lts-gen2:latest
+    - UbuntuServer:16.04-LTS
   attached_authorizations:
   - azure:
     - authorization:
-      - F9508cac64568c588
+      - placeholder
   cloud_provider:
   - azure
   instance_type:

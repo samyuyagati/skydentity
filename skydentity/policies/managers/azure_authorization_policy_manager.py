@@ -33,8 +33,8 @@ class AzureAuthorizationPolicyManager(PolicyManager):
         with open(capability_enc_path, 'rb') as f:
             self._capability_enc = f.read()
 
-    def get_policy_dict(self, public_key: str) -> Dict:
-        return self._internal_policy_manager.get_policy(public_key).to_dict()
+    def get_policy_dict(self, public_key_hash: str) -> Dict:
+        return self._internal_policy_manager.get_policy(public_key_hash).to_dict()
     
     def generate_capability(self, managed_identity_id: str) -> dict:
         """

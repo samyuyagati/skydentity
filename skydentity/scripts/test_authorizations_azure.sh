@@ -1,5 +1,6 @@
 #!/bin/bash
 # Example usage: ./test_authorizations_azure.sh -l -r <path to dir containing skydentity repo> -c <path to key file of service account w/ firestore access>
+# Ensure to set AZURE_DB_ENDPOINT to the CosmosDB Endpoint, and the CREDS needs to currently be the key to write to CosmosDB database.
 
 ROOT=""
 CREDS=""
@@ -61,7 +62,7 @@ sleep 10
 # 0b. Upload skydentity/skydentity/policies/config/auth_request_example_azure.yaml 
 #    to Firestore using upload_policy.py with the --authorization flag
 echo "Uploading auth_request_example_azure.yaml to Firestore..."
-python upload_policy.py --policy $ROOT/skydentity/policies/config/auth_request_example_azure.yaml --cloud azure --public-key skypilot_eval --credentials $CREDS --authorization --db-endpoint $AZURE_DB_ENDPOINT
+python upload_policy.py --policy $ROOT/skydentity/policies/config/auth_request_example_azure.yaml --cloud azure --public-key $ROOT/azure-server-proxy/proxy_util/public_key.pem --credentials $CREDS --authorization --db-endpoint $AZURE_DB_ENDPOINT
 
 # 1. Run send_auth_request.py. In skydentity/skydentity/policies/config/skypilot_azure_with_auth.yaml, 
 # modify the email address of the service account to match the created one.
@@ -74,7 +75,7 @@ python send_auth_request.py --resource_yaml_input="$ROOT/skydentity/policies/con
 
 # 2. Upload skypilot_azure_with_auth.yaml to Firestore using upload_policy.py
 echo "Uploading skypilot_azure_with_auth.yaml to Firestore..."
-python upload_policy.py --policy $ROOT/skydentity/policies/config/skypilot_azure_with_auth.yaml --cloud azure --public-key skypilot_eval --credentials $CREDS --db-endpoint $AZURE_DB_ENDPOINT
+python upload_policy.py --policy $ROOT/skydentity/policies/config/skypilot_azure_with_auth.yaml --cloud azure --public-key $ROOT/azure-server-proxy/proxy_util/public_key.pem --credentials $CREDS --db-endpoint $AZURE_DB_ENDPOINT
 
 # 3. Run skydentity/python-server/test_server.py.
 echo "Attempting to start VM..."
