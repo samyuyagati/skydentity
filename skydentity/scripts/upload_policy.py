@@ -18,7 +18,6 @@ def main():
     parser.add_argument('--cloud', type=str, help='Name of the cloud to upload to')
     parser.add_argument('--public-key', type=str, help='Public key corresponding to the broker')
     parser.add_argument('--credentials', type=str, default=None, help='Credentials of the cloud to upload to')
-    parser.add_argument('--db-endpoint', type=str, help='Endpoint of the Azure database (Required for azure)')
     args = parser.parse_args()
 
     formatted_cloud = args.cloud.lower().strip()
@@ -38,8 +37,7 @@ def main():
     elif formatted_cloud == 'azure':
         policy_type = AzurePolicy if not args.authorization else AzureAuthorizationPolicy
         cloud_policy_manager = AzurePolicyManager(
-            db_endpoint = args.db_endpoint,
-            db_key = args.credentials,
+            db_info_file = args.credentials,
             policy_type = policy_type,
             db_container_name = policy_container_name
         )

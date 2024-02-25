@@ -18,9 +18,10 @@ class AzureAuthorizationPolicyManager(PolicyManager):
     """
 
     def __init__(self,
-                 db_endpoint: str,
-                 db_key: str,
                  capability_enc_path: str,
+                 db_endpoint: str = None,
+                 db_key: str = None,
+                 db_info_file: str = None,
                  ):
         """
         Initializes the Azure policy manager.
@@ -29,7 +30,7 @@ class AzureAuthorizationPolicyManager(PolicyManager):
         :param capability_enc_path: The path to the capability encryption key.
         """
         from skydentity.policies.managers.azure_policy_manager import AzurePolicyManager
-        self._internal_policy_manager = AzurePolicyManager(db_endpoint, db_key, policy_type=AzureAuthorizationPolicy, db_container_name='authorization_policies')
+        self._internal_policy_manager = AzurePolicyManager(db_endpoint, db_key, db_info_file, policy_type=AzureAuthorizationPolicy, db_container_name='authorization_policies')
         with open(capability_enc_path, 'rb') as f:
             self._capability_enc = f.read()
 

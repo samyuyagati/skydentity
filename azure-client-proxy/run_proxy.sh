@@ -5,14 +5,9 @@
 export COMPUTE_API_ENDPOINT="https://management.azure.com/"
 # capability encoding key
 export CAPABILITY_ENC_KEY_FILE="local_tokens/capability_enc.key"
-# db endpoint
-if [ -z "$AZURE_DB_ENDPOINT" ]; then
-    export AZURE_DB_ENDPOINT=""
-fi
-
-# db key
-if [ -z "$AZURE_DB_KEY" ]; then
-    export AZURE_DB_KEY=""
+# db info
+if [ -z "$AZURE_DB_INFO_FILE" ]; then
+    export AZURE_DB_INFO_FILE="local_tokens/cosmos_credentials.json"
 fi
 
 # Default to HTTP
