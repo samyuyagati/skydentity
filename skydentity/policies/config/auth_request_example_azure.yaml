@@ -21,6 +21,10 @@ authorization:
       - scope: container
       - object: skydentity
     - restricted_role:
-      - role: Microsoft.Storage/storageAccounts/blobServices/read
+      - role: Microsoft.Storage/storageAccounts/blobServices/containers/read
+      - scope: container
+      - object: skydentity
+    - restricted_role:
+      - role: Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read
       - scope: container
       - object: skydentity
