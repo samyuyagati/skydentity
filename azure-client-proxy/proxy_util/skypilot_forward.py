@@ -47,9 +47,14 @@ ROUTES: list[SkypilotRoute] = [
         fields=["subscriptionId"],
     ),
     SkypilotRoute(
-        methods=["GET", "PUT"],
+        methods=["GET", "PUT", "PATCH"],
         path="/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/virtualMachines/<vmName>",
         fields=["subscriptionId", "resourceGroupName", "vmName"],
+    ),
+    SkypilotRoute(
+        methods=["GET"],
+        path="/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/virtualMachines",
+        fields=["subscriptionId", "resourceGroupName"],
     ),
     SkypilotRoute(
         methods=["PUT"],
@@ -80,6 +85,21 @@ ROUTES: list[SkypilotRoute] = [
         methods=["GET", "PUT"],
         path="/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<virtualNetworkName>/subnets/<subnetName>",
         fields=["subscriptionId", "resourceGroupName", "virtualNetworkName", "subnetName"],
+    ),
+    SkypilotRoute(
+        methods=["GET", "PUT"],
+        path="/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/networkSecurityGroups/<nsgName>",
+        fields=["subscriptionId", "resourceGroupName", "nsgName"],
+    ),
+    SkypilotRoute(
+        methods=["GET", "PUT"],
+        path="/subscriptions/<subscriptionId>/resourcegroups/<resourceGroupName>/providers/Microsoft.Resources/deployments/<deploymentName>",
+        fields=["subscriptionId", "resourceGroupName", "deploymentName"],
+    ),
+    SkypilotRoute(
+        methods=["GET"],
+        path="/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/virtualMachines/<vmName>/instanceView",
+        fields=["subscriptionId", "resourceGroupName", "vmName"],
     ),
     # skydentity internal route
     SkypilotRoute(
@@ -170,6 +190,14 @@ def build_generic_forward(path: str, fields: list[str]):
     elif fields == ["subscriptionId", "resourceGroupName", "vmName"]:
         func = lambda subscriptionId, resourceGroupName, vmName: generic_forward_request(
             request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "vmName": vmName}
+        )
+    elif fields == ["subscriptionId", "resourceGroupName", "nsgName"]:
+        func = lambda subscriptionId, resourceGroupName, nsgName: generic_forward_request(
+            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "nsgName": nsgName}
+        )
+    elif fields == ["subscriptionId", "resourceGroupName", "deploymentName"]:
+        func = lambda subscriptionId, resourceGroupName, deploymentName: generic_forward_request(
+            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "deploymentName": deploymentName}
         )
     else:
         raise ValueError(

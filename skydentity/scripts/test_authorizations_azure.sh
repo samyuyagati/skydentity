@@ -1,6 +1,6 @@
 #!/bin/bash
-# Example usage: ./test_authorizations_azure.sh -l -r <path to dir containing skydentity repo> -c <path to key file of service account w/ firestore access>
-# Ensure to set AZURE_DB_ENDPOINT to the CosmosDB Endpoint, and the CREDS needs to currently be the key to write to CosmosDB database.
+# Example usage: ./test_authorizations_azure.sh -l -r <path to dir containing skydentity repo> -c <path to key file of managed identity w/ firestore access>
+# CREDS needs to be the path to a JSON file consisting of two elements, "AZURE_DB_ENDPOINT" and "AZURE_DB_KEY".
 
 ROOT=""
 CREDS=""
@@ -62,7 +62,7 @@ echo "Uploading auth_request_example_azure.yaml to Firestore..."
 python upload_policy.py --policy $ROOT/skydentity/policies/config/auth_request_example_azure.yaml --cloud azure --public-key $ROOT/azure-server-proxy/proxy_util/public_key.pem --credentials $CREDS --authorization
 
 # 1. Run send_auth_request.py. In skydentity/skydentity/policies/config/skypilot_azure_with_auth.yaml, 
-# modify the email address of the service account to match the created one.
+# modify the email address of the managed identity to match the created one.
 echo "Sending auth request..."
 python send_auth_request.py --resource_yaml_input="$ROOT/skydentity/policies/config/skypilot_azure.yaml" \
     --resource_yaml_output="$ROOT/skydentity/policies/config/skypilot_azure_with_auth.yaml"\
@@ -80,15 +80,14 @@ pushd $ROOT/python-server
 python test_server_azure.py
 popd
 
-# 4. Check that the service account attached to the created VM matches the one from step 2.
-# ATTACHED=$(gcloud compute instances describe gcp-clilib | grep -F3 "serviceAccounts:" | grep "email" | cut -c 10-)
-# EXPECTED=$(grep -F1 "authorization:" $ROOT/skydentity/policies/config/skypilot_azure_with_auth.yaml | tail -1 | cut -c 7-)
-# echo "Service account attached to the created VM: $ATTACHED. Expected: $EXPECTED."
-# echo "Remember to delete the created VM!"
+# 4. Check that the managed identity attached to the created VM matches the one from step 2.
+ATTACHED=$(az vm identity show --resource-group skydentity --name skydentity-VM1 | jq '.userAssignedIdentities | keys[0]')
+EXPECTED=$(grep -F1 "authorization:" $ROOT/skydentity/policies/config/skypilot_azure_with_auth.yaml | tail -1 | cut -c 7-)
+echo "Managed Identity attached to the created VM: $ATTACHED. Expected: $EXPECTED."
+echo "Remember to delete the created VM!"
 
 # Cleanup
 echo "Cleaning up..."
-ps | grep "flask run --host=0.0.0.0 --port=5000" | awk '{print $1}' | xargs kill -9
-ps | grep "flask run --host=0.0.0.0 --port=5001" | awk '{print $1}' | xargs kill -9
+killall flask
 
 rm $ROOT/skydentity/policies/config/skypilot_azure_with_auth.yaml

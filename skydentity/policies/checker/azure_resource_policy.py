@@ -48,7 +48,7 @@ class AzureVMPolicy(VMPolicy):
             "instance_type": [],
             "allowed_images": []
         }
-        if request.method == 'POST' or request.method == 'PUT':
+        if request.method == 'POST' or request.method == 'PUT' or request.method == 'PATCH':
             out_dict["actions"] = PolicyAction.CREATE
         elif request.method == 'GET':
             out_dict["actions"] = PolicyAction.READ
@@ -263,23 +263,29 @@ class AzureReadPolicy(ResourcePolicy):
     # TODO: instead of using regex, get information from routing done by the proxy
     READ_TYPE_URL_PATTERNS: Dict[str, re.Pattern] = {
         "virtualMachinesGeneral": re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/providers/Microsoft.Compute/virtualMachines"),
-        "virtualMachines": re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/resourceGroups/(?P<resourceGroupName>[^/]+)/providers/Microsoft.Compute/virtualMachines/(?P<vmName>[^/]+)"),
+        "virtualMachines": re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/resourceGroups/(?P<resourceGroupName>[^/]+)/providers/Microsoft.Compute/virtualMachines"),
+        "virtualMachineInstanceView": re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/resourceGroups/(?P<resourceGroupName>[^/]+)/providers/Microsoft.Compute/virtualMachines/(?P<vmName>[^/]+)/instanceView"),
         "networkInterfaces": re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/resourceGroups/(?P<resourceGroupName>[^/]+)/providers/Microsoft.Network/networkInterfaces/(?P<nicName>[^/]+)"),
         "ipAddresses": re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/resourceGroups/(?P<resourceGroupName>[^/]+)/providers/Microsoft.Network/publicIPAddresses/(?P<ipName>[^/]+)"),
         "operations": re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/providers/Microsoft.Compute/locations/(?P<region>[^/]+)/operations/(?P<operationId>[^/]+)"),
         "virtualNetworks": re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/resourceGroups/(?P<resourceGroupName>[^/]+)/providers/Microsoft.Network/virtualNetworks/(?P<virtualNetworkName>[^/]+)"),
         "subnets": re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/resourceGroups/(?P<resourceGroupName>[^/]+)/providers/Microsoft.Network/virtualNetworks/(?P<virtualNetworkName>[^/]+)/subnets/(?P<subnetName>[^/]+)"),
+        "networkSecurityGroups": re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/resourceGroups/(?P<resourceGroupName>[^/]+)/providers/Microsoft.Network/networkSecurityGroups/(?P<nsgName>[^/]+)"),
+        "deployments": re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/resourcegroups/(?P<resourceGroupName>[^/]+)/providers/Microsoft.Resources/deployments/(?P<deploymentName>[^/]+)"),
     }
 
     class _PolicyDict(TypedDict):
         resource_group: Union[str, None]
         regions: Union[List[str], None]
         virtual_machines: bool
+        virtualMachineInstanceView: bool
         network_interfaces: bool
         ip_addresses: bool
         operations: bool
         virtual_networks: bool
         subnets: bool
+        network_security_groups: bool
+        deployments: bool
 
     def __init__(self, policy: _PolicyDict, policy_override: Union[bool, None]=None):
         """
@@ -351,11 +357,14 @@ class AzureReadPolicy(ResourcePolicy):
             "resource_group": None,
             "regions": None,
             "virtual_machines": True,
+            "virtualMachineInstanceView": True,
             "network_interfaces": True,
             "ip_addresses": True,
             "operations": True,
             "virtual_networks": True,
-            "subnets": True
+            "subnets": True,
+            "network_security_groups": True,
+            "deployments": True
         }
 
     @staticmethod
@@ -415,6 +424,8 @@ class AzurePolicy(CloudPolicy):
         "managedIdentities"
     ])
 
+    UPDATE_VM_PROPERTY_PATTERN = re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/resourceGroups/(?P<resourceGroupName>[^/]+)/providers/Microsoft.Compute/virtualMachines/(?P<vmName>[^/]+)")
+
     def __init__(self, vm_policy: AzureVMPolicy, attached_authorization_policy: AzureAttachedAuthorizationPolicy, read_policy: AzureReadPolicy):
         """
         :param vm_policy: The Azure VM Policy to enforce.
@@ -453,6 +464,11 @@ class AzurePolicy(CloudPolicy):
                 resource_types.add(("unrecognized",))
             return list(resource_types)
         else:
+            if request.method == 'PATCH':
+                match = AzurePolicy.UPDATE_VM_PROPERTY_PATTERN.search(request.path)
+                if match:
+                    resource_types.add(("virtual_machine",))
+                    return list(resource_types)
             for key in request.get_json(cache=True).keys():
                 if key in AzurePolicy.VM_REQUEST_KEYS:
                     resource_types.add(("virtual_machine",))

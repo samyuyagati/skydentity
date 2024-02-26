@@ -13,7 +13,7 @@ credential = DefaultAzureCredential()
 subscription_client = SubscriptionClient(credential)
 subscription_id = next(subscription_client.subscriptions.list()).subscription_id
 USERNAME = "skydentity"
-PASSWORD = "$kyD3ntity"
+PASSWORD = "$kyD3ntity1sAwesome"
 NUM_VMS_TO_CREATE = 1
 
 BASE_URL = "https://127.0.0.1:5000"
@@ -85,6 +85,29 @@ def create_public_ip_and_nic(resource_group_name, subscription_id, subnet_id, lo
         },
     ).result()
 
+    # Create network security group to allow ssh
+    nsg_name = resource_group_name + "-nsg"
+    nsg = network_client.network_security_groups.begin_create_or_update(
+        resource_group_name,
+        nsg_name,
+        {
+            "location": location,
+            "security_rules": [
+                {
+                    "name": "ssh",
+                    "protocol": "Tcp",
+                    "source_port_range": "*",
+                    "destination_port_range": "22",
+                    "source_address_prefix": "*",
+                    "destination_address_prefix": "*",
+                    "access": "Allow",
+                    "priority": 100,
+                    "direction": "Inbound",
+                }
+            ],
+        },
+    ).result()
+
     # Create nic
     nic_name = resource_group_name + "-nic"
     ip_config_name = ip_name + "-config"
@@ -98,6 +121,7 @@ def create_public_ip_and_nic(resource_group_name, subscription_id, subnet_id, lo
                     "name": ip_config_name,
                     "subnet": {"id": subnet_id},
                     "public_ip_address": {"id": ip_address.id},
+                    "network_security_group": {"id": nsg.id},
                 }
             ],
         },
@@ -180,7 +204,7 @@ def create_instance(resource_group_name, subscription_id, nic_id, vm_name, vm_si
             user_assigned_identities={
                 f"/subscriptions/{subscription_id}/resourceGroups/{resource_group_name}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identity_name}": {}
             }
-        )
+        ),
     )
 
     if disk:

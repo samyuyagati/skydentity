@@ -18,8 +18,7 @@ from .logging import get_logger, print_and_log
 @cache
 def get_policy_manager() -> AzurePolicyManager:
     return AzurePolicyManager(
-        db_endpoint=get_db_endpoint(),
-        db_key=get_db_key()
+        db_info_file=get_db_info_file()
     )
 
 
@@ -28,7 +27,7 @@ def get_authorization_policy_manager() -> AzureAuthorizationPolicyManager:
     capability_enc_key_file = get_capability_enc_key()
     print("CREATING AUTH POLICY MANAGER")
     return AzureAuthorizationPolicyManager(
-        capability_enc_path=capability_enc_key_file
+        capability_enc_path=capability_enc_key_file,
         db_info_file=get_db_info_file()
     )
 
