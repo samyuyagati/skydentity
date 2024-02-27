@@ -1,6 +1,7 @@
 """
 Forwarding for SkyPilot requests.
 """
+
 import base64
 import datetime
 import json
@@ -8,9 +9,9 @@ import os
 from collections import namedtuple
 
 import requests
+from Crypto.Hash import SHA256
 from Crypto.PublicKey import RSA
 from Crypto.Signature import pkcs1_15
-from Crypto.Hash import SHA256
 from flask import Flask, Response, request
 
 from .logging import get_logger, print_and_log
@@ -27,11 +28,10 @@ SkypilotRoute = namedtuple(
 )
 
 # global constants
-PRIVATE_KEY_PATH = os.environ.get(
-    "PRIVATE_KEY_PATH", "proxy_util/private_key.pem" 
-)
+PRIVATE_KEY_PATH = os.environ.get("PRIVATE_KEY_PATH", "proxy_util/private_key.pem")
 
 # list of all routes required; must be defined after `build_generic_forward`
+# TODO: remove routes and instaed use default forward?
 ROUTES: list[SkypilotRoute] = [
     SkypilotRoute(
         methods=["GET"],
@@ -106,7 +106,7 @@ ROUTES: list[SkypilotRoute] = [
     SkypilotRoute(
         methods=["POST"],
         path="/skydentity/cloud/<cloud>/create-authorization",
-        fields=["cloud"]
+        fields=["cloud"],
     ),
 ]
 
@@ -160,7 +160,7 @@ def generic_forward_request(request, log_dict=None):
     new_url = get_new_url(request)
     new_headers = get_headers_with_signature(request)
 
-    # Only modifies the body to attach the service account capability 
+    # Only modifies the body to attach the service account capability
     new_json = None
     if len(request.get_data()) > 0:
         old_json = request.json
@@ -249,6 +249,12 @@ def setup_routes(app: Flask):
                 "Invalid route specification; missing either `view_func` or `fields`"
             )
 
+    # set up default route
+    default_view = lambda path: generic_forward_request(request, {"path": path})
+    default_view.__name__ = "default_view"
+    app.add_url_rule("/", view_func=default_view, defaults={"path": ""})
+    app.add_url_rule("/<path:path>", view_func=default_view)
+
 
 def get_client_proxy_endpoint(request):
     """
@@ -267,9 +273,12 @@ def get_new_url(request):
     """
     redirect_endpoint = get_client_proxy_endpoint(request)
     logger = get_logger()
-    print_and_log(logger, f"\tOld URL: {request.host_url} (Redirect endpoint: {redirect_endpoint})")
+    print_and_log(
+        logger,
+        f"\tOld URL: {request.host_url} (Redirect endpoint: {redirect_endpoint})",
+    )
     new_url = request.url.replace(request.host_url, redirect_endpoint)
-    
+
     print_and_log(logger, f"\tNew URL: {new_url}")
     return new_url
 

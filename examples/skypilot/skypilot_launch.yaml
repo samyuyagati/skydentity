@@ -1,0 +1,13 @@
+resources:
+  cloud: gcp
+  # restrict zone
+  zone: us-west1-b
+
+  image_id: projects/debian-cloud/global/images/debian-10-buster-v20240213
+  instance_type: n1-standard-1
+
+setup: |
+  echo "Setup task"
+
+run: |
+  echo "Run task"
