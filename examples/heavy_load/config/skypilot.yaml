@@ -14,6 +14,7 @@ virtual_machine:
     - gcp:
         - n1-standard-1
         - n1-standard-2
+        - e2-micro
 
   allowed_images:
     - gcp:
@@ -21,11 +22,11 @@ virtual_machine:
         - debian-10-buster-v20240110
         - ubuntu-1604-xenial-v20181029
         - ubuntu-1804-bionic-v20181029
-
-# vpcs as a diff fresource type
       
-      
-# TODO  allowed_setup:
+  startup_scripts:
+  - gcp:
+    # Hash of "#! /bin/bash\nsudo echo \"success\" > startup_script.out\n"
+    - efb793ed84458eee9d4098a17c6f1cd5ed14b858ff35f8f3c51448a252eeee32
 
 attached_authorizations:
   - gcp:
