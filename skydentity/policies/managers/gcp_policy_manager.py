@@ -22,16 +22,16 @@ class GCPPolicyManager(PolicyManager):
         self._db = firestore.client(self._app)
         self._firestore_policy_collection = firestore_policy_collection
 
-    def upload_policy(self, public_key: str, policy: GCPPolicy):
+    def upload_policy(self, public_key_hash: str, policy: GCPPolicy):
         """
         Uploads a policy to GCP.
-        :param public_key: The public key of the policy.
+        :param public_key_hash: The public key of the policy.
         :param policy: The policy to upload.
         """
         print("Uploading policy:\n", policy.to_dict())
         self._db \
             .collection(self._firestore_policy_collection) \
-            .document(public_key) \
+            .document(public_key_hash) \
             .set(policy.to_dict())
 
     def get_policy(self, public_key_hash: str, logger=None) -> GCPPolicy:

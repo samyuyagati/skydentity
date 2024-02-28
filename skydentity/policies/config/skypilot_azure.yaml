@@ -1,0 +1,19 @@
+virtual_machine:
+  actions:
+  - ALL
+  allowed_images:
+  - azure:
+    - UbuntuServer:16.04-LTS
+  attached_authorizations:
+  - azure:
+    - authorization:
+      - placeholder
+  cloud_provider:
+  - azure
+  instance_type:
+  - azure:
+    - Standard_B1s
+  regions:
+  - azure:
+    - eastus
+    - westus

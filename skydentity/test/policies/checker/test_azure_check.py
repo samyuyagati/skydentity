@@ -21,7 +21,7 @@ class AzurePolicyCheckSuite(unittest.TestCase):
                                     'resources', 
                                     'policies', 
                                     'azure')
-        self._policy_manager = LocalPolicyManager(self._policy_dir, AzurePolicy)
+        self._policy_manager = LocalPolicyManager(AzurePolicy)
 
     def get_request_body(self, request_name: str) -> Dict:
         """
@@ -37,17 +37,18 @@ class AzurePolicyCheckSuite(unittest.TestCase):
             request_body = json.load(request_file)
         return request_body
 
-    def get_policy(self, policy_name: str) -> AzurePolicy:
+    def get_policy(self, policy_path: str) -> AzurePolicy:
         """
-        Reads the policy from a file, from resources/policies/azure/{policy_name}.json
+        Reads the policy from a file, from policy_path
         """
-        return self._policy_manager.get_policy(policy_name)
+        return self._policy_manager.get_policy(policy_path)
     
     def test_azure_vm_loose_check(self):
         """
         Tests a loose Azure Policy, which allows all actions.
         """
-        loose_policy = self.get_policy('loose_vm')
+        policy_path = os.path.join(self._policy_dir, 'loose_vm.yaml')
+        loose_policy = self.get_policy(policy_path)
         request_body = self.get_request_body('azure_vm_creation')
 
         successful_request = Request.from_values(json=request_body, method='POST')
@@ -71,7 +72,8 @@ class AzurePolicyCheckSuite(unittest.TestCase):
         """
         Tests the checking of Azure VM images
         """
-        loose_policy = self.get_policy('loose_vm')
+        policy_path = os.path.join(self._policy_dir, 'loose_vm.yaml')
+        loose_policy = self.get_policy(policy_path)
         request_body = self.get_request_body('azure_vm_creation')
 
         request_body["properties"]["storageProfile"]["imageReference"]["offer"] = "WindowsServer"
@@ -84,7 +86,8 @@ class AzurePolicyCheckSuite(unittest.TestCase):
         """
         Tests a stricter Azure Policy, which only allows reads.
         """
-        strict_policy = self.get_policy('strict_vm')
+        policy_path = os.path.join(self._policy_dir, 'strict_vm.yaml')
+        strict_policy = self.get_policy(policy_path)
         request_body = self.get_request_body('azure_vm_creation')
 
         successful_request = Request.from_values(json=request_body, method='GET')
@@ -103,7 +106,8 @@ class AzurePolicyCheckSuite(unittest.TestCase):
         """
         Tests a stricter Azure Policy, which only allows reads, and we now enable attaching service accounts
         """
-        strict_policy = self.get_policy('strict_attach_policy')
+        policy_path = os.path.join(self._policy_dir, 'strict_attach_policy.yaml')
+        strict_policy = self.get_policy(policy_path)
         request_body = self.get_request_body('azure_vm_creation_attached_policy')
 
         successful_request = Request.from_values(json=request_body, method='GET')

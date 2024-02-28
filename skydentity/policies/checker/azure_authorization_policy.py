@@ -31,18 +31,19 @@ class Action(Enum):
     CREATE = 1
 
 class CloudProvider(Enum):
-    GCP = 1
+    azure = 1
 
 @dataclass
-class Authorization:
+class AzureAuthorization:
     cloud_provider: str
-    project: str
+    resource_group: str
     actions: List[Action]
     roles: List[RestrictedRole]
+    region: str
 
-class GCPAuthorizationPolicy(AuthorizationPolicy):
+class AzureAuthorizationPolicy(AuthorizationPolicy):
     """
-    Defines methods for checking authorization on GCP.
+    Defines methods for checking authorization on Azure.
     """
     def __init__(self, policy_dict=None, policy_file=None):
         if policy_dict:
@@ -53,7 +54,7 @@ class GCPAuthorizationPolicy(AuthorizationPolicy):
         else:
             raise ValueError("Must provide either a policy dictionary or a policy file.")
 
-    def authorization_from_dict(self, policy_dict: Dict) -> Authorization:
+    def authorization_from_dict(self, policy_dict: Dict) -> AzureAuthorization:
         """
         Parses a dictionary into an Authorization
 
@@ -82,15 +83,14 @@ class GCPAuthorizationPolicy(AuthorizationPolicy):
                 restricted_role.object = object_list[0]
             roles.append(restricted_role)
         
-        return Authorization(cloud_provider, policy_dict["project"][0], actions, roles)
+        return AzureAuthorization(cloud_provider, policy_dict["resource_group"][0], actions, roles, policy_dict["region"][0])
     
-    def authorization_from_yaml(self, file: str) -> Authorization:
+    def authorization_from_yaml(self, file: str) -> AzureAuthorization:
         """
         Parses a YAML file into an Authorization
         """
         with open(file, 'r') as f:
             policy_dict = yaml.load(f, Loader=yaml.SafeLoader)['authorization']
-
             return self.authorization_from_dict(policy_dict)
 
     def check_request(self, request: Request, logger=None) -> (Self, bool):
@@ -101,14 +101,14 @@ class GCPAuthorizationPolicy(AuthorizationPolicy):
 
         elif request.method == "POST":
             # Parse the request into an Authorization
-            authorization_request = GCPAuthorizationPolicy(policy_dict=request.json)
+            authorization_request = AzureAuthorizationPolicy(policy_dict=request.json)
 
-            # Check the cloud provider matches (TODO: Should always be GCP in GCP auth policy)
+            # Check the cloud provider matches (TODO: Should always be Azure in Azure auth policy)
             if authorization_request._policy.cloud_provider != self._policy.cloud_provider:
                 return (None, False)
             
             # Check that the project matches
-            if authorization_request._policy.project != self._policy.project:
+            if authorization_request._policy.resource_group != self._policy.resource_group:
                 return (None, False)
 
             # Check that the actions are allowed
@@ -126,9 +126,9 @@ class GCPAuthorizationPolicy(AuthorizationPolicy):
 
         else:
             if logger:
-                logger.log_text(f"Request is unrecognized (gcp_authorization_policy.py): {request.url}", severity="WARNING")
+                logger.log_text(f"Request is unrecognized (Azure_authorization_policy.py): {request.url}", severity="WARNING")
             else:
-                print(f"Request is unrecognized (gcp_authorization_policy.py): {request.url}, {request.method}")
+                print(f"Request is unrecognized (Azure_authorization_policy.py): {request.url}, {request.method}")
             return (None, False)
         
     def to_dict(self) -> Dict:
@@ -149,19 +149,20 @@ class GCPAuthorizationPolicy(AuthorizationPolicy):
         return {
             "authorization": {
                 "cloud_provider": [self._policy.cloud_provider.name],
-                "project": [self._policy.project],
+                "resource_group": [self._policy.resource_group],
                 "actions": [a.name for a in self._policy.actions],
-                "roles": roles_dicts
+                "roles": roles_dicts,
+                "region": [self._policy.region]
             }
         }
-        
+
     @staticmethod
     def from_dict(policy_dict: Dict) -> Self:
-        return GCPAuthorizationPolicy(policy_dict=policy_dict)
+        return AzureAuthorizationPolicy(policy_dict=policy_dict)
 
 def main():
     print("HELLO")
-    policy_file_name = '../config/auth_example.yaml'
+    policy_file_name = '../config/auth_policy_example_azure.yaml'
     with open(os.path.join(os.getcwd(), policy_file_name), 'r') as f:
         policy_dict = yaml.load(f, Loader=yaml.SafeLoader)
 #        print(policy_dict["cloud_provider"])
