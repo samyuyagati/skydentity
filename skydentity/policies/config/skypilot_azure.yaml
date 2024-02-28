@@ -4,10 +4,6 @@ virtual_machine:
   allowed_images:
   - azure:
     - UbuntuServer:16.04-LTS
-  attached_authorizations:
-  - azure:
-    - authorization:
-      - placeholder
   cloud_provider:
   - azure
   instance_type:
@@ -17,3 +13,12 @@ virtual_machine:
   - azure:
     - eastus
     - westus
+  startup_scripts:
+      - azure:
+        # Hash of "#! /bin/bash\nsudo echo \"success\" > startup_script.out\n"
+        - efb793ed84458eee9d4098a17c6f1cd5ed14b858ff35f8f3c51448a252eeee32
+
+attached_authorizations:
+- azure:
+  - authorization:
+    - placeholder

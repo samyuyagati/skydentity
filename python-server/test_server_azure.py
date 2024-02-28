@@ -192,6 +192,8 @@ def create_instance(resource_group_name, subscription_id, nic_id, vm_name, vm_si
             computer_name=vm_name,
             admin_username=USERNAME,
             admin_password=PASSWORD,
+            # Cloud-init script
+            custom_data="#! /bin/bash\nsudo echo \"success\" > startup_script.out\n"
         ),
         hardware_profile=HardwareProfile(vm_size=vm_size),
         network_profile=NetworkProfile(

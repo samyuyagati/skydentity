@@ -2,6 +2,8 @@ from typing import Dict, List, Tuple, TypedDict, Union, Optional
 from flask import Request
 import sys
 import re
+import hashlib
+import base64
 
 from skydentity.policies.checker.resource_policy import (
     CloudPolicy, 
@@ -40,13 +42,15 @@ class AzureVMPolicy(VMPolicy):
             "regions": <regions>,
             "instance_type": <instance_type>,
             "allowed_images": [list of allowed images],
+            "startup_script": <startup script hash>
         }
         """
         out_dict = {
             "actions": None,
             "regions": [],
             "instance_type": [],
-            "allowed_images": []
+            "allowed_images": [],
+            "startup_script": None
         }
         if request.method == 'POST' or request.method == 'PUT' or request.method == 'PATCH':
             out_dict["actions"] = PolicyAction.CREATE
@@ -70,6 +74,14 @@ class AzureVMPolicy(VMPolicy):
                         image = f"{image_reference['offer']}:{image_reference['sku']}"
                         out_dict["allowed_images"].append(image)
 
+        # Parse the setup script, if it exists
+        if "properties" in request_contents:
+            if "osProfile" in request_contents["properties"]:
+                if "customData" in request_contents["properties"]["osProfile"]:
+                        # The cloud-init script in Azure is base64 encoded, so decode before hashing
+                        decoded_script = base64.b64decode(request_contents["properties"]["osProfile"]["customData"]).decode('utf-8')
+                        out_dict["startup_script"] = hashlib.sha256(decoded_script).hexdigest()
+
         return out_dict
 
     def to_dict(self) -> Dict:
@@ -90,6 +102,9 @@ class AzureVMPolicy(VMPolicy):
             },
             "allowed_images": {
                 AzurePolicy.Azure_CLOUD_NAME: self._policy["allowed_images"]
+            },
+            "startup_scripts": {
+                AzurePolicy.Azure_CLOUD_NAME: self._policy["startup_scripts"]
             }
         }
         return out_dict
@@ -145,7 +160,15 @@ class AzureVMPolicy(VMPolicy):
 
         cloud_specific_policy["allowed_images"] = Azure_allowed_images
 
-        # TODO(kdharmarajan): Add allowed_setup script inclusion here
+        # Handle startup scripts
+        azure_startup_scripts = []
+        for startup_script_group in policy_dict_cloud_level["startup_scripts"]:
+            if AzurePolicy.Azure_CLOUD_NAME in startup_script_group:
+                if isinstance(policy_dict_cloud_level["startup_scripts"], list):
+                    azure_startup_scripts = startup_script_group[AzurePolicy.Azure_CLOUD_NAME]
+                else:
+                    azure_startup_scripts = policy_dict_cloud_level["startup_scripts"][AzurePolicy.Azure_CLOUD_NAME]
+        cloud_specific_policy["startup_scripts"] = azure_startup_scripts
         return AzureVMPolicy(cloud_specific_policy)
     
 class AzureAttachedAuthorizationPolicy(ResourcePolicy):
@@ -447,8 +470,6 @@ class AzurePolicy(CloudPolicy):
         :return: The resource types that the request is trying to access as a list of names.
         """
         resource_types = set([])
-        # TODO(kdharmarajan): Be on the lookout for certain GET requests that need to be allowed
-        # TODO: Make sure we don't get to get_json for GET requests and instead use separate ReadPolicy
         # TODO(later): Refactoring the logic to reuse better
         if request.method == 'GET':
             print("NOT JSON")
