@@ -27,7 +27,7 @@ def main():
 
     policy_container_name = 'policies' if not args.authorization else 'authorization_policies'
  
-    hashed_public_key = hash_public_key_from_file(args.public_key)
+    hashed_public_key = hash_public_key_from_file(args.public_key_path)
     print("Hashed public key: ", hashed_public_key)
 
     if formatted_cloud == 'gcp':

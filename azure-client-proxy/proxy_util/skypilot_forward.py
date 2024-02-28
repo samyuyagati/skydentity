@@ -135,6 +135,12 @@ def generic_forward_request(request, log_dict=None):
     if not authorized:
         print_and_log(logger, "Request is unauthorized")
         return Response("Unauthorized", 401)
+    
+    # TODO: Delete this print statement
+    try:
+        print(request.json)
+    except:
+        pass
 
     # Get new endpoint and new headers
     new_url = get_new_url(request)
@@ -235,6 +241,20 @@ def setup_routes(app: Flask):
                 "Invalid route specification; missing either `view_func` or `fields`"
             )
 
+    # set up default route
+    default_view = lambda path: default_route_deny(request, path)
+    default_view.__name__ = "default_view"
+    app.add_url_rule("/", view_func=default_view, defaults={"path": ""})
+    app.add_url_rule("/<path:path>", view_func=default_view)
+
+
+def default_route_deny(request, path=None):
+    """
+    Default deny all unknown routes.
+    """
+    logger = get_logger()
+    print_and_log(logger, f"UNKNOWN ROUTE: /{path}")
+    return Response("Unknown route; permission denied", 401)
 
 def get_json_with_managed_identity(request, managed_identity_id):
     """

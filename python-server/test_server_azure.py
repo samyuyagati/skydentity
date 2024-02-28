@@ -8,6 +8,8 @@ from azure.identity import DefaultAzureCredential
 from azure.mgmt.subscription import SubscriptionClient
 from azure.mgmt.resource.resources.models import ResourceGroup
 
+import base64
+
 # TODO: Handle secret management + remove uses of 'AzureCliCredential()'
 credential = DefaultAzureCredential()
 subscription_client = SubscriptionClient(credential)
@@ -50,41 +52,6 @@ def create_resource_group(resource_group_name, subscription_id, location="westus
         },
     ).result()
 
-    # Create subnet
-    subnet_name = resource_group_name + "-subnet"
-    subnet = network_client.subnets.begin_create_or_update(
-        resource_group_name,
-        vnet_name,
-        subnet_name,
-        {"address_prefix": "10.0.0.0/24"},
-    ).result()
-    print("Created subnet")
-
-    return subnet.id
-
-"""
-    Create the public ip address and network interface for an individual VM in a given subnet.
-    Returns the network interface id necessary to create a VM instance.
-"""
-def create_public_ip_and_nic(resource_group_name, subscription_id, subnet_id, location="westus"):
-    # Get credentials from CLI
-    credential = AzureCliCredential()
-
-    # Create public ip address
-    network_client = NetworkManagementClient(credential, subscription_id, base_url=BASE_URL)
-
-    ip_name = resource_group_name + "-ip"
-    ip_address = network_client.public_ip_addresses.begin_create_or_update(
-        resource_group_name,
-        ip_name,
-        {
-            "location": location,
-            "sku": {"name": "Standard"},
-            "public_ip_allocation_method": "Static",
-            "public_ip_address_version": "IPV4",
-        },
-    ).result()
-
     # Create network security group to allow ssh
     nsg_name = resource_group_name + "-nsg"
     nsg = network_client.network_security_groups.begin_create_or_update(
@@ -108,6 +75,44 @@ def create_public_ip_and_nic(resource_group_name, subscription_id, subnet_id, lo
         },
     ).result()
 
+    # Create subnet
+    subnet_name = resource_group_name + "-subnet"
+    subnet = network_client.subnets.begin_create_or_update(
+        resource_group_name,
+        vnet_name,
+        subnet_name,
+        {
+            "address_prefix": "10.0.0.0/24",
+            "network_security_group": {"id": nsg.id},
+         },
+    ).result()
+    print("Created subnet")
+
+    return subnet.id, nsg.id
+
+"""
+    Create the public ip address and network interface for an individual VM in a given subnet.
+    Returns the network interface id necessary to create a VM instance.
+"""
+def create_public_ip_and_nic(resource_group_name, subscription_id, subnet_id, nsg_id, location="westus"):
+    # Get credentials from CLI
+    credential = AzureCliCredential()
+
+    # Create public ip address
+    network_client = NetworkManagementClient(credential, subscription_id, base_url=BASE_URL)
+
+    ip_name = resource_group_name + "-ip"
+    ip_address = network_client.public_ip_addresses.begin_create_or_update(
+        resource_group_name,
+        ip_name,
+        {
+            "location": location,
+            "sku": {"name": "Standard"},
+            "public_ip_allocation_method": "Static",
+            "public_ip_address_version": "IPV4",
+        },
+    ).result()
+
     # Create nic
     nic_name = resource_group_name + "-nic"
     ip_config_name = ip_name + "-config"
@@ -121,9 +126,9 @@ def create_public_ip_and_nic(resource_group_name, subscription_id, subnet_id, lo
                     "name": ip_config_name,
                     "subnet": {"id": subnet_id},
                     "public_ip_address": {"id": ip_address.id},
-                    "network_security_group": {"id": nsg.id},
                 }
             ],
+            "network_security_group": {"id": nsg_id}
         },
     ).result()
 
@@ -193,7 +198,7 @@ def create_instance(resource_group_name, subscription_id, nic_id, vm_name, vm_si
             admin_username=USERNAME,
             admin_password=PASSWORD,
             # Cloud-init script
-            custom_data="#! /bin/bash\nsudo echo \"success\" > startup_script.out\n"
+            custom_data=base64.b64encode(("#! /bin/bash\nsudo echo \"success\" > startup_script.out\n").encode('utf-8')).decode('utf-8')
         ),
         hardware_profile=HardwareProfile(vm_size=vm_size),
         network_profile=NetworkProfile(
@@ -234,11 +239,11 @@ def create_instance(resource_group_name, subscription_id, nic_id, vm_name, vm_si
 def main():
     # Create resource group (including vnet and subnet) once
     resource_group_name = "skydentity"
-    subnet_id = create_resource_group(resource_group_name, subscription_id, location="westus")
+    subnet_id, nsg_id = create_resource_group(resource_group_name, subscription_id, location="westus")
 
     # Create VMs
     for i in range(NUM_VMS_TO_CREATE):
-        nic_id = create_public_ip_and_nic(resource_group_name, subscription_id, subnet_id)
+        nic_id = create_public_ip_and_nic(resource_group_name, subscription_id, subnet_id, nsg_id)
         # Name VM 'skydentity-VM#' where # is the 1-indexed VM number
         vm = create_instance(resource_group_name, subscription_id, nic_id, "{0}-VM{1}".format(resource_group_name, (i + 1)))
         print("Created {0} successfully".format(vm.name))

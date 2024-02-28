@@ -79,7 +79,8 @@ class AzureVMPolicy(VMPolicy):
             if "osProfile" in request_contents["properties"]:
                 if "customData" in request_contents["properties"]["osProfile"]:
                         # The cloud-init script in Azure is base64 encoded, so decode before hashing
-                        decoded_script = base64.b64decode(request_contents["properties"]["osProfile"]["customData"]).decode('utf-8')
+                        print("customData", request_contents["properties"]["osProfile"]["customData"])
+                        decoded_script = base64.b64decode(request_contents["properties"]["osProfile"]["customData"])
                         out_dict["startup_script"] = hashlib.sha256(decoded_script).hexdigest()
 
         return out_dict
@@ -557,7 +558,7 @@ class AzurePolicy(CloudPolicy):
             if "reads" in policy_dict:
                 read_dict = policy_dict["reads"]
                 print("READS_DICT in AzurePolicy:from_dict", read_dict)
-                read_policy = AzureReadPolicy.from_dict(read_dict, logger)
+                read_policy = AzureReadPolicy.from_dict(read_dict)
             else:
                 # if reads are allowed, and there is no granular specification, then allow all
                 read_policy = AzureReadPolicy.get_default_allow_policy()

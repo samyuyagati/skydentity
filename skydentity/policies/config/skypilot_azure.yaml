@@ -18,7 +18,24 @@ virtual_machine:
         # Hash of "#! /bin/bash\nsudo echo \"success\" > startup_script.out\n"
         - efb793ed84458eee9d4098a17c6f1cd5ed14b858ff35f8f3c51448a252eeee32
 
-attached_authorizations:
-- azure:
-  - authorization:
-    - placeholder
+  attached_authorizations:
+  - azure:
+    - authorization:
+      - placeholder
+
+reads:
+  azure:
+    resource_group: skydentity-e318-westus
+
+    regions:
+    - westus
+
+    virtual_machines: true
+    virtualMachineInstanceView: true
+    network_interfaces: true
+    ip_addresses: true
+    operations: true
+    virtual_networks: true
+    subnets: true
+    network_security_groups: true
+    deployments: true
