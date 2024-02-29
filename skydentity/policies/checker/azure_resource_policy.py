@@ -79,7 +79,6 @@ class AzureVMPolicy(VMPolicy):
             if "osProfile" in request_contents["properties"]:
                 if "customData" in request_contents["properties"]["osProfile"]:
                         # The cloud-init script in Azure is base64 encoded, so decode before hashing
-                        print("customData", request_contents["properties"]["osProfile"]["customData"])
                         decoded_script = base64.b64decode(request_contents["properties"]["osProfile"]["customData"])
                         out_dict["startup_script"] = hashlib.sha256(decoded_script).hexdigest()
 
@@ -433,6 +432,112 @@ class AzureReadPolicy(ResourcePolicy):
                 k: v for k, v in self._policy.items() if v is not None
             }
         }
+    
+class AzureDeploymentPolicy(ResourcePolicy):
+    """
+    Defines methods for Azure Deployment policies.
+    """
+
+    class MockAzureRequest:
+        """
+        Internal class used to mock Azure requests on resource creation.
+        """
+        def __init__(self, json_contents: Dict):
+            self.json_contents = json_contents
+
+        def get_json(self, cache=False):
+            return self.json_contents
+
+    def __init__(self, azure_vm_policy: AzureVMPolicy, attached_authorization_policy: AzureAttachedAuthorizationPolicy):
+        """
+        :param policy: The dict of the policy to enforce.
+        """
+        self._azure_vm_policy = azure_vm_policy
+        self._attached_authorization_policy = attached_authorization_policy
+
+        self._param_extractor = re.compile(r"^\[parameters\('(?P<param_name>[^']+)'\)\]$")
+    
+    def check_request(self, request: Request) -> bool:
+        """
+        Enforces the policy on a request.
+        :param request: The request to enforce the policy on.
+        :return: True if the request is allowed, False otherwise.
+        """
+        request_contents = request.get_json(cache=True)
+        if "properties" in request_contents:
+            # Load up all of the parameters
+            parameters = {}
+            if "parameters" in request_contents["properties"]:
+                for parameter in request_contents["properties"]["parameters"]:
+                    parameters[parameter] = request_contents["properties"]["parameters"][parameter]["value"]
+
+            if "template" in request_contents["properties"]:
+                template = request_contents["properties"]["template"]
+                if "resources" in template:
+                    for resource in template["resources"]:
+                        if "type" in resource and resource["type"] == "Microsoft.Compute/virtualMachines":
+                            # Check the VM policy
+                            vm_request = self.convert_vm_source_to_vm_request(resource, parameters)
+                            if not self._azure_vm_policy.check_request(vm_request):
+                                return False
+        return True
+    
+    def convert_vm_source_to_vm_request(self, vm_source_dict, parameters_dict) -> 'AzureDeploymentPolicy.MockAzureRequest':
+        """
+        Converts a the VM template resource into a mock request that can be checked by the vm policy.
+        :param vm_source_dict: The VM template resource.
+        :param parameters_dict: The parameters for the template.
+        """
+        request_body = {
+            "properties": {
+            }
+        }
+        if "properties" in vm_source_dict:
+            if "hardwareProfile" in vm_source_dict["properties"]:
+                parameter_substituted_hardware_profile = {}
+                for key in vm_source_dict["properties"]["hardwareProfile"]:
+                    if key in parameters_dict:
+                        match = self._param_extractor.match(parameters_dict[key])
+                        if match:
+                            parameter_substituted_hardware_profile[key] = parameters_dict[match.group("param_name")]
+                        else:
+                            parameter_substituted_hardware_profile[key] = vm_source_dict["properties"]["hardwareProfile"][key]
+                request_body["properties"]["hardwareProfile"] = parameter_substituted_hardware_profile
+
+            if "storageProfile" in vm_source_dict["properties"]:
+                parameter_substituted_storage_profile = {}
+                for key in vm_source_dict["properties"]["storageProfile"]:
+                    if key in parameters_dict:
+                        match = self._param_extractor.match(parameters_dict[key])
+                        if match:
+                            parameter_substituted_storage_profile[key] = parameters_dict[match.group("param_name")]
+                        else:
+                            parameter_substituted_storage_profile[key] = vm_source_dict["properties"]["storageProfile"][key]
+                request_body["properties"]["storageProfile"] = parameter_substituted_storage_profile
+
+            if "osProfile" in vm_source_dict["properties"]:
+                parameter_substituted_os_profile = {}
+                for key in vm_source_dict["properties"]["osProfile"]:
+                    if key in parameters_dict:
+                        match = self._param_extractor.match(parameters_dict[key])
+                        if match:
+                            parameter_substituted_os_profile[key] = parameters_dict[match.group("param_name")]
+                        else:
+                            parameter_substituted_os_profile[key] = vm_source_dict["properties"]["osProfile"][key]
+                request_body["properties"]["osProfile"] = parameter_substituted_os_profile
+
+            if "networkProfile" in vm_source_dict["properties"]:
+                parameter_substituted_network_profile = {}
+                for key in vm_source_dict["properties"]["networkProfile"]:
+                    if key in parameters_dict:
+                        match = self._param_extractor.match(parameters_dict[key])
+                        if match:
+                            parameter_substituted_network_profile[key] = parameters_dict[match.group("param_name")]
+                        else:
+                            parameter_substituted_network_profile[key] = vm_source_dict["properties"]["networkProfile"][key]
+                request_body["properties"]["networkProfile"] = parameter_substituted_network_profile
+
+        return AzureDeploymentPolicy.MockAzureRequest(request_body)
 
 class AzurePolicy(CloudPolicy):
     """
@@ -459,7 +564,8 @@ class AzurePolicy(CloudPolicy):
             "virtual_machine": vm_policy,
             "attached_authorizations": attached_authorization_policy,
             "read": read_policy,
-            "unrecognized": UnrecognizedResourcePolicy()
+            "unrecognized": UnrecognizedResourcePolicy(),
+            "deployments": AzureDeploymentPolicy(vm_policy, attached_authorization_policy)
         }
         self.valid_authorization: Union[str, None] = None
         print("AzureAuthorizationPolicy init:", self._resource_policies["attached_authorizations"]._policy)
@@ -491,6 +597,11 @@ class AzurePolicy(CloudPolicy):
                 if match:
                     resource_types.add(("virtual_machine",))
                     return list(resource_types)
+            
+            if "deployments" in request.url:
+                resource_types.add(("deployments",))
+                return list(resource_types)
+
             for key in request.get_json(cache=True).keys():
                 if key in AzurePolicy.VM_REQUEST_KEYS:
                     resource_types.add(("virtual_machine",))
