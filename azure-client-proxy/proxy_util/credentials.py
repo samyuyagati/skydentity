@@ -11,9 +11,14 @@ from functools import cache
 _CAPABILITY_ENC_KEY_FILE = os.environ.get("CAPABILITY_ENC_KEY_FILE", None)
 _DB_INFO_FILE = os.environ.get("AZURE_DB_INFO_FILE", None)
 
+_CAPABILITY_ENC_KEY = os.environ.get("CAPABILITY_ENC_KEY", None)
+_DB_ENDPOINT = os.environ.get("AZURE_DB_ENDPOINT", None)
+_DB_KEY = os.environ.get("AZURE_DB_KEY", None)
+
 # validate global constants from environment variables
-assert _CAPABILITY_ENC_KEY_FILE is not None and os.path.isfile(_CAPABILITY_ENC_KEY_FILE)
-assert _DB_INFO_FILE is not None
+assert (_CAPABILITY_ENC_KEY_FILE is not None and os.path.isfile(_CAPABILITY_ENC_KEY_FILE)) \
+    or _CAPABILITY_ENC_KEY is not None
+assert (_DB_INFO_FILE is not None) or (_DB_ENDPOINT is not None and _DB_KEY is not None)
 
 @cache
 def get_managed_identity_auth_token() -> bytes:
@@ -43,3 +48,21 @@ def get_capability_enc_key() -> str:
     Retrieve the key for capability encoding.
     """
     return _CAPABILITY_ENC_KEY_FILE
+
+def get_capability_enc_key_bytes() -> bytes:
+    """
+    Retrieve the capability encoding key as bytes.
+    """
+    return _CAPABILITY_ENC_KEY.encode("utf-8")
+
+def get_db_endpoint() -> str:
+    """
+    Retrieve the endpoint for the Azure Cosmos DB.
+    """
+    return _DB_ENDPOINT
+
+def get_db_key() -> str:
+    """
+    Retrieve the key for the Azure Cosmos DB.
+    """
+    return _DB_KEY

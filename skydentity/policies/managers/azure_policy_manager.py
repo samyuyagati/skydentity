@@ -1,4 +1,5 @@
 import json
+from typing import Union
 
 from azure.cosmos import CosmosClient
 from azure.cosmos.partition_key import PartitionKey
@@ -41,7 +42,7 @@ class AzurePolicyManager(PolicyManager):
         partition_key = PartitionKey(path = '/id')
         self._container = self._db.create_container_if_not_exists(db_container_name, partition_key = partition_key)
 
-    def upload_policy(self, public_key_hash: str, policy: AzurePolicy | AzureAuthorizationPolicy):
+    def upload_policy(self, public_key_hash: str, policy: Union[AzurePolicy, AzureAuthorizationPolicy]):
         """
         Uploads a policy to Azure.
         :param public_key_hash: The public key of the policy.
@@ -54,7 +55,7 @@ class AzurePolicyManager(PolicyManager):
             },
         )
 
-    def get_policy(self, public_key_hash: str) -> AzurePolicy | AzureAuthorizationPolicy:
+    def get_policy(self, public_key_hash: str) -> Union[AzurePolicy, AzureAuthorizationPolicy]:
         """
         Gets a policy from the cloud vendor.
         :param public_key_hash: The public key of the policy.

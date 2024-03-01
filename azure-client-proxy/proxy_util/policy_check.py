@@ -11,14 +11,16 @@ from skydentity.policies.managers.azure_authorization_policy_manager import (
 from skydentity.policies.managers.azure_policy_manager import AzurePolicyManager
 from skydentity.utils.hash_util import hash_public_key
 
-from .credentials import get_capability_enc_key, get_db_info_file
+from .credentials import get_capability_enc_key, get_db_info_file, get_db_endpoint, get_db_key
 from .logging import get_logger, print_and_log
 
 
 @cache
 def get_policy_manager() -> AzurePolicyManager:
     return AzurePolicyManager(
-        db_info_file=get_db_info_file()
+        db_info_file=get_db_info_file(),
+        db_endpoint=get_db_endpoint(),
+        db_key=get_db_key()
     )
 
 
@@ -28,7 +30,9 @@ def get_authorization_policy_manager() -> AzureAuthorizationPolicyManager:
     print("CREATING AUTH POLICY MANAGER")
     return AzureAuthorizationPolicyManager(
         capability_enc_path=capability_enc_key_file,
-        db_info_file=get_db_info_file()
+        db_info_file=get_db_info_file(),
+        db_endpoint=get_db_endpoint(),
+        db_key=get_db_key()
     )
 
 

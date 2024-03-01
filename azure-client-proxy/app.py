@@ -1,4 +1,5 @@
 import os
+import subprocess
 
 from flask import Flask
 from proxy_util.logging import get_logger, print_and_log
@@ -25,6 +26,14 @@ def setup_app():
     """
     logger = get_logger()
     print_and_log(logger, "Starting up server")
+
+    managed_identity_id = os.environ.get("MANAGED_IDENTITY_ID", None)
+    if managed_identity_id is not None:
+        print_and_log(logger, "Setting up managed identity")
+        subprocess.Popen(
+            ["az", "login", "--identity", "--username", managed_identity_id],
+            stdout=subprocess.PIPE,
+        ).communicate()
 
     # set up skypilot forwarding routes
     setup_routes(app)
