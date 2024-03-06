@@ -14,7 +14,7 @@ ROOT=$(dirname $(dirname $(dirname $(pwd))))
 echo "Root: $ROOT"
 # Setup authorizations and start servers
 echo "Setting up authorizations..."
-./setup_authorization.sh -l -r $ROOT \
+./setup_authorization.sh -r $ROOT \
                          -k $ROOT/skydentity/examples/heavy_load/keys/public.pem \
                          -s $ROOT/skydentity/examples/heavy_load/keys/private.pem -p "sky-identity" \
                          -c $FIREBASE_CREDS -y $ROOT/skydentity/examples/heavy_load/config 
