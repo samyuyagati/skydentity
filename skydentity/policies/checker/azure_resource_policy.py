@@ -607,15 +607,12 @@ class AzurePolicy(CloudPolicy):
     """
 
     Azure_CLOUD_NAME = "azure"
-    VM_REQUEST_KEYS = set([
-        "location",
-        "properties"
-    ])
     ATTACHED_AUTHORIZATION_KEYS = set([
         "managedIdentities"
     ])
 
     UPDATE_VM_PROPERTY_PATTERN = re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/resourceGroups/(?P<resourceGroupName>[^/]+)/providers/Microsoft.Compute/virtualMachines/(?P<vmName>[^/]+)")
+    VM_CREATE_PATTERN = re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/resourceGroups/(?P<resourceGroupName>[^/]+)/providers/Microsoft.Compute/virtualMachines")
 
     def __init__(self, vm_policy: AzureVMPolicy, attached_authorization_policy: AzureAttachedAuthorizationPolicy, read_policy: AzureReadPolicy):
         """
@@ -664,10 +661,12 @@ class AzurePolicy(CloudPolicy):
                 resource_types.add(("deployments",))
                 return list(resource_types)
 
+            vm_match = AzurePolicy.VM_CREATE_PATTERN.search(request.path)
+            if vm_match:
+                resource_types.add(("virtual_machine",))
+
             for key in request.get_json(cache=True).keys():
-                if key in AzurePolicy.VM_REQUEST_KEYS:
-                    resource_types.add(("virtual_machine",))
-                elif key in AzurePolicy.ATTACHED_AUTHORIZATION_KEYS:
+                if key in AzurePolicy.ATTACHED_AUTHORIZATION_KEYS:
                     resource_types.add(("attached_authorizations",))
         if len(resource_types) == 0:
             resource_types.add(("unrecognized",))
@@ -704,7 +703,7 @@ class AzurePolicy(CloudPolicy):
         """
         out_dict = {}
         for resource_type, policy in self._resource_policies.items():
-            if resource_type == "unrecognized":
+            if resource_type == "unrecognized" or resource_type == "deployments":
                 continue
             out_dict[resource_type] = policy.to_dict()
         return out_dict
