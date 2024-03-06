@@ -1,0 +1,89 @@
+Root: /Users/samyu
+Setting up authorizations...
+Serverless client proxy is already running.
+Client proxy address: https://skyidproxy-service-ozttcth4mq-uw.a.run.app/
+~/skydentity/gcp-server-proxy ~/skydentity/examples/heavy_load
+Server proxy process: 47972
+~/skydentity/examples/heavy_load
+Waiting for the server and client proxies to start...
+Starting up server
+ * Debug mode: off
+~/skydentity/skydentity/scripts ~/skydentity/examples/heavy_load
+Uploading /Users/samyu/skydentity/examples/heavy_load/config/auth_policy_example.yaml to Firestore...
+Public key from file: b'-----BEGIN PUBLIC KEY-----\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAt4GHq6xhEMwkCac68phF\nGs9VjchQ/RwDhaHIWhBLS94ld85+CN0J6rwChAyPZbLw01WZFGwPRs7zHPZO1nym\nB018JulrzLmYU6rb+1BzWtG5hUXeF6zu7wukayRECACvbCLvPAJbxmtjc80cx0FB\nxKgmG146lhzGVbKUBLsxIOOYT2KwT6txpjx/HKU7WNbXU0otb63CQFLU0aL802y1\nKOU5JfYVUKDNtz50eLfV+rwhwjhjrI/w0hEG0zSV47cptWYkfNmDtb3KacWr1jVy\njTJyN1KBIRSxaNL1IWQ/xSbRyEVNVTQckOqhHMpSCi7BP8bjCfBZVS+gMjJCFzrS\n6R1rpdusQP3rW6jyUGa6JvCDlDLJcPjBMccFwsx05kZXI/a9TmGRqsZ6yU6pDxU4\n2yvVbG8f/nIZdbpzumNVVGnuVkPEG6RGkdYm0y5LzR0FQtLupsmUxwSITbnz0Qch\niQRkrWg+C/y1m7GNEKJRXUDD/aoixICW+KSVASUKPLsvAgMBAAE=\n-----END PUBLIC KEY-----'
+Hashed public key:  f698178c3432cb34d86acfe18603b9e67192d3bdec57dfdf64834adf3b404a05
+{'authorization': {'cloud_provider': ['GCP'], 'project': ['sky-identity'], 'actions': ['CREATE'], 'roles': [{'restricted_role': [{'role': 'roles/storage.objectUser'}, {'scope': 'bucket'}, {'object': 'test_bucket_signedurl'}]}, {'restricted_role': [{'role': 'roles/storage.objectWriter'}, {'scope': 'bucket'}, {'object': 'test_bucket_signedurl'}]}, {'restricted_role': [{'role': 'roles/logging.bucketWriter'}, {'scope': 'project'}, {'object': 'sky-identity'}]}]}}
+Policy has been uploaded!
+Sending auth request...
+{'cloud': 'gcp'}
+PATH: /skydentity/cloud/gcp/create-authorization?
+	cloud: gcp
+
+{'authorization': {'cloud_provider': ['GCP'], 'project': ['sky-identity'], 'actions': ['CREATE'], 'roles': [{'restricted_role': [{'role': 'roles/storage.objectUser'}, {'scope': 'bucket'}, {'object': 'test_bucket_signedurl'}]}]}}
+http://127.0.0.1:5000/skydentity/cloud/gcp/create-authorization
+RESPONSE <Response [503]>
+Uploading skypilot_eval_with_auth.yaml to Firestore...
+Public key from file: b'-----BEGIN PUBLIC KEY-----\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAt4GHq6xhEMwkCac68phF\nGs9VjchQ/RwDhaHIWhBLS94ld85+CN0J6rwChAyPZbLw01WZFGwPRs7zHPZO1nym\nB018JulrzLmYU6rb+1BzWtG5hUXeF6zu7wukayRECACvbCLvPAJbxmtjc80cx0FB\nxKgmG146lhzGVbKUBLsxIOOYT2KwT6txpjx/HKU7WNbXU0otb63CQFLU0aL802y1\nKOU5JfYVUKDNtz50eLfV+rwhwjhjrI/w0hEG0zSV47cptWYkfNmDtb3KacWr1jVy\njTJyN1KBIRSxaNL1IWQ/xSbRyEVNVTQckOqhHMpSCi7BP8bjCfBZVS+gMjJCFzrS\n6R1rpdusQP3rW6jyUGa6JvCDlDLJcPjBMccFwsx05kZXI/a9TmGRqsZ6yU6pDxU4\n2yvVbG8f/nIZdbpzumNVVGnuVkPEG6RGkdYm0y5LzR0FQtLupsmUxwSITbnz0Qch\niQRkrWg+C/y1m7GNEKJRXUDD/aoixICW+KSVASUKPLsvAgMBAAE=\n-----END PUBLIC KEY-----'
+Hashed public key:  f698178c3432cb34d86acfe18603b9e67192d3bdec57dfdf64834adf3b404a05
+--------LOCAL POLICY MANAGER--------
+base file name: skypilot_eval_with_auth.yaml
+policy file name: /Users/samyu/skydentity/examples/heavy_load/config/skypilot_eval_with_auth.yaml
+policy_dir: /Users/samyu/skydentity/examples/heavy_load/config
+public key: skypilot_eval_with_auth.yaml
+~/skydentity/examples/heavy_load
+PATH: /skydentity/cloud/gcp/create-authorization?
+	cloud: gcp
+	Old URL: http://127.0.0.1:5000/ (Redirect endpoint: https://skyidproxy-service-ozttcth4mq-uw.a.run.app/)
+	New URL: https://skyidproxy-service-ozttcth4mq-uw.a.run.app/skydentity/cloud/gcp/create-authorization
+{'project': 'debian-cloud', 'family': 'debian-10'}
+PATH: /compute/v1/projects/debian-cloud/global/images/family/debian-10?
+	project: debian-cloud
+	family: debian-10
+
+PATH: /compute/v1/projects/debian-cloud/global/images/family/debian-10?
+	project: debian-cloud
+	family: debian-10
+	Old URL: http://127.0.0.1:5000/ (Redirect endpoint: https://skyidproxy-service-ozttcth4mq-uw.a.run.app/)
+	New URL: https://skyidproxy-service-ozttcth4mq-uw.a.run.app/compute/v1/projects/debian-cloud/global/images/family/debian-10
+{'project': 'debian-cloud', 'family': 'debian-10'}
+PATH: /compute/v1/projects/debian-cloud/global/images/family/debian-10?
+	project: debian-cloud
+	family: debian-10
+
+PATH: /compute/v1/projects/debian-cloud/global/images/family/debian-10?
+	project: debian-cloud
+	family: debian-10
+	Old URL: http://127.0.0.1:5000/ (Redirect endpoint: https://skyidproxy-service-ozttcth4mq-uw.a.run.app/)
+	New URL: https://skyidproxy-service-ozttcth4mq-uw.a.run.app/compute/v1/projects/debian-cloud/global/images/family/debian-10
+{'project': 'debian-cloud', 'family': 'debian-10'}
+PATH: /compute/v1/projects/debian-cloud/global/images/family/debian-10?
+	project: debian-cloud
+	family: debian-10
+
+PATH: /compute/v1/projects/debian-cloud/global/images/family/debian-10?
+	project: debian-cloud
+	family: debian-10
+	Old URL: http://127.0.0.1:5000/ (Redirect endpoint: https://skyidproxy-service-ozttcth4mq-uw.a.run.app/)
+	New URL: https://skyidproxy-service-ozttcth4mq-uw.a.run.app/compute/v1/projects/debian-cloud/global/images/family/debian-10
+{'project': 'debian-cloud', 'family': 'debian-10'}
+PATH: /compute/v1/projects/debian-cloud/global/images/family/debian-10?
+	project: debian-cloud
+	family: debian-10
+
+PATH: /compute/v1/projects/debian-cloud/global/images/family/debian-10?
+	project: debian-cloud
+	family: debian-10
+	Old URL: http://127.0.0.1:5000/ (Redirect endpoint: https://skyidproxy-service-ozttcth4mq-uw.a.run.app/)
+	New URL: https://skyidproxy-service-ozttcth4mq-uw.a.run.app/compute/v1/projects/debian-cloud/global/images/family/debian-10
+{'project': 'debian-cloud', 'family': 'debian-10'}
+PATH: /compute/v1/projects/debian-cloud/global/images/family/debian-10?
+	project: debian-cloud
+	family: debian-10
+
+Sending 5 requests to Sky Identity concurrently... (start time: 1709679241.358625)
+Sending request 1 of 5 to Sky Identity... (start time: 1709679241.3587258)
+Sending request 2 of 5 to Sky Identity... (start time: 1709679242.742684)
+Sending request 3 of 5 to Sky Identity... (start time: 1709679244.247444)
+Sending request 4 of 5 to Sky Identity... (start time: 1709679246.5666308)
+Sending request 5 of 5 to Sky Identity... (start time: 1709679248.0417159)
+Cleaning up...

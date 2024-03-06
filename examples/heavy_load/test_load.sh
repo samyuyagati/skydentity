@@ -16,7 +16,7 @@ echo "Root: $ROOT"
 echo "Setting up authorizations..."
 ./setup_authorization.sh -l -r $ROOT \
                          -k $ROOT/skydentity/examples/heavy_load/keys/public.pem \
-                         -s $ROOT/skydentity/examples/heavy_load/keys/private.pem \
+                         -s $ROOT/skydentity/examples/heavy_load/keys/private.pem -p "sky-identity" \
                          -c $FIREBASE_CREDS -y $ROOT/skydentity/examples/heavy_load/config 
 
 # Run test_server.py

@@ -55,9 +55,11 @@ cp ../app.py .
 # Copy skydentity package code to current directory
 mkdir skydentity
 cp -r ../../skydentity/policies ./skydentity/
-echo "copied skydentity policy checking module"
-cp ../../setup.py .
+cp -r ../../skydentity/utils ./skydentity/
+cp -r ../../skydentity/proxy_util ./skydentity/
+echo "copied skydentity policy checking module and utils"
 
+ls skydentity
 ls .
 
 # Create the image in Google Cloud run (takes several minutes)
@@ -65,5 +67,6 @@ gcloud builds submit --tag gcr.io/$GCP_PROJECT/skyidproxy
 
 # Cleanup
 rm -r ./skydentity
+rm -r ./proxy_util
 rm setup.py
 rm app.py

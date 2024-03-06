@@ -367,9 +367,11 @@ def send_gcp_request(request, new_headers, new_url, new_json=None):
 
 
 def create_authorization_route(cloud):
+    print("Create authorization handler")
     logger = get_logger()
     authorization_policy_manager = get_authorization_policy_manager()
     print_and_log(logger, f"Creating authorization (json: {request.json})")
+    print(f"Creating authorization (json: {request.json})")
 
     # Get hash of public key
     public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)

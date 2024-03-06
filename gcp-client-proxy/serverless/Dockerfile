@@ -9,17 +9,13 @@ RUN python3 -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
 # Copy required files
-COPY requirements.txt .
-#COPY certs/domain_dir/domain.crt ./certs/domain.crt # Only required for local container testing
-COPY app.py .
-COPY skydentity/ ./skydentity
-COPY setup.py . 
+ADD . /skydentity-proxy
 
 # Install dependencies
 RUN pip3 install -r requirements.txt
 
 # Install the skydentity package which provides core code for policy checking
-RUN pip3 install .
+RUN pip3 install -e .
 
 # Install google cloud SDK
 # Install required dependencies
