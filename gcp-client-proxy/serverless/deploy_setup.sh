@@ -52,7 +52,8 @@ gcloud config set run/region us-west1
 # Copy app.py into current directory
 cp ../app.py .
 
-# Copy skydentity package code to current directory
+# Copy skydentity package and setup code to current directory
+cp ../../setup.py .
 mkdir skydentity
 cp -r ../../skydentity/policies ./skydentity/
 cp -r ../../skydentity/utils ./skydentity/
@@ -67,6 +68,5 @@ gcloud builds submit --tag gcr.io/$GCP_PROJECT/skyidproxy
 
 # Cleanup
 rm -r ./skydentity
-rm -r ./proxy_util
 rm setup.py
 rm app.py
