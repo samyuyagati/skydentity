@@ -12,36 +12,28 @@ class LocalPolicyManager(PolicyManager):
     Uses local storage to store / update policies. 
     """
 
-    def __init__(self, policy_dir: str, return_policy_type: Type[CloudPolicy]):
-        self._policy_dir = policy_dir
+    def __init__(self, return_policy_type: Type[CloudPolicy]):
         self._return_policy_type = return_policy_type
 
-    def upload_policy(self, public_key: str, policy: CloudPolicy):
+    def upload_policy(self, filepath: str, policy: CloudPolicy):
         """
         Writes / updates a policy to the local filesystem.
         :param public_key: The public key of the policy.
         :param policy: The policy to upload.
         """
-        base_file_name = Path(public_key).with_suffix('.yaml')
-        policy_file_name = os.path.join(self._policy_dir, base_file_name)
         policy_dict = policy.to_dict()
-        with open(policy_file_name, 'w') as f:
+        with open(filepath, 'w') as f:
             yaml.dump(policy_dict, f)
 
-    def get_policy(self, public_key: str) -> CloudPolicy:
+    def get_policy(self, filepath: str) -> CloudPolicy:
         """
         Gets a policy from the local filesystem.
         :param public_key: The public key of the policy.
         :return: The policy.
         """
-        base_file_name = Path(public_key).with_suffix('.yaml')
-        policy_file_name = os.path.join(self._policy_dir, base_file_name)
         print("--------LOCAL POLICY MANAGER--------")
-        print("base file name:", base_file_name)
-        print("policy file name:", policy_file_name)
-        print("policy_dir:", self._policy_dir)
-        print("public key:", public_key)
-        with open(policy_file_name, 'r') as f:
+        print("Opening file:", filepath)
+        with open(filepath, 'r') as f:
             policy_dict = yaml.load(f, Loader=yaml.SafeLoader)
         print("get_policy", policy_dict)
         print("policy type:", self._return_policy_type) 

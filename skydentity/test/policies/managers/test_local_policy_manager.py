@@ -13,7 +13,7 @@ class LocalPolicyManagerSuite(unittest.TestCase):
         """
         self._policy_dir = './local_policies'
         os.mkdir(self._policy_dir)
-        self._policy_manager = LocalPolicyManager(self._policy_dir, DictPolicy)
+        self._policy_manager = LocalPolicyManager(DictPolicy)
 
     def test_write_get_policy(self):
         """
@@ -24,8 +24,9 @@ class LocalPolicyManagerSuite(unittest.TestCase):
             'test': 'test'
         }
         test_policy = DictPolicy(test_policy_dict)
-        self._policy_manager.upload_policy('skypilot', test_policy)
-        out_policy = self._policy_manager.get_policy('skypilot')
+        file_location = os.path.join(self._policy_dir, 'skypilot.yaml')
+        self._policy_manager.upload_policy(file_location, test_policy)
+        out_policy = self._policy_manager.get_policy(file_location)
         self.assertEqual(out_policy.to_dict(), test_policy_dict)
 
     def tearDown(self):

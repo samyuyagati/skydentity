@@ -6,11 +6,16 @@ setuptools
 build
 gunicorn
 pyyaml
+pycryptodome
 # Azure
 azure-mgmt-resource 
 azure-mgmt-compute
 azure-mgmt-network
+azure-mgmt-msi
+azure-mgmt-authorization
+azure-mgmt-subscription
 azure-identity
+azure-cosmos
 # GCP
 google-cloud-compute
 google-cloud-logging

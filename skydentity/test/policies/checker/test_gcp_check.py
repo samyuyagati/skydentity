@@ -25,7 +25,7 @@ class GCPPolicyCheckSuite(unittest.TestCase):
             "policies",
             "gcp",
         )
-        self._policy_manager = LocalPolicyManager(self._policy_dir, GCPPolicy)
+        self._policy_manager = LocalPolicyManager(GCPPolicy)
 
     def get_request_body(self, request_name: str) -> Dict:
         """
@@ -43,17 +43,18 @@ class GCPPolicyCheckSuite(unittest.TestCase):
             request_body = json.load(request_file)
         return request_body
 
-    def get_policy(self, policy_name: str) -> GCPPolicy:
+    def get_policy(self, policy_path: str) -> GCPPolicy:
         """
-        Reads the policy from a file, from resources/policies/gcp/{policy_name}.json
+        Reads the policy from a file, from policy_path
         """
-        return self._policy_manager.get_policy(policy_name)
+        return self._policy_manager.get_policy(policy_path)
 
     def test_gcp_vm_loose_check(self):
         """
         Tests a loose GCP Policy, which allows all actions.
         """
-        loose_policy = self.get_policy("loose_vm")
+        policy_path = os.path.join(self._policy_dir, "loose_vm.yaml")
+        loose_policy = self.get_policy(policy_path)
         request_body = self.get_request_body("gcp_vm_creation")
 
         successful_request = Request.from_values(json=request_body, method="POST")
@@ -78,7 +79,8 @@ class GCPPolicyCheckSuite(unittest.TestCase):
         """
         Tests the checking of GCP VM images
         """
-        loose_policy = self.get_policy("loose_vm")
+        policy_path = os.path.join(self._policy_dir, "loose_vm.yaml")
+        loose_policy = self.get_policy(policy_path)
         request_body = self.get_request_body("gcp_vm_creation")
 
         request_body["disks"][0]["initializeParams"][
@@ -91,7 +93,8 @@ class GCPPolicyCheckSuite(unittest.TestCase):
         """
         Tests a stricter GCP Policy, which only allows reads.
         """
-        strict_policy = self.get_policy("strict_vm")
+        policy_path = os.path.join(self._policy_dir, "strict_vm.yaml")
+        strict_policy = self.get_policy(policy_path)
         request_body = self.get_request_body("gcp_vm_creation")
 
         successful_request = Request.from_values(json=request_body, method="GET")
@@ -110,7 +113,8 @@ class GCPPolicyCheckSuite(unittest.TestCase):
         """
         Tests a stricter GCP Policy, which only allows reads, and we now enable attaching service accounts
         """
-        strict_policy = self.get_policy("strict_attach_policy")
+        policy_path = os.path.join(self._policy_dir, "strict_attach_policy.yaml")
+        strict_policy = self.get_policy(policy_path)
         request_body = self.get_request_body("gcp_vm_creation_attached_policy")
 
         successful_request = Request.from_values(json=request_body, method="GET")
@@ -144,8 +148,8 @@ class GCPPolicyCheckSuite(unittest.TestCase):
         """
         Tests the checking of GCP project reads.
         """
-
-        reads_policy = self.get_policy("reads")
+        policy_path = os.path.join(self._policy_dir, "reads.yaml")
+        reads_policy = self.get_policy(policy_path)
 
         successful_request = Request.from_values(
             method="GET", path=f"/compute/v1/projects/{self.ALLOWED_PROJECT}"
@@ -167,7 +171,8 @@ class GCPPolicyCheckSuite(unittest.TestCase):
         """
         Tests the checking of GCP project regions.
         """
-        reads_policy = self.get_policy("reads")
+        policy_path = os.path.join(self._policy_dir, "reads.yaml")
+        reads_policy = self.get_policy(policy_path)
 
         successful_request = Request.from_values(
             method="GET",
@@ -191,7 +196,8 @@ class GCPPolicyCheckSuite(unittest.TestCase):
         """
         Tests the checking of GCP project zones.
         """
-        reads_policy = self.get_policy("reads")
+        policy_path = os.path.join(self._policy_dir, "reads.yaml")
+        reads_policy = self.get_policy(policy_path)
 
         successful_request = Request.from_values(
             method="GET",
@@ -215,8 +221,11 @@ class GCPPolicyCheckSuite(unittest.TestCase):
         """
         Tests the checking of GCP reservations requests.
         """
-        reads_policy = self.get_policy("reads")
-        strict_reads_policy = self.get_policy("reads_strict")
+        policy_path = os.path.join(self._policy_dir, "reads.yaml")
+        reads_policy = self.get_policy(policy_path)
+
+        strict_policy_path = os.path.join(self._policy_dir, "reads_strict.yaml")
+        strict_reads_policy = self.get_policy(strict_policy_path)
 
         successful_request = Request.from_values(
             method="GET",
@@ -234,8 +243,11 @@ class GCPPolicyCheckSuite(unittest.TestCase):
         """
         Tests the checking of GCP firewall requests.
         """
-        reads_policy = self.get_policy("reads")
-        strict_reads_policy = self.get_policy("reads_strict")
+        policy_path = os.path.join(self._policy_dir, "reads.yaml")
+        reads_policy = self.get_policy(policy_path)
+
+        strict_policy_path = os.path.join(self._policy_dir, "reads_strict.yaml")
+        strict_reads_policy = self.get_policy(strict_policy_path)
 
         # global firewalls
 
@@ -269,8 +281,11 @@ class GCPPolicyCheckSuite(unittest.TestCase):
         """
         Test checking of GCP subnetwork requests.
         """
-        reads_policy = self.get_policy("reads")
-        strict_reads_policy = self.get_policy("reads_strict")
+        policy_path = os.path.join(self._policy_dir, "reads.yaml")
+        reads_policy = self.get_policy(policy_path)
+
+        strict_policy_path = os.path.join(self._policy_dir, "reads_strict.yaml")
+        strict_reads_policy = self.get_policy(strict_policy_path)
 
         successful_request = Request.from_values(
             method="GET",
@@ -288,8 +303,11 @@ class GCPPolicyCheckSuite(unittest.TestCase):
         """
         Test checking of GCP operations requests.
         """
-        reads_policy = self.get_policy("reads")
-        strict_reads_policy = self.get_policy("reads_strict")
+        policy_path = os.path.join(self._policy_dir, "reads.yaml")
+        reads_policy = self.get_policy(policy_path)
+
+        strict_policy_path = os.path.join(self._policy_dir, "reads_strict.yaml")
+        strict_reads_policy = self.get_policy(strict_policy_path)
 
         # global operations
 

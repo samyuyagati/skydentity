@@ -1,0 +1,30 @@
+authorization:
+  cloud_provider: 
+    - azure
+
+  resource_group:
+    - skydentity
+  
+  actions:
+    - CREATE
+
+  region: 
+    - westus
+
+  roles:
+    - restricted_role:
+      - role: Microsoft.Storage/storageAccounts/blobServices/generateUserDelegationKey/action
+      - scope: container
+      - object: skydentity
+    - restricted_role:
+      - role: Microsoft.Storage/storageAccounts/blobServices/write
+      - scope: container
+      - object: skydentity
+    - restricted_role:
+      - role: Microsoft.Storage/storageAccounts/blobServices/containers/read
+      - scope: container
+      - object: skydentity
+    - restricted_role:
+      - role: Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read
+      - scope: container
+      - object: skydentity
