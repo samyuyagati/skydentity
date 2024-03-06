@@ -20,12 +20,74 @@ class AzureVMPolicy(VMPolicy):
     Defines methods for Azure VM policies.
     """
 
+    VM_PROPERTIES_DENIED_KEYS = set(["additionalCapabilities", "applicationProfile", "availabilitySet",
+                                      "capacityReservation", "diagnosticsProfile", "evictionPolicy", 
+                                      "extensionsTimeBudget", "host", "hostGroup", 
+                                      "instanceView", "licenseType", "platformFaultDomain",
+                                      "provisioningState", "proximityPlacementGroup", "scheduledEventsProfile",
+                                      "securityProfile", "timeCreated", "userData", 
+                                      "virtualMachineScaleSet"])
+    STORAGE_PROFILE_DENIED_KEYS = set(["dataDisks", "diskControllerType"])
+    OS_DISK_DENIED_KEYS = set(["caching", "encryptionSettings", "managedDisk", "deleteOption", "vhd", "writeAccelerator"])
+    NETWORK_PROFILE_DENIED_KEYS = set(["networkInterfaceConfigurations"])
+    OS_PROFILE_DENIED_KEYS = set(["requireGuestProvisionSignal", "secrets", "allowExtensionOperations"])
+
     def __init__(self, policy: Dict):
         """
         :param policy: The dict of the policy to enforce.
         """
         self._policy = policy
+
+    def check_request(self, request: Request) -> bool:
+        """
+        Checks the requests with defaultdeny
+        """
+        generic_vm_policy_check = super().check_request(request)
+        if not generic_vm_policy_check:
+            return False
+        
+        request_contents = request.get_json(cache=True)
+        if "properties" in request_contents:
+            # Default deny on VM properties
+            for key in request_contents["properties"]:
+                if key in AzureVMPolicy.VM_PROPERTIES_DENIED_KEYS:
+                    return False
+            
+            # Default deny on storage properties in VM
+            if "storageProfile" in request_contents["properties"]:
+                for key in request_contents["properties"]["storageProfile"]:
+                    if key in AzureVMPolicy.STORAGE_PROFILE_DENIED_KEYS:
+                        return False
+
+                # Check OS Disk
+                if "osDisk" in request_contents["properties"]["storageProfile"]:
+                    os_disk = request_contents["properties"]["storageProfile"]["osDisk"]
+                    for key in os_disk:
+                        if key in AzureVMPolicy.OS_DISK_DENIED_KEYS:
+                            return False
+                    
+                    # Check for certain values for certain osDisk entries
+                    if "createOption" in os_disk and os_disk["createOption"] != "FromImage":
+                        return False
     
+            # Default deny on network properties in VM
+            if "networkProfile" in request_contents["properties"]:
+                for key in request_contents["properties"]["networkProfile"]:
+                    if key in AzureVMPolicy.NETWORK_PROFILE_DENIED_KEYS:
+                        return False
+            
+            # Default deny on OS Profile
+            if "osProfile" in request_contents["properties"]:
+                for key in request_contents["properties"]["osProfile"]:
+                    if key in AzureVMPolicy.OS_PROFILE_DENIED_KEYS:
+                        return False
+                    
+                # Ensure that if linux configuration is used, password authentication is disabled
+                if "linuxConfiguration" in request_contents["properties"]["osProfile"]:
+                    if "disablePasswordAuthentication" not in request_contents["properties"]["osProfile"]["linuxConfiguration"] \
+                        and not request_contents["properties"]["osProfile"]["linuxConfiguration"]["disablePasswordAuthentication"]:
+                        return False
+
     def get_policy_standard_form(self) -> Dict:
         """
         Gets the policy in a standard form.
