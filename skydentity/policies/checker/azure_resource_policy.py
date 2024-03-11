@@ -621,6 +621,13 @@ class AzureDeploymentPolicy(ResourcePolicy):
     Defines methods for Azure Deployment policies.
     """
 
+    RESOURCE_NAME_TO_DEFAULT_DENY_KEY = {
+        "Microsoft.Network/virtualNetworks": "virtualNetworks",
+        "Microsoft.Network/networkSecurityGroups": "networkSecurityGroups",
+        "Microsoft.Network/publicIPAddresses": "publicIPAddresses",
+        "Microsoft.Network/networkInterfaces": "networkInterfaces"
+    }
+
     class MockAzureRequest:
         """
         Internal class used to mock Azure requests on resource creation.
@@ -632,11 +639,14 @@ class AzureDeploymentPolicy(ResourcePolicy):
         def get_json(self, cache=False):
             return self.json_contents
 
-    def __init__(self, azure_vm_policy: AzureVMPolicy, 
+    def __init__(self, 
+                 azure_vm_policy: AzureVMPolicy, 
                  attached_authorization_policy: AzureAttachedAuthorizationPolicy,
                  default_deny_policy: AzureDefaultDenyPolicy):
         """
-        :param policy: The dict of the policy to enforce.
+        :param azure_vm_policy: The Azure VM Policy to enforce.
+        :param attached_authorization_policy: The Attached Policy Policy to enforce.
+        :param default_deny_policy: The default deny policy to enforce.
         """
         self._azure_vm_policy = azure_vm_policy
         self._attached_authorization_policy = attached_authorization_policy
@@ -662,12 +672,21 @@ class AzureDeploymentPolicy(ResourcePolicy):
                 template = request_contents["properties"]["template"]
                 if "resources" in template:
                     for resource in template["resources"]:
-                        if "type" in resource and resource["type"] == "Microsoft.Compute/virtualMachines":
-                            # Check the VM policy
-                            import pdb; pdb.set_trace()
-                            vm_request = self.convert_vm_source_to_vm_request(resource, parameters)
-                            if not self._azure_vm_policy.check_request(vm_request):
-                                return False
+                        if "type" in resource:
+                            resource_type = resource["type"]
+                            if resource_type == "Microsoft.Compute/virtualMachines":
+                                # Check the VM policy
+                                vm_request = self.convert_vm_source_to_vm_request(resource, parameters)
+                                if not self._azure_vm_policy.check_request(vm_request):
+                                    return False
+                            else:
+                                # Check the default deny policy
+                                converted_request = self.convert_generic_source_to_mock_request(resource, parameters)
+                                if resource_type not in AzureDeploymentPolicy.RESOURCE_NAME_TO_DEFAULT_DENY_KEY:
+                                    return False
+                                default_deny_key = AzureDeploymentPolicy.RESOURCE_NAME_TO_DEFAULT_DENY_KEY[resource_type]
+                                if not self._default_deny_policy.check_default_deny_request(converted_request, default_deny_key):
+                                    return False
         return True
     
     def convert_vm_source_to_vm_request(self, vm_source_dict, parameters_dict) -> 'AzureDeploymentPolicy.MockAzureRequest':
@@ -683,13 +702,6 @@ class AzureDeploymentPolicy(ResourcePolicy):
         if "properties" in vm_source_dict:
             if "hardwareProfile" in vm_source_dict["properties"]:
                 hardware_profile = vm_source_dict["properties"]["hardwareProfile"]
-                # for key in hardware_profile:
-                #     if key in parameters_dict:
-                #         match = self._param_extractor.match(hardware_profile[key])
-                #         if match:
-                #             parameter_substituted_hardware_profile[key] = parameters_dict[match.group("param_name")]
-                #         else:
-                #             parameter_substituted_hardware_profile[key] = hardware_profile[key]
                 request_body["properties"]["hardwareProfile"] = self.recursively_resolve_parameters(hardware_profile, parameters_dict)
 
             if "storageProfile" in vm_source_dict["properties"]:
@@ -706,6 +718,20 @@ class AzureDeploymentPolicy(ResourcePolicy):
 
         return AzureDeploymentPolicy.MockAzureRequest(request_body, "PUT")
     
+    def convert_generic_source_to_mock_request(self, generic_source_dict, parameters_dict) -> 'AzureDeploymentPolicy.MockAzureRequest':
+        """
+        Converts a generic resource template into a mock request that can be checked by the default deny policy.
+        :param generic_source_dict: The generic resource template.
+        :param parameters_dict: The parameters for the template.
+        """
+        request_body = {
+            "properties": {
+            }
+        }
+        if "properties" in generic_source_dict:
+            request_body["properties"] = self.recursively_resolve_parameters(generic_source_dict["properties"], parameters_dict)
+        return AzureDeploymentPolicy.MockAzureRequest(request_body, "PUT")
+
     def recursively_resolve_parameters(self, template: Dict, parameters: Dict) -> Dict:
         """
         Recursively resolves the parameters in the template.

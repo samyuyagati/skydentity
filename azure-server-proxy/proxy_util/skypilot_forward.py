@@ -256,6 +256,12 @@ def setup_routes(app: Flask):
             raise ValueError(
                 "Invalid route specification; missing either `view_func` or `fields`"
             )
+        
+    # set up default route
+    default_view = lambda path: generic_forward_request(request, {"path": path})
+    default_view.__name__ = "default_view"
+    app.add_url_rule("/", view_func=default_view, defaults={"path": ""})
+    app.add_url_rule("/<path:path>", view_func=default_view)
 
 
 def get_client_proxy_endpoint(request):
