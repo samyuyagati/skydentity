@@ -39,7 +39,7 @@ RUN mkdir -p /usr/local/gcloud \
 ENV PATH $PATH:/usr/local/gcloud/google-cloud-sdk/bin
 
 # Setting environment variables for GCP client proxy
-# JSON file containing an "email" key and a "cred_filename" key
+# Service account key file downloaded from GCP
 ENV SERVICE_ACCOUNT_INFO_FILE="/cloud_creds/gcp/proxy_service_account_key.json"
 # official compute api endpoint
 ENV COMPUTE_API_ENDPOINT="https://compute.googleapis.com/"
