@@ -1,8 +1,8 @@
 import os
 
 from flask import Flask
-from proxy_util.logging import get_logger, print_and_log
-from proxy_util.skypilot_forward import setup_routes
+from skydentity.proxy_util.gcp.skypilot_forward import setup_routes
+from skydentity.proxy_util.gcp.logging import get_logger, print_and_log
 
 app = Flask(__name__)
 

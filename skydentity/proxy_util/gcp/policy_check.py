@@ -5,11 +5,11 @@ Utility functions for handling policy checking.
 from functools import cache
 from typing import Tuple, Union
 
-from skydentity.policies.managers.gcp_authorization_policy_manager import (
+from ...policies.managers.gcp_authorization_policy_manager import (
     GCPAuthorizationPolicyManager,
 )
-from skydentity.policies.managers.gcp_policy_manager import GCPPolicyManager
-from skydentity.utils.hash_util import hash_public_key
+from ...policies.managers.gcp_policy_manager import GCPPolicyManager
+from ...utils.hash_util import hash_public_key
 
 from .credentials import get_capability_enc_key, get_service_account_path
 from .logging import get_logger, print_and_log

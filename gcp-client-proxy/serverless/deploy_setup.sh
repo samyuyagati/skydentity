@@ -46,18 +46,24 @@ if $CREATE_SECRETS; then
     --role=roles/secretmanager.secretAccessor
 fi
 
+# Update value of enc-key to the local_tokens value that test_authorizations uses
+gcloud secrets versions add enc-key --data-file=local_tokens/capability_enc.key
+
 # Set region
 gcloud config set run/region us-west1
 
 # Copy app.py into current directory
 cp ../app.py .
 
-# Copy skydentity package code to current directory
+# Copy skydentity package and setup code to current directory
+cp ../../setup.py .
 mkdir skydentity
 cp -r ../../skydentity/policies ./skydentity/
-echo "copied skydentity policy checking module"
-cp ../../setup.py .
+cp -r ../../skydentity/utils ./skydentity/
+cp -r ../../skydentity/proxy_util ./skydentity/
+echo "copied skydentity policy checking module and utils"
 
+ls skydentity
 ls .
 
 # Create the image in Google Cloud run (takes several minutes)

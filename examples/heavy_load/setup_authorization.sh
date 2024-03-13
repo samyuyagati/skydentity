@@ -59,13 +59,15 @@ if $LOCAL; then
     CLIENT_ADDRESS="http://127.0.0.1:5001/"
 elif [[ $(gcloud run services list | grep "skyidproxy-service" | wc -l) -eq 0 ]]; then
     # serverless client proxy
-    pushd $ROOT/gcp-client-proxy
-    ./deploy_setup.sh -p $PROJECT
+    pushd $ROOT/gcp-client-proxy/serverless
+    ./deploy_setup.sh -p $PROJECT 
     ./deploy.sh $PROJECT
     CLIENT_ADDRESS=$(gcloud run services list | grep "https://skyidproxy-service" | awk '{ print $4 }')
+    CLIENT_ADDRESS="$CLIENT_ADDRESS/"
 else
     echo "Serverless client proxy is already running."
     CLIENT_ADDRESS=$(gcloud run services list | grep "https://skyidproxy-service" | awk '{ print $4 }')
+    CLIENT_ADDRESS="$CLIENT_ADDRESS/"
 fi
 
 echo "Client proxy address: $CLIENT_ADDRESS"
