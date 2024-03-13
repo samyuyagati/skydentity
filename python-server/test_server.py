@@ -10,7 +10,6 @@ import os
 import re
 
 skydentity_creds = '../tokens/.cloud_creds/skydentity-token.json'
-skydentity_creds = "/Users/samyu/.cloud_creds/gcp/proxy/sky-identity-ac2febc1b9b3.json"
 #api_endpoint="https://34.168.128.47:5000"
 #api_endpoint="http://127.0.0.1:5000"
 api_endpoint=None
