@@ -1,5 +1,5 @@
 """
-Forwarding for SkyPilot requests.
+Forwarding for requests to the client proxy.
 """
 
 import base64
@@ -12,10 +12,11 @@ from urllib.parse import urlparse
 import requests
 from flask import Flask, Response, request
 
-from ...policies.checker.gcp_authorization_policy import GCPAuthorizationPolicy
-from ...utils.signature import strip_signature_headers, verify_request_signature
-from ...utils.hash_util import hash_public_key
+from skydentity.policies.checker.policy_actions import PolicyAction
 
+from ...policies.checker.gcp_authorization_policy import GCPAuthorizationPolicy
+from ...utils.hash_util import hash_public_key
+from ...utils.signature import strip_signature_headers, verify_request_signature
 from .credentials import (
     activate_service_account,
     get_service_account_auth_token,
@@ -29,8 +30,8 @@ COMPUTE_API_ENDPOINT = os.environ.get(
     "COMPUTE_API_ENDPOINT", "https://compute.googleapis.com/"
 )
 
-SkypilotRoute = namedtuple(
-    "SkypilotRoute",
+Route = namedtuple(
+    "Route",
     [
         "methods",  # HTTP methods for the route
         "path",  # Flask rule for the route path
@@ -41,107 +42,127 @@ SkypilotRoute = namedtuple(
 )
 
 
-# list of all routes required; must be defined after `build_generic_forward`
-ROUTES: list[SkypilotRoute] = [
-    SkypilotRoute(
+# list of all routes required for the client proxy;
+# all other routes will be denied.
+ROUTES: list[Route] = [
+    # VM creation routes
+    Route(
         methods=["GET"],
         path="/compute/v1/projects/<project>/global/images/family/<family>",
         fields=["project", "family"],
     ),
-    SkypilotRoute(
+    Route(
         methods=["GET"],
         path="/compute/v1/projects/<project>/global/images/<image>",
         fields=["project", "image"],
     ),
-    SkypilotRoute(
+    Route(
         methods=["GET"],
         path="/compute/v1/projects/<project>/aggregated/instances",
         fields=["project"],
     ),
-    SkypilotRoute(
+    Route(
         methods=["POST", "GET"],
         path="/compute/v1/projects/<project>/zones/<region>/instances",
         fields=["project", "region"],
     ),
-    SkypilotRoute(
+    Route(
         methods=["GET"],
         path="/compute/v1/projects/<project>/regions/<region>",
         fields=["project", "region"],
     ),
-    SkypilotRoute(
+    Route(
         methods=["GET"],
         path="/compute/v1/projects/<project>/aggregated/reservations",
         fields=["project"],
     ),
-    SkypilotRoute(
+    Route(
         methods=["GET"],
         path="/compute/v1/projects/<project>",
         fields=["project"],
     ),
-    SkypilotRoute(
+    Route(
         methods=["GET", "POST"],
         path="/compute/v1/projects/<project>/global/networks",
         fields=["project"],
     ),
-    SkypilotRoute(
+    Route(
         methods=["GET", "POST"],
         path="/compute/v1/projects/<project>/global/firewalls",
         fields=["project"],
     ),
-    SkypilotRoute(
+    Route(
         methods=["GET"],
         path="/compute/v1/projects/<project>/global/networks/<network>/getEffectiveFirewalls",
         fields=["project", "network"],
     ),
-    SkypilotRoute(
+    Route(
         methods=["GET"],
         path="/compute/v1/projects/<project>/regions/<region>/subnetworks",
         fields=["project", "region"],
     ),
-    SkypilotRoute(
+    Route(
         methods=["GET"],
         path="/compute/v1/projects/<project>/global/operations/<operation>",
         fields=["project", "operation"],
     ),
-    SkypilotRoute(
+    Route(
         methods=["GET"],
         path="/compute/v1/projects/<project>/zones/<region>/operations/<operation>",
         fields=["project", "region", "operation"],
     ),
-    SkypilotRoute(
+    Route(
         methods=["POST"],
         path="/compute/v1/projects/<project>/zones/<region>/instances/<instance>/setLabels",
         fields=["project", "region", "instance"],
     ),
-    SkypilotRoute(
+    Route(
         methods=["POST"],
         path="/compute/v1/projects/<project>/zones/<region>/instances/<instance>/stop",
         fields=["project", "region", "instance"],
     ),
-    SkypilotRoute(
+    Route(
         methods=["DELETE"],
         path="/compute/v1/projects/<project>/zones/<region>/instances/<instance>",
         fields=["project", "region", "instance"],
     ),
-    SkypilotRoute(
+    Route(
         methods=["POST"],
         path="/compute/v1/projects/<project>/zones/<region>/instances/<instance>/start",
         fields=["project", "region", "instance"],
     ),
-    # skydentity internal route
-    SkypilotRoute(
+    # storage routes
+    Route(
+        methods=["POST"],
+        path="/upload/storage/v1/b/<bucket>/o",
+        fields=["bucket"],
+    ),
+    Route(
+        methods=["GET"],
+        path="/download/storage/v1/b/<bucket>/o/<path:file>",
+        fields=["bucket", "file"],
+    ),
+    # skydentity internal routes
+    Route(
         methods=["POST"],
         path="/skydentity/cloud/<cloud>/create-authorization",
         fields=["cloud"],
         # wrapper to allow for the function to be defined later
         view_func=lambda cloud: create_authorization_route(cloud),
     ),
+    Route(
+        methods=["POST"],
+        path="/skydentity/cloud/<cloud>/create-storage-authorization/bucket/<bucket>",
+        fields=["cloud", "bucket"],
+        view_func=lambda cloud, bucket: create_storage_authorization_route(
+            cloud, bucket
+        ),
+    ),
 ]
 
 
 def generic_forward_request(request, log_dict=None):
     """
-    [SkyPilot Integration]
     Forward a generic request to google APIs.
     """
     logger = get_logger()
@@ -183,45 +204,11 @@ def generic_forward_request(request, log_dict=None):
 
 def build_generic_forward(path: str, fields: list[str]):
     """
-    Return the appropriate generic forward view function for the fields provided.
+    Return a generic forward view function.
 
     The path is only used to create a unique and readable name for the anonymous function.
     """
     func = lambda **kwargs: generic_forward_request(request, kwargs)
-    # if fields == ["project"]:
-    #     func = lambda project: generic_forward_request(request, {"project": project})
-    # elif fields == ["project", "region"]:
-    #     func = lambda project, region: generic_forward_request(
-    #         request, {"project": project, "region": region}
-    #     )
-    # elif fields == ["project", "family"]:
-    #     func = lambda project, family: generic_forward_request(
-    #         request, {"project": project, "family": family}
-    #     )
-    # elif fields == ["projdct", "image"]:
-    #     func = lambda project, image: generic_forward_request(
-    #         request, {"project": project, "image": image}
-    #     )
-    # elif fields == ["project", "network"]:
-    #     func = lambda project, network: generic_forward_request(
-    #         request, {"project": project, "network": network}
-    #     )
-    # elif fields == ["project", "operation"]:
-    #     func = lambda project, operation: generic_forward_request(
-    #         request, {"project": project, "operation": operation}
-    #     )
-    # elif fields == ["project", "region", "operation"]:
-    #     func = lambda project, region, operation: generic_forward_request(
-    #         request, {"project": project, "region": region, "operation": operation}
-    #     )
-    # elif fields == ["project", "region", "instance"]:
-    #     func = lambda project, region, instance: generic_forward_request(
-    #         request, {"project": project, "region": region, "instance": instance}
-    #     )
-    # else:
-    #     raise ValueError(
-    #         f"Invalid list of variables to build generic forward for: {fields}"
-    #     )
 
     # Flask expects all view functions to have unique names
     # (otherwise it complains about overriding view functions)
@@ -397,3 +384,36 @@ def create_authorization_route(cloud):
         )
         return Response(json.dumps(capability_dict), 200)
     return Response("Unauthorized", 401)
+
+
+def create_storage_authorization_route(cloud, bucket):
+    print("Create storage authorization handler")
+    logger = get_logger()
+
+    authorization_policy_manager = get_authorization_policy_manager()
+    print_and_log(logger, f"Creating authorization (json: {request.json})")
+
+    # Get hash of public key
+    # public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
+    # Compute hash of public key
+    # public_key_hash = hash_public_key(public_key_bytes)
+    # print_and_log(logger, f"Public key hash: {public_key_hash}")
+
+    # Retrieve authorization policy from firestore with public key hash
+    # request_auth_dict = authorization_policy_manager.get_policy_dict(public_key_hash)
+    # print("Request auth dict:", request_auth_dict)
+
+    # Check request against authorization policy
+    # authorization_policy = GCPAuthorizationPolicy(policy_dict=request_auth_dict)
+    # authorization_request, success = authorization_policy.check_request(request)
+
+    if True:#success:
+        service_account_id = (
+            authorization_policy_manager.create_timed_service_account_with_roles(
+                bucket, PolicyAction.READ
+            )
+        )
+        capability_dict = authorization_policy_manager.generate_capability(
+            service_account_id
+        )
+        return Response(json.dumps(capability_dict), 200)
