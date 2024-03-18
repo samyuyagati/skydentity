@@ -2,21 +2,20 @@
 Forwarding for SkyPilot requests.
 """
 
-import base64
-import datetime
 import json
 import logging as py_logging
 import os
 from collections import namedtuple
 
 import requests
-from Crypto.Hash import SHA256
-from Crypto.PublicKey import RSA
-from Crypto.Signature import pkcs1_15
 from flask import Flask, Response, request
 
 from .logging import get_logger, print_and_log
-py_logging.basicConfig(filename='redirector_skypilot_forward.log', level=py_logging.INFO)
+from .signature import get_headers_with_signature
+
+py_logging.basicConfig(
+    filename="redirector_skypilot_forward.log", level=py_logging.INFO
+)
 pylogger = py_logging.getLogger(__name__)
 
 SkypilotRoute = namedtuple(
@@ -30,121 +29,25 @@ SkypilotRoute = namedtuple(
     defaults=[None, None],  # defaults for "fields" and "view_func"
 )
 
-# global constants
-PRIVATE_KEY_PATH = os.environ.get("PRIVATE_KEY_PATH", "proxy_util/private_key.pem")
 
-# list of all routes required; must be defined after `build_generic_forward`
-# TODO: remove routes and instaed use default forward?
+# list of all routes that require special handling;
+# all other routes are forwarded directly to the client proxy.
 ROUTES: list[SkypilotRoute] = [
     SkypilotRoute(
-        methods=["GET"],
-        path="/compute/v1/projects/<project>/global/images/family/<family>",
-        fields=["project", "family"],
-    ),
-    SkypilotRoute(
-        methods=["POST", "GET"],
-        path="/compute/v1/projects/<project>/zones/<region>/instances",
-        fields=["project", "region"],
-    ),
-    SkypilotRoute(
-        methods=["GET"],
-        path="/compute/v1/projects/<project>/regions/<region>",
-        fields=["project", "region"],
-    ),
-    SkypilotRoute(
-        methods=["GET"],
-        path="/compute/v1/projects/<project>/aggregated/reservations",
-        fields=["project"],
-    ),
-    SkypilotRoute(
-        methods=["GET"],
-        path="/compute/v1/projects/<project>",
-        fields=["project"],
-    ),
-    SkypilotRoute(
-        methods=["GET", "POST"],
-        path="/compute/v1/projects/<project>/global/networks",
-        fields=["project"],
-    ),
-    SkypilotRoute(
-        methods=["GET", "POST"],
-        path="/compute/v1/projects/<project>/global/firewalls",
-        fields=["project"],
-    ),
-    SkypilotRoute(
-        methods=["GET"],
-        path="/compute/v1/projects/<project>/global/networks/<network>/getEffectiveFirewalls",
-        fields=["project", "network"],
-    ),
-    SkypilotRoute(
-        methods=["GET"],
-        path="/compute/v1/projects/<project>/regions/<region>/subnetworks",
-        fields=["project", "region"],
-    ),
-    SkypilotRoute(
-        methods=["GET"],
-        path="/compute/v1/projects/<project>/zones/<region>/operations/<operation>",
-        fields=["project", "region", "operation"],
-    ),
-    SkypilotRoute(
         methods=["POST"],
-        path="/compute/v1/projects/<project>/zones/<region>/instances/<instance>/setLabels",
-        fields=["project", "region", "instance"],
+        path="/upload/storage/v1/b/<bucket>/o",
+        fields=["bucket"],
+        # route to specific upload function
+        view_func=lambda bucket: upload_blob(request, bucket),
     ),
     SkypilotRoute(
-        methods=["POST"],
-        path="/compute/v1/projects/<project>/zones/<region>/instances/<instance>/stop",
-        fields=["project", "region", "instance"],
-    ),
-    SkypilotRoute(
-        methods=["DELETE"],
-        path="/compute/v1/projects/<project>/zones/<region>/instances/<instance>",
-        fields=["project", "region", "instance"],
-    ),
-    SkypilotRoute(
-        methods=["POST"],
-        path="/compute/v1/projects/<project>/zones/<region>/instances/<instance>/start",
-        fields=["project", "region", "instance"],
-    ),
-    SkypilotRoute(
-        methods=["POST"],
-        path="/skydentity/cloud/<cloud>/create-authorization",
-        fields=["cloud"],
+        methods=["GET"],
+        path="/download/storage/v1/b/<bucket>/o/<path:file>",
+        fields=["bucket", "file"],
+        # route to specific download function
+        view_func=lambda bucket, file: download_blob(request, bucket, file),
     ),
 ]
-
-
-def get_headers_with_signature(request):
-    new_headers = {k: v for k, v in request.headers}
-
-    with open(PRIVATE_KEY_PATH, "rb") as key_file:
-        contents = key_file.read()
-        private_key = RSA.import_key(contents)
-
-    # assume set, predetermined/agreed upon tolerance on client proxy/receiving end
-    # use utc for consistency if server runs in cloud in different region
-    timestamp = datetime.datetime.now(datetime.timezone.utc).timestamp()
-    public_key_string = private_key.public_key().export_key()
-
-    # message = f"{str(request.method)}-{timestamp}-{public_key_string}"
-    message = f"{str(request.method)}-{timestamp}-{public_key_string}"
-    message_bytes = message.encode("utf-8")
-
-    h = SHA256.new(message_bytes)
-    # TODO should we be using PSS?
-    signature = pkcs1_15.new(private_key).sign(h)
-
-    # base64 encode the signature and public key
-    encoded_signature = base64.b64encode(signature)
-    encoded_public_key_string = base64.b64encode(public_key_string)
-
-    new_headers["X-Signature"] = encoded_signature
-    new_headers["X-Timestamp"] = str(timestamp)
-    new_headers["X-PublicKey"] = encoded_public_key_string
-
-    del new_headers["Host"]
-
-    return new_headers
 
 
 def generic_forward_request(request, log_dict=None):
@@ -199,35 +102,7 @@ def build_generic_forward(path: str, fields: list[str]):
 
     The path is only used to create a unique and readable name for the anonymous function.
     """
-    func = None
-    if fields == ["cloud"]:
-        func = lambda cloud: generic_forward_request(request, {"cloud": cloud})
-    elif fields == ["project"]:
-        func = lambda project: generic_forward_request(request, {"project": project})
-    elif fields == ["project", "region"]:
-        func = lambda project, region: generic_forward_request(
-            request, {"project": project, "region": region}
-        )
-    elif fields == ["project", "family"]:
-        func = lambda project, family: generic_forward_request(
-            request, {"project": project, "family": family}
-        )
-    elif fields == ["project", "network"]:
-        func = lambda project, network: generic_forward_request(
-            request, {"project": project, "network": network}
-        )
-    elif fields == ["project", "region", "operation"]:
-        func = lambda project, region, operation: generic_forward_request(
-            request, {"project": project, "region": region, "operation": operation}
-        )
-    elif fields == ["project", "region", "instance"]:
-        func = lambda project, region, instance: generic_forward_request(
-            request, {"project": project, "region": region, "instance": instance}
-        )
-    else:
-        raise ValueError(
-            f"Invalid list of variables to build generic forward for: {fields}"
-        )
+    func = lambda **kwargs: generic_forward_request(request, kwargs)
 
     # Flask expects all view functions to have unique names
     # (otherwise it complains about overriding view functions)
@@ -242,7 +117,9 @@ def setup_routes(app: Flask):
     """
     for route in ROUTES:
         if route.view_func is not None:
-            # use view_func if specified
+            # use view_func if specified; change name to be consistent with generic
+            # (also allows lambda functions to be passed in)
+            route.view_func.__name__ = route.path
             app.add_url_rule(
                 route.path, view_func=route.view_func, methods=route.methods
             )
@@ -286,15 +163,25 @@ def get_new_url(request):
         logger,
         f"\tOld URL: {request.host_url} (Redirect endpoint: {redirect_endpoint})",
     )
-    new_url = request.url.replace(request.host_url, redirect_endpoint)
+    new_url = request.url.replace(
+        # normalize to include one slash
+        request.host_url.strip("/") + "/",
+        redirect_endpoint.strip("/") + "/",
+    )
 
     print_and_log(logger, f"\tNew URL: {new_url}")
     return new_url
 
 
-def forward_to_client(request, new_url: str, new_headers=None, new_json=None):
+def forward_to_client(
+    request, new_url: str, new_headers=None, new_json=None, new_data=None
+):
     """
     Forward the request to the client proxy, with new headers, URL, and request body.
+
+    `new_json` specifies the new JSON body, `new_data` specifies the new arbitrary request body
+    (not necessarily JSON).
+    `new_data` is given precedent if both are specified.
     """
     if new_headers is None:
         # default to the current headers
@@ -309,6 +196,17 @@ def forward_to_client(request, new_url: str, new_headers=None, new_json=None):
             cookies=request.cookies,
             allow_redirects=False,
         )
+
+    if new_data is not None:
+        return requests.request(
+            method=request.method,
+            url=new_url,
+            headers=new_headers,
+            cookies=request.cookies,
+            allow_redirects=False,
+            data=new_data,
+        )
+
     return requests.request(
         method=request.method,
         url=new_url,
@@ -317,3 +215,41 @@ def forward_to_client(request, new_url: str, new_headers=None, new_json=None):
         cookies=request.cookies,
         allow_redirects=False,
     )
+
+
+def upload_blob(request, bucket):
+    """
+    POST /upload/storage/v1/b/<bucket>/o
+    """
+    new_url = get_new_url(request)
+    new_headers = get_headers_with_signature(request)
+
+    # TODO: request service account
+
+    gcp_response = forward_to_client(
+        request, new_url, new_headers=new_headers, new_data=request.data
+    )
+    return Response(gcp_response.content, gcp_response.status_code)
+
+
+def download_blob(request, bucket, file):
+    """
+    GET /download/storage/v1/b/<bucket>/o/<file:path>
+    """
+    new_url = get_new_url(request)
+    new_headers = get_headers_with_signature(request)
+
+    # TODO: request service account
+    client_url = get_client_proxy_endpoint(request).strip("/") + "/"
+    headers = get_headers_with_signature(requests.Request(method="POST"))
+    result = requests.post(
+        client_url
+        + f"skydentity/cloud/gcp/create-storage-authorization/bucket/{bucket}",
+        json="",
+        headers=headers,
+    )
+    print(result)
+    raise ValueError
+
+    gcp_response = forward_to_client(request, new_url, new_headers=new_headers)
+    return Response(gcp_response.content, gcp_response.status_code)
