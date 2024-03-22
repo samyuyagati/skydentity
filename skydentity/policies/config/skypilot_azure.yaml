@@ -3,7 +3,7 @@ virtual_machine:
   - ALL
   allowed_images:
   - azure:
-    - UbuntuServer:16.04-LTS
+    - ubuntu-hpc:2204
   cloud_provider:
   - azure
   instance_type:
@@ -11,12 +11,11 @@ virtual_machine:
     - Standard_B1s
   regions:
   - azure:
-    - eastus
     - westus
   startup_scripts:
       - azure:
-        # Hash of "#! /bin/bash\nsudo echo \"success\" > startup_script.out\n"
-        - efb793ed84458eee9d4098a17c6f1cd5ed14b858ff35f8f3c51448a252eeee32
+        # Hash of skypilot setup script
+        - e6579aeaa32fdc6fcd94cc6c044c0e486d794d7c1c3d516386c137130099113d
 
   attached_authorizations:
   - azure:
@@ -30,12 +29,12 @@ reads:
     regions:
     - westus
 
-    virtual_machines: true
+    virtualMachines: true
     virtualMachineInstanceView: true
-    network_interfaces: true
-    ip_addresses: true
+    networkInterfaces: true
+    ipAddresses: true
     operations: true
-    virtual_networks: true
+    virtualNetworks: true
     subnets: true
-    network_security_groups: true
+    networkSecurityGroups: true
     deployments: true

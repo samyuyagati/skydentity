@@ -4,7 +4,7 @@
 
 ROOT=""
 CREDS=""
-SKYID_CLIENT_ADDRESS=""
+SKYID_CLIENT_ADDRESS="https://127.0.0.1:5001/"
 LOCAL=false
 
 # 0a. Run server and client proxies.
