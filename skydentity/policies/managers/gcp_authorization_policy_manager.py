@@ -12,7 +12,6 @@ from skydentity.policies.checker.gcp_authorization_policy import GCPAuthorizatio
 from skydentity.policies.checker.policy_actions import PolicyAction
 from skydentity.policies.checker.resource_policy import CloudPolicy
 from skydentity.policies.iam.gcp_service_account_manager import GCPServiceAccountManager
-from skydentity.policies.iam.gcp_storage_manager import GCPStorageManager
 from skydentity.policies.managers.policy_manager import PolicyManager
 
 
@@ -123,21 +122,3 @@ class GCPAuthorizationPolicyManager(PolicyManager):
         )
 
         return account_email
-
-    def create_timed_service_account_with_roles(
-        self,
-        bucket: str,
-        access: Union[Literal[PolicyAction.READ], Literal[PolicyAction.WRITE]],
-    ) -> str:
-        """
-        Creates a service account with write access to the specified bucket.
-        :param access: requested PolicyAction for the given service account; must be either READ or WRITE.
-        """
-
-        gcp_storage_manager = GCPStorageManager(credentials_path=self._credentials_path)
-
-        project_id = gcp_storage_manager.get_project_id_from_bucket_name(bucket)
-
-        self._pylogger.debug("project id", project_id)
-
-        raise ValueError

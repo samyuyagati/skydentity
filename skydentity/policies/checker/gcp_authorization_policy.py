@@ -4,7 +4,7 @@ import yaml
 
 from enum import Enum
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Tuple, Optional
 from typing_extensions import Self
 from flask import Request
 
@@ -96,7 +96,7 @@ class GCPAuthorizationPolicy(AuthorizationPolicy):
 
             return self.authorization_from_dict(policy_dict)
 
-    def check_request(self, request: Request, logger=None) -> (Self, bool):
+    def check_request(self, request: Request, logger=None) -> Tuple[Optional[Self], bool]:
         if request.method == "GET":
             # Disallow all reads; currently, this case should never trigger because there is no
             # handler for authorization GET requests.

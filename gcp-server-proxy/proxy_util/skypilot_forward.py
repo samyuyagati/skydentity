@@ -6,6 +6,7 @@ import json
 import logging as py_logging
 import os
 from collections import namedtuple
+from typing import Optional, Tuple
 
 import requests
 from flask import Flask, Response, request
@@ -48,6 +49,8 @@ ROUTES: list[SkypilotRoute] = [
         view_func=lambda bucket, file: download_blob(request, bucket, file),
     ),
 ]
+
+STORAGE_ENDPOINT = "https://storage.googleapis.com"
 
 
 def generic_forward_request(request, log_dict=None):
@@ -187,6 +190,17 @@ def forward_to_client(
         # default to the current headers
         new_headers = request.headers
 
+    print(
+        f"url {repr(request.url)}\n"
+        f"headers {repr(request.headers)}\n"
+        f"data {repr(request.get_data())}\n"
+    )
+    print(
+        "NEW\n"
+        f"url {new_url}\n"
+        f"headers {new_headers}\n"
+    )
+
     # If no JSON body, don't include a json body in proxied request
     if len(request.get_data()) == 0:
         return requests.request(
@@ -206,29 +220,83 @@ def forward_to_client(
             allow_redirects=False,
             data=new_data,
         )
+    elif new_json is not None:
+        return requests.request(
+            method=request.method,
+            url=new_url,
+            headers=new_headers,
+            json=new_json,
+            cookies=request.cookies,
+            allow_redirects=False,
+        )
+    else:
+        # keep original body
+        return requests.request(
+            method=request.method,
+            url=new_url,
+            headers=new_headers,
+            cookies=request.cookies,
+            allow_redirects=False,
+            data=request.get_data()
+        )
 
-    return requests.request(
-        method=request.method,
-        url=new_url,
-        headers=new_headers,
-        json=new_json,
-        cookies=request.cookies,
-        allow_redirects=False,
+
+def request_storage_access_token(
+    bucket: str, actions: list[str]
+) -> Tuple[Optional[str], int]:
+    client_url = get_client_proxy_endpoint(request).strip("/") + "/"
+    headers = get_headers_with_signature(requests.Request(method="POST"))
+    response = requests.post(
+        client_url + f"skydentity/cloud/gcp/create-storage-authorization",
+        json={
+            "cloud_provider": "GCP",
+            "bucket": bucket,
+            "actions": actions,
+        },
+        headers=headers,
     )
 
+    if not response.ok:
+        return None, response.status_code
 
-def upload_blob(request, bucket):
+    response_json = response.json()
+    access_token = response_json["access_token"]
+    print("access token", access_token)
+
+    if access_token:
+        return access_token, response.status_code
+
+    # no access token; server error
+    return None, 500
+
+
+def upload_blob(request, bucket: str):
     """
     POST /upload/storage/v1/b/<bucket>/o
     """
-    new_url = get_new_url(request)
-    new_headers = get_headers_with_signature(request)
-
-    # TODO: request service account
-
-    gcp_response = forward_to_client(
-        request, new_url, new_headers=new_headers, new_data=request.data
+    access_token, req_status = request_storage_access_token(
+        bucket, ["OVERWRITE_FALLBACK_UPLOAD"]
     )
+    if access_token is None:
+        if 400 <= req_status < 500:
+            # auth error
+            return Response("Unauthorized", 401)
+        return Response("Error creating authorization", 500)
+
+    # attach access token
+    new_headers = {k: v for k, v in request.headers}
+    new_headers["Authorization"] = f"Bearer {access_token}"
+    del new_headers["Host"]
+
+    # get new url directly to the storage endpoint
+    storage_url = request.url.replace(
+        # normalize to include one slash
+        request.host_url.strip("/") + "/",
+        STORAGE_ENDPOINT.strip("/") + "/",
+    )
+
+    # forward directly to the GCP endpoint; no need to go through client proxy
+    gcp_response = forward_to_client(request, storage_url, new_headers=new_headers)
     return Response(gcp_response.content, gcp_response.status_code)
 
 
@@ -236,20 +304,22 @@ def download_blob(request, bucket, file):
     """
     GET /download/storage/v1/b/<bucket>/o/<file:path>
     """
-    new_url = get_new_url(request)
-    new_headers = get_headers_with_signature(request)
+    access_token = request_storage_access_token(bucket, ["READ"])
+    if access_token is None:
+        return Response("Error creating authorization", 500)
 
-    # TODO: request service account
-    client_url = get_client_proxy_endpoint(request).strip("/") + "/"
-    headers = get_headers_with_signature(requests.Request(method="POST"))
-    result = requests.post(
-        client_url
-        + f"skydentity/cloud/gcp/create-storage-authorization/bucket/{bucket}",
-        json="",
-        headers=headers,
+    # attach access token
+    new_headers = {k: v for k, v in request.headers}
+    new_headers["Authorization"] = f"Bearer {access_token}"
+    del new_headers["Host"]
+
+    # get new url directly to the storage endpoint
+    storage_url = request.url.replace(
+        # normalize to include one slash
+        request.host_url.strip("/") + "/",
+        STORAGE_ENDPOINT.strip("/") + "/",
     )
-    print(result)
-    raise ValueError
 
-    gcp_response = forward_to_client(request, new_url, new_headers=new_headers)
+    # forward directly to the GCP endpoint; no need to go through client proxy
+    gcp_response = forward_to_client(request, storage_url, new_headers=new_headers)
     return Response(gcp_response.content, gcp_response.status_code)

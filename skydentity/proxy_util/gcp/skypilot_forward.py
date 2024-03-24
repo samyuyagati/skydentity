@@ -14,6 +14,10 @@ from urllib.parse import urlparse
 import requests
 from flask import Flask, Response, request
 
+from skydentity.policies.checker.gcp_storage_policy import (
+    AuthorizationRequest,
+    GCPStoragePolicy,
+)
 from skydentity.policies.checker.policy_actions import PolicyAction
 
 from ...policies.checker.gcp_authorization_policy import GCPAuthorizationPolicy
@@ -26,7 +30,11 @@ from .credentials import (
     get_service_account_path,
 )
 from .logging import LogLevel, get_logger, print_and_log
-from .policy_check import check_request_from_policy, get_authorization_policy_manager
+from .policy_check import (
+    check_request_from_policy,
+    get_authorization_policy_manager,
+    get_storage_policy_manager,
+)
 
 # global constants
 COMPUTE_API_ENDPOINT = os.environ.get(
@@ -155,11 +163,9 @@ ROUTES: list[Route] = [
     ),
     Route(
         methods=["POST"],
-        path="/skydentity/cloud/<cloud>/create-storage-authorization/bucket/<bucket>",
-        fields=["cloud", "bucket"],
-        view_func=lambda cloud, bucket: create_storage_authorization_route(
-            cloud, bucket
-        ),
+        path="/skydentity/cloud/<cloud>/create-storage-authorization",
+        fields=["cloud"],
+        view_func=lambda cloud: create_storage_authorization_route(cloud),
     ),
 ]
 
@@ -493,34 +499,30 @@ def create_authorization_route(cloud):
     return Response("Unauthorized", 401)
 
 
-def create_storage_authorization_route(cloud, bucket):
+def create_storage_authorization_route(cloud):
     print("Create storage authorization handler")
     logger = get_logger()
 
-    authorization_policy_manager = get_authorization_policy_manager()
+    storage_policy_manager = get_storage_policy_manager()
     print_and_log(logger, f"Creating authorization (json: {request.json})")
 
     # Get hash of public key
-    # public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
+    public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
     # Compute hash of public key
-    # public_key_hash = hash_public_key(public_key_bytes)
-    # print_and_log(logger, f"Public key hash: {public_key_hash}")
+    public_key_hash = hash_public_key(public_key_bytes)
+    print_and_log(logger, f"Public key hash: {public_key_hash}")
 
     # Retrieve authorization policy from firestore with public key hash
-    # request_auth_dict = authorization_policy_manager.get_policy_dict(public_key_hash)
-    # print("Request auth dict:", request_auth_dict)
+    storage_policy_dict = storage_policy_manager.get_policy_dict(public_key_hash)
+    print("Storage policy dict:", storage_policy_dict)
 
     # Check request against authorization policy
-    # authorization_policy = GCPAuthorizationPolicy(policy_dict=request_auth_dict)
-    # authorization_request, success = authorization_policy.check_request(request)
+    storage_policy = GCPStoragePolicy(policy_dict=storage_policy_dict)
+    request_auth, success = storage_policy.check_request(request)
 
-    if True:  # success:
-        service_account_id = (
-            authorization_policy_manager.create_timed_service_account_with_roles(
-                bucket, PolicyAction.READ
-            )
+    if success and request_auth is not None:
+        access_token = storage_policy_manager.create_timed_service_account(
+            request_auth.bucket, request_auth.actions
         )
-        capability_dict = authorization_policy_manager.generate_capability(
-            service_account_id
-        )
-        return Response(json.dumps(capability_dict), 200)
+        return Response(json.dumps({"access_token": access_token}), 200)
+    return Response("Unauthorized", 401)
