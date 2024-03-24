@@ -5,12 +5,15 @@ Utility functions for handling policy checking.
 from functools import cache
 from typing import Tuple, Union
 
+from skydentity.policies.managers.gcp_storage_policy_manager import (
+    GCPStoragePolicyManager,
+)
+
 from ...policies.managers.gcp_authorization_policy_manager import (
     GCPAuthorizationPolicyManager,
 )
 from ...policies.managers.gcp_policy_manager import GCPPolicyManager
 from ...utils.hash_util import hash_public_key
-
 from .credentials import get_capability_enc_key, get_service_account_path
 from .logging import get_logger, print_and_log
 
@@ -32,7 +35,15 @@ def get_authorization_policy_manager() -> GCPAuthorizationPolicyManager:
     )
 
 
-def check_request_from_policy(public_key_bytes, request) -> Tuple[bool, Union[str, None]]:
+@cache
+def get_storage_policy_manager() -> GCPStoragePolicyManager:
+    service_acct_cred_file = get_service_account_path()
+    return GCPStoragePolicyManager(service_acct_cred_file)
+
+
+def check_request_from_policy(
+    public_key_bytes, request
+) -> Tuple[bool, Union[str, None]]:
     """
     Check the request using the predefined policy manager.
 
@@ -61,11 +72,11 @@ def check_request_from_policy(public_key_bytes, request) -> Tuple[bool, Union[st
     valid = policy.check_request(request)
     if not valid:
         return (False, None)
-    
+
     # Check if a service account should be attached to the VM
     if policy.valid_authorization:
         return (True, policy.valid_authorization)
-    
+
     # If no service account should be attached, return True
     print(">>> CHECK REQUEST: No service account should be attached")
     return (True, None)
