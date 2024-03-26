@@ -9,6 +9,10 @@ from azure.mgmt.authorization.models import RoleDefinition, RoleAssignmentCreate
 from azure.mgmt.authorization import AuthorizationManagementClient
 from skydentity.policies.checker.azure_authorization_policy import AzureAuthorizationPolicy, AzureAuthorization, RestrictedRole
 
+class MockRoleDefinition:
+
+    def __init__(self, id) -> None:
+        self.id = id
 
 class AzureManagedIdentityManager:
 
@@ -72,6 +76,12 @@ class AzureManagedIdentityManager:
         azure_role_objects = []
         # TODO(kdharmarajan): Later prioritization but can optimize this to group by condition and then create roles in bulk with fewer requests
         for i, new_binding in enumerate(auth.roles):
+            # Skip role creation if it is an existing role in Azure
+            if "roleDefinitions" in new_binding.role:
+                role_id = f"/subscriptions/{self._subscription_id}/resourceGroups/{auth.resource_group}/providers/{new_binding.role}"
+                azure_role_objects.append(MockRoleDefinition(role_id))
+                continue
+
             permissions = [
                 {
                     "actions": [],
@@ -120,7 +130,7 @@ class AzureManagedIdentityManager:
                     principal_id=managed_identity.principal_id,
                     principal_type="ServicePrincipal",
                     condition=possible_condition,
-                    condition_version="2.0"
+                    condition_version="2.0" if possible_condition else None
                 ))
 
 
@@ -129,7 +139,7 @@ class AzureManagedIdentityManager:
         Since Azure requires conditions for reading from a container, we need to create a condition for that,
         and this provides that template.
         """
-        if binding.scope == "project":
+        if binding.scope == "resource_group":
             return None
         elif binding.scope == "container":
             return f"@Resource[Microsoft.Storage/storageAccounts/blobServices/containers:name] StringEquals '{binding.object}'"

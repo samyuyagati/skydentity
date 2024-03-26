@@ -156,17 +156,40 @@ def generic_forward_request(request, log_dict=None):
     if len(request.get_data()) > 0:
         old_json = request.json
         print("Old JSON:", old_json, flush=True)
-        if "identity" not in old_json:
+        if "identity" not in old_json and "deployments" not in request.url:
             new_json = request.json
         else:
             new_json = old_json
-            # TODO don't hardcode the path to the capability
-            parent_dir = os.path.dirname(os.getcwd())
-            capability_dir = "tokens"
-            capability_file = "capability.json"
-            capability_path = os.path.join(parent_dir, capability_dir, capability_file)
-            with open(capability_path, "r") as f:
-                new_json["managedIdentities"] = [json.load(f)]
+            # Check for existence of virtual machine identity field in the template and delete managed identity creation
+            contains_identity_field = False
+            if "deployments" in request.url:
+                if "properties" in new_json:
+                    if "template" in new_json["properties"]:
+                        if "resources" in new_json["properties"]["template"]:
+                            # Make sure to remove all managed identities
+                            managed_identity_ids = []
+                            for i, resource in enumerate(new_json["properties"]["template"]["resources"]):
+                                if "type" in resource:
+                                    if resource["type"] == "Microsoft.Compute/virtualMachines":
+                                        if "identity" in resource:
+                                            print("Found identity field in the template", flush=True)
+                                            contains_identity_field = True
+                                    elif resource["type"] == "Microsoft.ManagedIdentity/userAssignedIdentities":
+                                        managed_identity_ids.append(i)
+                                    elif resource["type"] == "Microsoft.Authorization/roleAssignments":
+                                        managed_identity_ids.append(i)
+                            
+                            for i in range(len(managed_identity_ids) - 1, -1, -1):
+                                new_json["properties"]["template"]["resources"].pop(managed_identity_ids[i])
+
+            if not ("deployments" in request.url and not contains_identity_field):
+                # TODO don't hardcode the path to the capability
+                parent_dir = os.path.dirname(os.getcwd())
+                capability_dir = "tokens"
+                capability_file = "capability.json"
+                capability_path = os.path.join(parent_dir, capability_dir, capability_file)
+                with open(capability_path, "r") as f:
+                    new_json["managedIdentities"] = [json.load(f)]
 
             print("JSON with service acct capability:", new_json, flush=True)
 

@@ -1,0 +1,41 @@
+virtual_machine:
+  actions:
+  - ALL
+  allowed_images:
+  - azure:
+    - UbuntuServer:16.04-LTS
+  cloud_provider:
+  - azure
+  instance_type:
+  - azure:
+    - Standard_B1s
+  regions:
+  - azure:
+    - eastus
+    - westus
+  startup_scripts:
+      - azure:
+        # Hash of "#! /bin/bash\nsudo echo \"success\" > startup_script.out\n"
+        - efb793ed84458eee9d4098a17c6f1cd5ed14b858ff35f8f3c51448a252eeee32
+
+  attached_authorizations:
+  - azure:
+    - authorization:
+      - placeholder
+
+reads:
+  azure:
+    resource_group: skydentity
+
+    regions:
+    - westus
+
+    virtualMachines: true
+    virtualMachineInstanceView: true
+    networkInterfaces: true
+    ipAddresses: true
+    operations: true
+    virtualNetworks: true
+    subnets: true
+    networkSecurityGroups: true
+    deployments: true

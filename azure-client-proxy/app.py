@@ -28,10 +28,21 @@ def setup_app():
     print_and_log(logger, "Starting up server")
 
     managed_identity_id = os.environ.get("MANAGED_IDENTITY_ID", None)
+    use_system_identity = os.environ.get("SYSTEM_ID", None)
     if managed_identity_id is not None:
         print_and_log(logger, "Setting up managed identity")
+        # Setting APPSETTING_WEBSITE_SITE_NAME is for forcing azure to go to the correct MSI endpoint
         subprocess.Popen(
             ["az", "login", "--identity", "--username", managed_identity_id],
+            env = {"APPSETTING_WEBSITE_SITE_NAME": "DUMMY"},
+            stdout=subprocess.PIPE,
+        ).communicate()
+    if use_system_identity is not None:
+        print_and_log(logger, "Setting up system identity with dummy")
+        # Setting APPSETTING_WEBSITE_SITE_NAME is for forcing azure to go to the correct MSI endpoint
+        subprocess.Popen(
+            ["az", "login", "--identity"],
+            env = {"APPSETTING_WEBSITE_SITE_NAME": "DUMMY"},
             stdout=subprocess.PIPE,
         ).communicate()
 

@@ -61,18 +61,18 @@ sleep 10
 echo "Uploading auth_request_example_azure.yaml to Firestore..."
 python upload_policy.py --policy $ROOT/skydentity/policies/config/auth_request_example_azure.yaml --cloud azure --public-key $ROOT/azure-server-proxy/proxy_util/public_key.pem --credentials $CREDS --authorization
 
-# 1. Run send_auth_request.py. In skydentity/skydentity/policies/config/skypilot_azure_with_auth.yaml, 
+# 1. Run send_auth_request.py. In skydentity/skydentity/policies/config/test_authorization_azure_with_auth.yaml, 
 # modify the email address of the managed identity to match the created one.
 echo "Sending auth request..."
-python send_auth_request.py --resource_yaml_input="$ROOT/skydentity/policies/config/skypilot_azure.yaml" \
-    --resource_yaml_output="$ROOT/skydentity/policies/config/skypilot_azure_with_auth.yaml"\
+python send_auth_request.py --resource_yaml_input="$ROOT/skydentity/policies/config/test_authorization_azure.yaml" \
+    --resource_yaml_output="$ROOT/skydentity/policies/config/test_authorization_azure_with_auth.yaml"\
     --auth_request_yaml="$ROOT/skydentity/policies/config/auth_request_example_azure.yaml" \
     --capability_enc_key="$ROOT/azure-client-proxy/local_tokens/capability_enc.key" \
     --cloud=azure
 
-# 2. Upload skypilot_azure_with_auth.yaml to Firestore using upload_policy.py
-echo "Uploading skypilot_azure_with_auth.yaml to Firestore..."
-python upload_policy.py --policy $ROOT/skydentity/policies/config/skypilot_azure_with_auth.yaml --cloud azure --public-key $ROOT/azure-server-proxy/proxy_util/public_key.pem --credentials $CREDS
+# 2. Upload test_authorization_azure_with_auth.yaml to Firestore using upload_policy.py
+echo "Uploading test_authorization_azure_with_auth.yaml to Firestore..."
+python upload_policy.py --policy $ROOT/skydentity/policies/config/test_authorization_azure_with_auth.yaml --cloud azure --public-key $ROOT/azure-server-proxy/proxy_util/public_key.pem --credentials $CREDS
 
 # 3. Run skydentity/python-server/test_server.py.
 echo "Attempting to start VM..."
@@ -82,7 +82,7 @@ popd
 
 # 4. Check that the managed identity attached to the created VM matches the one from step 2.
 ATTACHED=$(az vm identity show --resource-group skydentity --name skydentity-VM1 | jq '.userAssignedIdentities | keys[0]')
-EXPECTED=$(grep -F1 "authorization:" $ROOT/skydentity/policies/config/skypilot_azure_with_auth.yaml | tail -1 | cut -c 7-)
+EXPECTED=$(grep -F1 "authorization:" $ROOT/skydentity/policies/config/test_authorization_azure_with_auth.yaml | tail -1 | cut -c 7-)
 echo "Managed Identity attached to the created VM: $ATTACHED. Expected: $EXPECTED."
 echo "Remember to delete the created VM!"
 
@@ -90,4 +90,4 @@ echo "Remember to delete the created VM!"
 echo "Cleaning up..."
 killall flask
 
-rm $ROOT/skydentity/policies/config/skypilot_azure_with_auth.yaml
+rm $ROOT/skydentity/policies/config/test_authorization_azure_with_auth.yaml

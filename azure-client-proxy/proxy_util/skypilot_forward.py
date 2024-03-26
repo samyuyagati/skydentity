@@ -268,7 +268,19 @@ def get_json_with_managed_identity(request, managed_identity_id):
         }
     }
     new_dict = json_dict.copy()
-    new_dict["identity"] = managed_identity_dict
+
+    # TODO(kdharmarajan): Clean this up later
+    if "deployments" in request.url:
+        vm_resource = {}
+        resources = new_dict["properties"]["template"]["resources"]
+        for resource in resources:
+            if resource["type"] == "Microsoft.Compute/virtualMachines":
+                vm_resource = resource
+                break
+        vm_resource["identity"] = managed_identity_dict
+        import pdb; pdb.set_trace()
+    else:
+        new_dict["identity"] = managed_identity_dict
     del new_dict["managedIdentities"]
     return new_dict
 

@@ -1,4 +1,4 @@
-from typing import Dict, List, Tuple, TypedDict, Union, Optional
+from typing import Dict, List, Tuple, TypedDict, Union
 from flask import Request
 import sys
 import re
@@ -20,17 +20,11 @@ class AzureVMPolicy(VMPolicy):
     Defines methods for Azure VM policies.
     """
 
-    VM_PROPERTIES_DENIED_KEYS = set(["additionalCapabilities", "applicationProfile", "availabilitySet",
-                                      "capacityReservation", "diagnosticsProfile", "evictionPolicy", 
-                                      "extensionsTimeBudget", "host", "hostGroup", 
-                                      "instanceView", "licenseType", "platformFaultDomain",
-                                      "provisioningState", "proximityPlacementGroup", "scheduledEventsProfile",
-                                      "securityProfile", "timeCreated", "userData", 
-                                      "virtualMachineScaleSet"])
-    STORAGE_PROFILE_DENIED_KEYS = set(["dataDisks", "diskControllerType"])
-    OS_DISK_DENIED_KEYS = set(["caching", "encryptionSettings", "deleteOption", "vhd", "writeAccelerator"])
-    NETWORK_PROFILE_DENIED_KEYS = set(["networkInterfaceConfigurations"])
-    OS_PROFILE_DENIED_KEYS = set(["requireGuestProvisionSignal", "secrets", "allowExtensionOperations"])
+    VM_PROPERTIES_ALLOWED_KEYS = set(["hardwareProfile", "storageProfile", "networkProfile", "osProfile", "priority", "billingProfile"])
+    STORAGE_PROFILE_ALLOWED_KEYS = set(["osDisk", "imageReference"])
+    OS_DISK_ALLOWED_KEYS = set(["createOption", "managedDisk", "diskSizeGB"])
+    NETWORK_PROFILE_ALLOWED_KEYS = set(["networkInterfaces"])
+    OS_PROFILE_ALLOWED_KEYS = set(["computerName", "adminUsername", "adminPassword", "linuxConfiguration", "customData"])
 
     DEFAULT_VM_GB = 256
 
@@ -43,6 +37,12 @@ class AzureVMPolicy(VMPolicy):
     def check_request(self, request: Request) -> bool:
         """
         Checks the requests with defaultdeny
+
+        Default properties set by SkyPilot (and consequently are checked here):
+        storageProfile.osDisk.createOption = "fromImage"
+        storageProfile.osDisk.managedDisk.storageAccountType = "Premium_LRS"
+        storageProfile.osDisk.diskSizeGB = 256
+        osProfile.linuxConfiguration.disablePasswordAuthentication = True
         """
         generic_vm_policy_check = super().check_request(request)
         if not generic_vm_policy_check:
@@ -52,27 +52,29 @@ class AzureVMPolicy(VMPolicy):
         if "properties" in request_contents:
             # Default deny on VM properties
             for key in request_contents["properties"]:
-                if key in AzureVMPolicy.VM_PROPERTIES_DENIED_KEYS:
+                if key not in AzureVMPolicy.VM_PROPERTIES_ALLOWED_KEYS:
                     return False
 
             # Default deny on storage properties in VM
             if "storageProfile" in request_contents["properties"]:
                 for key in request_contents["properties"]["storageProfile"]:
-                    if key in AzureVMPolicy.STORAGE_PROFILE_DENIED_KEYS:
+                    if key not in AzureVMPolicy.STORAGE_PROFILE_ALLOWED_KEYS:
                         return False
 
                 # Check OS Disk
                 if "osDisk" in request_contents["properties"]["storageProfile"]:
                     os_disk = request_contents["properties"]["storageProfile"]["osDisk"]
                     for key in os_disk:
-                        if key in AzureVMPolicy.OS_DISK_DENIED_KEYS:
+                        if key not in AzureVMPolicy.OS_DISK_ALLOWED_KEYS:
                             return False
                     
                     # Check for certain values for certain osDisk entries
                     if "createOption" in os_disk and os_disk["createOption"] != "fromImage":
                         return False
                     
-                    import pdb; pdb.set_trace()
+                    if "managedDisk" in os_disk and os_disk["managedDisk"]["storageAccountType"] != "Premium_LRS":
+                        return False
+                    
                     if "diskSizeGB" in os_disk and os_disk["diskSizeGB"] != AzureVMPolicy.DEFAULT_VM_GB:
                         print("Disk size is not default")
                         return False
@@ -81,19 +83,22 @@ class AzureVMPolicy(VMPolicy):
             # Default deny on network properties in VM
             if "networkProfile" in request_contents["properties"]:
                 for key in request_contents["properties"]["networkProfile"]:
-                    if key in AzureVMPolicy.NETWORK_PROFILE_DENIED_KEYS:
+                    if key not in AzureVMPolicy.NETWORK_PROFILE_ALLOWED_KEYS:
                         return False
+
             print("VM Past networkProfile")
             # Default deny on OS Profile
             if "osProfile" in request_contents["properties"]:
                 for key in request_contents["properties"]["osProfile"]:
-                    if key in AzureVMPolicy.OS_PROFILE_DENIED_KEYS:
+                    if key not in AzureVMPolicy.OS_PROFILE_ALLOWED_KEYS:
                         return False
                     
                 # Ensure that if linux configuration is used, password authentication is disabled
                 if "linuxConfiguration" in request_contents["properties"]["osProfile"]:
-                    if "disablePasswordAuthentication" not in request_contents["properties"]["osProfile"]["linuxConfiguration"] \
-                        and not request_contents["properties"]["osProfile"]["linuxConfiguration"]["disablePasswordAuthentication"]:
+                    if "disablePasswordAuthentication" not in request_contents["properties"]["osProfile"]["linuxConfiguration"]:
+                        return False
+
+                    if not request_contents["properties"]["osProfile"]["linuxConfiguration"]["disablePasswordAuthentication"]:
                         return False
         return True
 
@@ -496,7 +501,7 @@ class AzureReadPolicy(ResourcePolicy):
         return {
             AzurePolicy.Azure_CLOUD_NAME: {
                 # filter out None items
-                k: v for k, v in self._policy.items() if v is not None
+                k: v for k, v in self.policy.items() if v is not None
             }
         }
 
@@ -529,7 +534,6 @@ class AzureDefaultDenyPolicy(CloudPolicy):
         print("Called check_default_deny_request with aux_info:", aux_info)
         default_deny_type = aux_info[0]
         request_contents = request.get_json(cache=True)
-
         if "location" in request_contents and request_contents["location"] not in self.allowed_regions:
             return False
 
@@ -540,13 +544,35 @@ class AzureDefaultDenyPolicy(CloudPolicy):
         elif default_deny_type == "virtualNetworks":
             """
             Default virtual network requests of the form are:
-            {'location': 'westus', 'properties': {'addressSpace': {'addressPrefixes': ['10.0.0.0/16']}}}
+            {
+                'location': 'westus', 
+                'properties': {
+                    'addressSpace': {
+                        'addressPrefixes': ['10.143.0.0/16']
+                    },
+                    'subnets': [
+                        {
+                            'properties': {
+                                'addressPrefix': '10.143.0.0/16'
+                            }
+                        }
+                    ]
+                }
+            }
             """
-            if "properties" in request_contents and "addressSpace" in request_contents["properties"]:
-                address_space = request_contents["properties"]["addressSpace"]
-                if "addressPrefixes" in address_space:
-                    if address_space["addressPrefixes"] != ["10.0.0.0/16"]:
-                        return False
+            if "properties" in request_contents:
+                if "addressSpace" in request_contents["properties"]:
+                    address_space = request_contents["properties"]["addressSpace"]
+                    if "addressPrefixes" in address_space:
+                        if address_space["addressPrefixes"] != ["10.143.0.0/16"]:
+                            return False
+                
+                if "subnets" in request_contents["properties"]:
+                    subnets = request_contents["properties"]["subnets"]
+                    for subnet in subnets:
+                        if "properties" in subnet and "addressPrefix" in subnet["properties"]:
+                            if subnet["properties"]["addressPrefix"] != "10.143.0.0/16":
+                                return False
 
         elif default_deny_type == "networkSecurityGroups":
             """
@@ -577,8 +603,11 @@ class AzureDefaultDenyPolicy(CloudPolicy):
                 if "properties" in rule:
                     rule_properties = rule["properties"]
                     if ("direction" in rule_properties and rule_properties["direction"] == "Inbound") and \
-                        ("protocol" in rule_properties and rule_properties["protocol"] == "Tcp") and \
-                        ("destinationPortRange" in rule_properties and rule_properties["destinationPortRange"] == "22"):
+                        ("protocol" in rule_properties and rule_properties["protocol"].lower() == "tcp") and \
+                        ("destinationPortRange" in rule_properties and rule_properties["destinationPortRange"] == "22") and \
+                        ("sourceAddressPrefix" in rule_properties and rule_properties["sourceAddressPrefix"] == "*") and \
+                        ("destinationAddressPrefix" in rule_properties and rule_properties["destinationAddressPrefix"] == "*") and \
+                        ("sourcePortRange" in rule_properties and rule_properties["sourcePortRange"] == "*"):
                             return True
                 return False
         
@@ -632,11 +661,6 @@ class AzureDeploymentPolicy(ResourcePolicy):
         "Microsoft.Network/networkInterfaces": "networkInterfaces"
     }
 
-    # These resources have fairly straight forward configurations, so no need to check them
-    EXCLUDED_RESOURCE_CHECK = {
-        "Microsoft.ManagedIdentity/userAssignedIdentities", # Creates a managed identity but does not actually add roles to it
-    }
-
     class MockAzureRequest:
         """
         Internal class used to mock Azure requests on resource creation.
@@ -656,6 +680,7 @@ class AzureDeploymentPolicy(ResourcePolicy):
         :param azure_vm_policy: The Azure VM Policy to enforce.
         :param attached_authorization_policy: The Attached Policy Policy to enforce.
         :param default_deny_policy: The default deny policy to enforce.
+        :param auth_policy_manager: The authorization policy manager to use.
         """
         self._azure_vm_policy = azure_vm_policy
         self._attached_authorization_policy = attached_authorization_policy
@@ -664,18 +689,21 @@ class AzureDeploymentPolicy(ResourcePolicy):
         self._param_extractor = re.compile(r"^\[parameters\('(?P<param_name>[^']+)'\)\]$")
         self._resource_group_extractor = re.compile(r"/resourcegroups/(?P<resourceGroupName>[^/]+)")
     
-    def check_request(self, request: Request) -> bool:
+    def check_request(self, request: Request, auth_policy_manager: AzureAuthorizationPolicyManager) -> Tuple[Union[str, None], bool]:
         """
         Enforces the policy on a request.
         :param request: The request to enforce the policy on.
-        :return: True if the request is allowed, False otherwise.
+        :return: For the first parameter, return a managed identity id if the request is allowed, None otherwise.
+        True if the request is allowed, False otherwise for the first parameter. 
         """
         request_contents = request.get_json(cache=True)
         # Check that the deployment's resource group is one of the valid resource groups specified in the policy
         # This implicitly checks that the deployment has a valid location as well assuming other checks pass
         resource_group = self._resource_group_extractor.search(request.path).group("resourceGroupName")
         if resource_group not in self._default_deny_policy.allowed_resource_group_names:
-            return False
+            return (None, False)
+        
+        returned_managed_identity = None
 
         if "properties" in request_contents:
             # Load up all of the parameters
@@ -691,7 +719,7 @@ class AzureDeploymentPolicy(ResourcePolicy):
                 if "variables" in template:
                     if "location" in template["variables"]:
                         if template["variables"]["location"] != f"[resourceGroup().location]":
-                            return False
+                            return (None, False)
 
                 if "resources" in template:
                     for resource in template["resources"]:
@@ -703,32 +731,35 @@ class AzureDeploymentPolicy(ResourcePolicy):
                                 vm_request = self.convert_vm_source_to_vm_request(resource, parameters)
                                 if "location" in vm_request.get_json():
                                     if vm_request.get_json()["location"] != "[variables('location')]":
-                                        return False
+                                        return (None, False)
                                     del vm_request.get_json()["location"]
 
-                                if not self._azure_vm_policy.check_request(vm_request):
-                                    return False
-                            elif resource_type in AzureDeploymentPolicy.EXCLUDED_RESOURCE_CHECK:
-                                return True
+                                attached_auth_mock_request = AzureDeploymentPolicy.MockAzureRequest(request_contents, "PUT")
+                                returned_managed_identity, should_succeed = \
+                                    self._attached_authorization_policy.check_request(attached_auth_mock_request, auth_policy_manager)
+
+                                if not should_succeed or not self._azure_vm_policy.check_request(vm_request):
+                                    return (None, False)
+
                             else:
                                 # Check the default deny policy
                                 converted_request = self.convert_generic_source_to_mock_request(resource, parameters)
                                 if resource_type not in AzureDeploymentPolicy.RESOURCE_NAME_TO_DEFAULT_DENY_KEY:
-                                    print(f"Resource type {resource_type} not in default deny policy")
-                                    return False
+                                    print(f"Resource type {resource_type} not in allowed part of default deny policy")
+                                    return (None, False)
                                 
                                 if "location" in converted_request.get_json():
                                     if converted_request.get_json()["location"] != "[variables('location')]":
-                                        return False
+                                        return (None, False)
                                     del converted_request.get_json()["location"]
 
                                 default_deny_key = AzureDeploymentPolicy.RESOURCE_NAME_TO_DEFAULT_DENY_KEY[resource_type]
                                 if not self._default_deny_policy.check_default_deny_request(converted_request, default_deny_key):
                                     print("Default deny policy failed check")
-                                    return False
+                                    return (None, False)
                                 print("Passed defaultdeny on other objects")
         print("Successful request check")
-        return True
+        return returned_managed_identity, True
     
     def convert_vm_source_to_vm_request(self, vm_source_dict, parameters_dict) -> 'AzureDeploymentPolicy.MockAzureRequest':
         """
@@ -796,7 +827,22 @@ class AzureDeploymentPolicy(ResourcePolicy):
                     else:
                         out_template[key] = template[key]
                 else:
-                    out_template[key] = template[key]
+                    if isinstance(template[key], list):
+                        out_template[key] = []
+                        for item in template[key]:
+                            if isinstance(item, dict):
+                                out_template[key].append(self.recursively_resolve_parameters(item, parameters))
+                            else:
+                                new_item = item
+                                # TODO(kdharmarajan): Nasty code reuse here
+                                if isinstance(item, str):
+                                    match = self._param_extractor.match(item)
+                                    if match:
+                                        new_item = parameters[match.group("param_name")]
+
+                                out_template[key].append(new_item)
+                    else:
+                        out_template[key] = template[key]
         return out_template
 
 class AzurePolicy(CloudPolicy):
@@ -823,10 +869,12 @@ class AzurePolicy(CloudPolicy):
         self._resource_policies = {
             "virtual_machine": vm_policy,
             "attached_authorizations": attached_authorization_policy,
-            "read": read_policy,
+            "reads": read_policy,
             "unrecognized": UnrecognizedResourcePolicy(),
             "default_deny": default_deny_policy,
-            "deployments": AzureDeploymentPolicy(vm_policy, attached_authorization_policy, default_deny_policy),
+            "deployments": AzureDeploymentPolicy(vm_policy, 
+                                                 attached_authorization_policy, 
+                                                 default_deny_policy),
         }
         self.valid_authorization: Union[str, None] = None
         print("AzureAuthorizationPolicy init:", self._resource_policies["attached_authorizations"]._policy)
@@ -846,13 +894,15 @@ class AzurePolicy(CloudPolicy):
                 match = read_path_regex.search(request.path)
                 if match:
                     has_match = True
-                    resource_types.add(("read", read_type))
+                    resource_types.add(("reads", read_type))
             
             if not has_match:
                 # if no matches, then add unrecognized
                 resource_types.add(("unrecognized",))
             return list(resource_types)
+        
         else:
+            
             if request.method == 'PATCH':
                 match = AzurePolicy.UPDATE_VM_PROPERTY_PATTERN.search(request.path)
                 if match:
@@ -895,12 +945,17 @@ class AzurePolicy(CloudPolicy):
             result = self._resource_policies[resource_type_key].check_request(request, self._authorization_manager)
             self.valid_authorization = result[0]
             return result[1]
-        elif resource_type_key == "read":
+        elif resource_type_key == "reads":
             # Read policies
             return self._resource_policies[resource_type_key].check_read_request(request, *resource_type_aux)
         elif resource_type_key == "default_deny":
             # Default deny policies
             return self._resource_policies[resource_type_key].check_default_deny_request(request, *resource_type_aux)
+        elif resource_type_key == "deployments":
+            # Deployment policies
+            result = self._resource_policies[resource_type_key].check_request(request, self._authorization_manager)
+            self.valid_authorization = result[0]
+            return result[1]
         return self._resource_policies[resource_type_key].check_request(request)
 
     def set_authorization_manager(self, manager: AzureAuthorizationPolicyManager):
@@ -935,7 +990,6 @@ class AzurePolicy(CloudPolicy):
         if "attached_authorizations" in vm_dict:
             attached_policy_dict = vm_dict["attached_authorizations"]
         attached_authorization_policy = AzureAttachedAuthorizationPolicy.from_dict(attached_policy_dict)
-
         if PolicyAction.READ.is_allowed_be_performed(vm_policy.get_policy_standard_form()["actions"]):
             if "reads" in policy_dict:
                 read_dict = policy_dict["reads"]

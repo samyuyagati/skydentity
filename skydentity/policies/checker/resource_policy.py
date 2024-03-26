@@ -161,6 +161,7 @@ class CloudPolicy(ResourcePolicy, ABC):
         :return: True if the request is allowed, False otherwise.
         """
         request_resource_types = self.get_request_resource_types(request)
+        self.valid_authorization = None
         for resource_type in request_resource_types:
             if not self.check_resource_type(resource_type, request):
                 return False
