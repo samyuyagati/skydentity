@@ -10,7 +10,7 @@ SkyIdentity is a proxy built to handle VM request permissions. It removes the ne
    ```
    source skyid/bin/activate
    ```
-2. Optionally, you may verify that your system works correctly by testing with the `provision_gcp_vm.py` and/or `provision_azure_vm.py` scripts using your cloud account credentials
+2. Optionally, you may verify that your system works correctly by testing with the `provision_gcp_vm.py` and/or `provision_azure_vm.py` scripts using your cloud account credentials.  Note: A [service account](https://console.cloud.google.com/iam-admin/serviceaccounts/create) is required before running `provision_gcp_vm.py`.
 3. To run the proxy, first run the cloud specific setup script (`setup.sh`), if it exists 
 4. Generate certificates (Note: this step is required to test HTTPS connections to a non-serverless version of the proxy (run locally/on a VM with either run_proxy.sh or docker); it is not required for serverless deployment)
    ```
