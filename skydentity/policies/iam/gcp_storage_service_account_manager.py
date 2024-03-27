@@ -29,6 +29,7 @@ class GCPStorageServiceAccountManager:
             StoragePolicyAction.UPLOAD: "roles/storage.objectCreator",
             StoragePolicyAction.OVERWRITE: "roles/storage.objectUser",
         }
+        self._SERVICE_USAGE_CONSUMER_ROLE = "roles/serviceusage.serviceUsageConsumer"
 
     def create_service_account(self, project_id: str, service_account_name: str):
         """
@@ -95,6 +96,7 @@ class GCPStorageServiceAccountManager:
     ):
         """
         Add associated roles to the given service account.
+        Also sets a 15 minute expiration time on all roles.
         """
 
         service_account = self._get_service_account(project_id, service_account_name)
@@ -110,7 +112,9 @@ class GCPStorageServiceAccountManager:
             .execute()
         )
 
-        roles = []
+        # start with service usage consumer role; always needed to access resources
+        roles = [self._SERVICE_USAGE_CONSUMER_ROLE]
+
         if StoragePolicyAction.OVERWRITE in request_actions:
             # read and write roles
             roles = [self._roles[StoragePolicyAction.OVERWRITE]]
@@ -137,7 +141,7 @@ class GCPStorageServiceAccountManager:
                     "condition": {
                         "title": "skydentity-timed",
                         "description": "skydentity-generated IAM condition with expiration",
-                        "expression": f'resource.name == "projects/_/buckets/{bucket}" && request.time < timestamp("{expiration_timestamp}")',
+                        "expression": f'resource.name.startsWith("projects/_/buckets/{bucket}") && request.time < timestamp("{expiration_timestamp}")',
                     },
                 }
             )
@@ -148,6 +152,8 @@ class GCPStorageServiceAccountManager:
             resource=f"projects/{project_id}",
             body={"policy": iam_policy},
         ).execute()
+
+        return expiration_timestamp
 
     def get_access_token(self, project_id: str, service_account_name: str):
         """
