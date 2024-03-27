@@ -84,7 +84,7 @@ class GCPStoragePolicyManager(PolicyManager):
         self,
         bucket: str,
         request_actions: List[StoragePolicyAction],
-    ) -> dict:
+    ) -> Tuple[str, str]:
         """
         Creates a service account with write access to the specified bucket.
 
@@ -112,7 +112,7 @@ class GCPStoragePolicyManager(PolicyManager):
         print("created service account")
 
         # Add roles to service account
-        gcp_storage_account_manager.add_roles_to_service_account(
+        expiration_timestamp = gcp_storage_account_manager.add_roles_to_service_account(
             project_id=project_id,
             bucket=bucket,
             request_actions=request_actions,
@@ -125,4 +125,4 @@ class GCPStoragePolicyManager(PolicyManager):
             service_account_name=account_name,
         )
 
-        return access_token
+        return access_token, expiration_timestamp

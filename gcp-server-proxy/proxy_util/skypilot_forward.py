@@ -2,6 +2,7 @@
 Forwarding for SkyPilot requests.
 """
 
+from datetime import datetime
 import json
 import logging as py_logging
 import os
@@ -195,11 +196,7 @@ def forward_to_client(
         f"headers {repr(request.headers)}\n"
         f"data {repr(request.get_data())}\n"
     )
-    print(
-        "NEW\n"
-        f"url {new_url}\n"
-        f"headers {new_headers}\n"
-    )
+    print("NEW\n" f"url {new_url}\n" f"headers {new_headers}\n")
 
     # If no JSON body, don't include a json body in proxied request
     if len(request.get_data()) == 0:
@@ -237,13 +234,21 @@ def forward_to_client(
             headers=new_headers,
             cookies=request.cookies,
             allow_redirects=False,
-            data=request.get_data()
+            data=request.get_data(),
         )
 
 
 def request_storage_access_token(
     bucket: str, actions: list[str]
-) -> Tuple[Optional[str], int]:
+) -> Tuple[Optional[str], Optional[str], int]:
+    """
+    Requests an access token for a service account for the given bucket and actions.
+
+    Returns a tuple containing:
+    - access token (or None if error)
+    - expiration timestamp in ISO format (or None if error)
+    - response status code (for error handling)
+    """
     client_url = get_client_proxy_endpoint(request).strip("/") + "/"
     headers = get_headers_with_signature(requests.Request(method="POST"))
     response = requests.post(
@@ -257,32 +262,38 @@ def request_storage_access_token(
     )
 
     if not response.ok:
-        return None, response.status_code
+        return None, None, response.status_code
 
     response_json = response.json()
     access_token = response_json["access_token"]
+    expiration_timestamp = response_json["expires"]
     print("access token", access_token)
 
     if access_token:
-        return access_token, response.status_code
+        return access_token, expiration_timestamp, response.status_code
 
     # no access token; server error
-    return None, 500
+    return None, None, 500
 
 
 def upload_blob(request, bucket: str):
     """
     POST /upload/storage/v1/b/<bucket>/o
     """
-    access_token, req_status = request_storage_access_token(
+    access_token, expiration_timestamp, req_status = request_storage_access_token(
         bucket, ["OVERWRITE_FALLBACK_UPLOAD"]
     )
-    if access_token is None:
+    if access_token is None or expiration_timestamp is None:
         if 400 <= req_status < 500:
             # auth error
             return Response("Unauthorized", 401)
         return Response("Error creating authorization", 500)
 
+    # check expiration timestamp
+    expiration_datetime = datetime.fromisoformat(expiration_timestamp)
+    if datetime.now() > expiration_datetime:
+        return Response("Expired credentials", 401)
+
     # attach access token
     new_headers = {k: v for k, v in request.headers}
     new_headers["Authorization"] = f"Bearer {access_token}"
@@ -297,16 +308,25 @@ def upload_blob(request, bucket: str):
 
     # forward directly to the GCP endpoint; no need to go through client proxy
     gcp_response = forward_to_client(request, storage_url, new_headers=new_headers)
+    print(gcp_response.content)
     return Response(gcp_response.content, gcp_response.status_code)
 
 
-def download_blob(request, bucket, file):
+def download_blob(request, bucket: str, file: str):
     """
     GET /download/storage/v1/b/<bucket>/o/<file:path>
     """
-    access_token = request_storage_access_token(bucket, ["READ"])
-    if access_token is None:
+    access_token, expiration_timestamp, req_status = request_storage_access_token(bucket, ["READ"])
+    if access_token is None or expiration_timestamp is None:
+        if 400 <= req_status < 500:
+            # auth error
+            return Response("Unauthorized", 401)
         return Response("Error creating authorization", 500)
+
+    # check expiration timestamp
+    expiration_datetime = datetime.fromisoformat(expiration_timestamp)
+    if datetime.now() > expiration_datetime:
+        return Response("Expired credentials", 401)
 
     # attach access token
     new_headers = {k: v for k, v in request.headers}
@@ -322,4 +342,5 @@ def download_blob(request, bucket, file):
 
     # forward directly to the GCP endpoint; no need to go through client proxy
     gcp_response = forward_to_client(request, storage_url, new_headers=new_headers)
+    print(gcp_response.content)
     return Response(gcp_response.content, gcp_response.status_code)

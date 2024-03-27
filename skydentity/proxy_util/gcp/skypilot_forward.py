@@ -521,8 +521,13 @@ def create_storage_authorization_route(cloud):
     request_auth, success = storage_policy.check_request(request)
 
     if success and request_auth is not None:
-        access_token = storage_policy_manager.create_timed_service_account(
-            request_auth.bucket, request_auth.actions
+        access_token, expiration_timestamp = (
+            storage_policy_manager.create_timed_service_account(
+                request_auth.bucket, request_auth.actions
+            )
         )
-        return Response(json.dumps({"access_token": access_token}), 200)
+        return Response(
+            json.dumps({"access_token": access_token, "expires": expiration_timestamp}),
+            200,
+        )
     return Response("Unauthorized", 401)
