@@ -112,11 +112,10 @@ class GCPVMPolicy(VMPolicy):
             },
             "allowed_images": {
                 GCPPolicy.GCP_CLOUD_NAME: self._policy["allowed_images"]
-            },
-            "startup_scripts": {
-                GCPPolicy.GCP_CLOUD_NAME: self._policy["startup_scripts"]
-            }
+            } 
         }
+        if "startup_scripts" in self._policy:
+            out_dict["startup_scripts"] = { GCPPolicy.GCP_CLOUD_NAME: self._policy["startup_scripts"] }
         return out_dict
     
     @staticmethod
@@ -184,13 +183,14 @@ class GCPVMPolicy(VMPolicy):
 
         # Handle startup scripts
         gcp_startup_scripts = []
-        for startup_scripts_group in policy_dict_cloud_level["startup_scripts"]:
-            if GCPPolicy.GCP_CLOUD_NAME in startup_scripts_group:
-                if isinstance(policy_dict_cloud_level["startup_scripts"], list):
-                  gcp_startup_scripts = startup_scripts_group[GCPPolicy.GCP_CLOUD_NAME]
-                else:
-                  gcp_startup_scripts = policy_dict_cloud_level["startup_scripts"][GCPPolicy.GCP_CLOUD_NAME]
-        cloud_specific_policy["startup_scripts"] = gcp_startup_scripts
+        if ("startup_scripts" in policy_dict_cloud_level):
+            for startup_scripts_group in policy_dict_cloud_level["startup_scripts"]:
+                if GCPPolicy.GCP_CLOUD_NAME in startup_scripts_group:
+                    if isinstance(policy_dict_cloud_level["startup_scripts"], list):
+                        gcp_startup_scripts = startup_scripts_group[GCPPolicy.GCP_CLOUD_NAME]
+                    else:
+                        gcp_startup_scripts = policy_dict_cloud_level["startup_scripts"][GCPPolicy.GCP_CLOUD_NAME]
+            cloud_specific_policy["startup_scripts"] = gcp_startup_scripts
         return GCPVMPolicy(cloud_specific_policy)
     
 class GCPAttachedAuthorizationPolicy(ResourcePolicy):

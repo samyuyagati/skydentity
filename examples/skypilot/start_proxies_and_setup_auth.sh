@@ -69,7 +69,7 @@ elif [ "" != "$VM_PROXY" ]; then
 elif [[ $(gcloud run services list | grep "skyidproxy-service" | wc -l) -eq 0 ]]; then
     # serverless client proxy
     pushd $ROOT/gcp-client-proxy/serverless
-    ./deploy_setup.sh -p $PROJECT 
+    ./deploy_setup.sh -p "$PROJECT" 
     ./deploy.sh $PROJECT
     CLIENT_ADDRESS=$(gcloud run services list | grep "https://skyidproxy-service" | awk '{ print $4 }')
     CLIENT_ADDRESS="$CLIENT_ADDRESS/"
