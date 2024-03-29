@@ -3,7 +3,6 @@ from typing import Union
 
 from azure.cosmos import CosmosClient
 from azure.cosmos.partition_key import PartitionKey
-from azure.identity import DefaultAzureCredential
 
 from skydentity.policies.managers.policy_manager import PolicyManager
 from skydentity.policies.checker.azure_resource_policy import AzurePolicy

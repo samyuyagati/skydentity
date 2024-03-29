@@ -1,0 +1,35 @@
+reads:
+  azure:
+    deployments: true
+    ipAddresses: true
+    networkInterfaces: true
+    networkSecurityGroups: true
+    operations: true
+    regions:
+    - westus
+    resource_group: skydentity-e318-westus
+    subnets: true
+    virtualMachineInstanceView: true
+    virtualMachines: true
+    virtualNetworks: true
+virtual_machine:
+  actions:
+  - ALL
+  allowed_images:
+  - azure:
+    - ubuntu-hpc:2204
+  attached_authorizations:
+  - azure:
+    - authorization:
+      - /subscriptions/5ba551fd-4339-4bc8-834e-0dc4b031aa3d/resourcegroups/skydentity-e318-westus/providers/Microsoft.ManagedIdentity/userAssignedIdentities/xc48ae06a00fe88f2
+  cloud_provider:
+  - azure
+  instance_type:
+  - azure:
+    - Standard_B1s
+  regions:
+  - azure:
+    - westus
+  startup_scripts:
+  - azure:
+    - e6579aeaa32fdc6fcd94cc6c044c0e486d794d7c1c3d516386c137130099113d

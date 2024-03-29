@@ -13,13 +13,18 @@ import requests
 from flask import Flask, Response, request
 
 from skydentity.policies.checker.azure_authorization_policy import AzureAuthorizationPolicy
+from skydentity.policies.checker.azure_storage_policy import AzureStoragePolicy
 from skydentity.utils.hash_util import hash_public_key
 
 from .credentials import (
     get_managed_identity_auth_token,
 )
 from .logging import get_logger, print_and_log
-from .policy_check import check_request_from_policy, get_authorization_policy_manager
+from .policy_check import (
+    check_request_from_policy, 
+    get_authorization_policy_manager,
+    get_storage_policy_manager
+)
 from .signature import strip_signature_headers, verify_request_signature
 
 # global constants
@@ -375,5 +380,34 @@ def create_authorization_route(cloud):
 
 
 def create_storage_authorization_route(cloud):
+    print("Create storage authorization handler")
     logger = get_logger()
-    # TODO: Add stuff here
+
+    storage_policy_manager = get_storage_policy_manager()
+    print_and_log(logger, f"Creating authorization (json: {request.json})")
+
+    # Get hash of public key
+    public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
+    # Compute hash of public key
+    public_key_hash = hash_public_key(public_key_bytes)
+    print_and_log(logger, f"Public key hash: {public_key_hash}")
+
+    # Retrieve storage policy from CosmosDB with public key hash
+    storage_policy_dict = storage_policy_manager.get_policy_dict(public_key_hash)
+    print("Storage policy dict:", storage_policy_dict)
+
+    # Check request against storage policy
+    storage_policy = AzureStoragePolicy(policy_dict=storage_policy_dict)
+    request_auth, success = storage_policy.check_request(request)
+
+    if success and request_auth is not None:
+        access_token, expiration_timestamp = (
+            storage_policy_manager.generate_sas_token(
+                request_auth.container, request_auth.actions
+            )
+        )
+        return Response(
+            json.dumps({"access_token": access_token, "expires": expiration_timestamp}),
+            200,
+        )
+    return Response("Unauthorized", 401)
