@@ -1,5 +1,6 @@
 import argparse
 import subprocess
+import time
 
 parser = argparse.ArgumentParser(
                     prog='RunSkyPilotJobs',
@@ -33,26 +34,12 @@ for i in range(NUM_JOBS):
         f.write(job.format(i=i))
 
     print(f"Launching job {i}")
-    out_fd = open(f"skypilot_benchmark_stdout_{i}.txt","wb")
-    err_fd = open(f"skypilot_benchmark_stderr_{i}.txt","wb")
     # Paper used subprocess.Run (fully sequential, waits for completion)
-    subprocess.Popen(
-        [
-            "time",
-            "sky",
-            "launch",
-            "--retry-until-up",
-            "-y",
-            "-d",
-            "-n",
-            f"{prefix}-{i}",
-            "job.yaml",
-        ],
-        stdout=out_fd,
-        stderr=err_fd,
+    # The -d flag detaches, so the call will return after provisioning.
+    start = time.time()
+    subprocess.run(
+            f"sky launch --retry-until-up -y -d -n {prefix}-{i} job.yaml",
+        shell=True,
+        check=True
     )
-    # Will this close the file descriptors before the process is done?
-    out_fd.flush()
-    out_fd.close()
-    err_fd.flush()
-    out_fd.close()
+    print(f"Time to provision job {i}: {time.time() - start}")
