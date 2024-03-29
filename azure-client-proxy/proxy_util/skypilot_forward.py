@@ -109,6 +109,13 @@ ROUTES: list[SkypilotRoute] = [
         # wrapper to allow for the function to be defined later
         view_func=lambda cloud: create_authorization_route(cloud),
     ),
+    SkypilotRoute(
+        methods=["POST"],
+        path="/skydentity/cloud/<cloud>/create-storage-authorization",
+        fields=["cloud"],
+        # wrapper to allow for the function to be defined later
+        view_func=lambda cloud: create_storage_authorization_route(cloud),
+    ),
 ]
 
 
@@ -365,3 +372,8 @@ def create_authorization_route(cloud):
         )
         return Response(json.dumps(capability_dict), 200)
     return Response("Unauthorized", 401)
+
+
+def create_storage_authorization_route(cloud):
+    logger = get_logger()
+    # TODO: Add stuff here
