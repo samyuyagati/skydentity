@@ -1,5 +1,5 @@
 import json
-from typing import Union
+from typing import Union, Dict
 
 from azure.cosmos import CosmosClient
 from azure.cosmos.partition_key import PartitionKey
@@ -47,10 +47,18 @@ class AzurePolicyManager(PolicyManager):
         :param public_key_hash: The public key of the policy.
         :param policy: The policy to upload.
         """
+        self.upload_policy_dict(public_key_hash, policy.to_dict())
+
+    def upload_policy_dict(self, public_key_hash: str, policy_dict: Dict):
+        """
+        Uploads a policy to Azure.
+        :param public_key_hash: The public key of the policy.
+        :param policy: The policy to upload.
+        """
         self._container.upsert_item(
             body = {
                 'id': public_key_hash,
-                'policy': policy.to_dict()
+                'policy': policy_dict
             },
         )
 

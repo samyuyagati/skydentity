@@ -38,14 +38,14 @@ class StorageRequestAction(Enum):
 
 
 class CloudProvider(Enum):
-    AZURE = "azure"
+    azure = "azure"
 
 
 @dataclass
 class Authorization:
     """Parsed storage auth policy"""
     cloud_provider: CloudProvider
-    resource_group: str
+    storage_account: str
     actions: List[StoragePolicyAction]
     containers: List[str]
 
@@ -78,7 +78,7 @@ class AzureStoragePolicy(AuthorizationPolicy):
 
         The dictionary should contain keys:
         - cloud_provider
-        - resource_group
+        - storage_account
         - actions
         - containerss
         """
@@ -104,7 +104,7 @@ class AzureStoragePolicy(AuthorizationPolicy):
 
         return Authorization(
             cloud_provider=cloud_provider,
-            resource_group=policy_dict["resource_group"][0],
+            storage_account=policy_dict["storage_account"][0],
             actions=actions,
             containers=containers,
         )
@@ -132,7 +132,7 @@ class AzureStoragePolicy(AuthorizationPolicy):
             - otherwise, translate to NONE
         """
 
-        # request data should have a container name, resource_group name, actions
+        # request data should have a container name, storage_account name, actions
         try:
             cloud_provider = CloudProvider[policy_dict["cloud_provider"]]
         except KeyError:

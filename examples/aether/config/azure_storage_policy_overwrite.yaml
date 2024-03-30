@@ -2,7 +2,7 @@ storage:
   cloud_provider:
     - azure
 
-  resource_group:
+  storage_account:
     - skydentity
 
   actions:
@@ -10,5 +10,5 @@ storage:
     - UPLOAD
     - OVERWRITE
 
-  buckets:
+  containers:
     - skydentity-test-storage

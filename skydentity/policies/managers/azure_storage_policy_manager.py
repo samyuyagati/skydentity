@@ -7,7 +7,7 @@ from azure.cosmos.partition_key import PartitionKey
 
 from skydentity.policies.checker.azure_storage_policy import StoragePolicyAction
 from skydentity.policies.managers.policy_manager import PolicyManager
-from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPermissions
+from azure.storage.blob import BlobServiceClient, generate_container_sas, ContainerSasPermissions
 
 class AzureStoragePolicyManager(PolicyManager):
     def __init__(
@@ -58,6 +58,19 @@ class AzureStoragePolicyManager(PolicyManager):
                 'db_key': db_info['AZURE_DB_KEY']
             }
 
+    def upload_policy_dict(self, public_key_hash: str, policy: dict):
+        """
+        Uploads a policy to Azure.
+        :param public_key_hash: The public key of the policy.
+        :param policy: The policy to upload.
+        """
+        self._container.upsert_item(
+            body = {
+                'id': public_key_hash,
+                'policy': policy
+            },
+        )
+
     def get_policy_dict(self, public_key_hash) -> dict:
         """
         Gets a policy from the cloud vendor.
@@ -76,23 +89,27 @@ class AzureStoragePolicyManager(PolicyManager):
         :return: The SAS token and the expiration time.
         """
         # Define the access policy expiration time (15 minutes from now)
+        # Start a little before due to potential clock sync issues
+        start_time = datetime.now(timezone.utc) - timedelta(minutes=0.5)
         expiration_time = datetime.now(timezone.utc) + timedelta(minutes=15)
 
         # Define the permissions for the SAS token
-        permissions = BlobSasPermissions()
+        permissions = ""
+        
         if StoragePolicyAction.READ in actions:
-            permissions.read = True
+            permissions = "r"
         if StoragePolicyAction.UPLOAD in actions:
-            permissions.create = True
+            permissions = "rc"
         if StoragePolicyAction.OVERWRITE in actions:
-            permissions.write = True
+            permissions = "rcw"
 
         # Generate the SAS token for the container
-        sas_token = generate_blob_sas(
+        sas_token = generate_container_sas(
             self._storage_client.account_name,
             container,
             account_key=self._storage_client.credential.account_key,
             permission=permissions,
-            expiry=expiration_time
+            expiry=expiration_time,
+            start=start_time
         )
-        return sas_token, expiration_time
+        return sas_token, expiration_time.isoformat()

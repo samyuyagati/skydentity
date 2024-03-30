@@ -6,6 +6,7 @@ import datetime
 import json
 import os
 from collections import namedtuple
+from typing import Optional, Tuple
 
 import requests
 from Crypto.PublicKey import RSA
@@ -19,6 +20,9 @@ from .logging import get_logger, print_and_log
 PRIVATE_KEY_PATH = os.environ.get(
     "PRIVATE_KEY_PATH", "proxy_util/private_key.pem" 
 )
+
+STORAGE_ENDPOINT = os.environ.get(
+    "STORAGE_ENDPOINT", "https://skydentity.blob.core.windows.net")
 
 SkypilotRoute = namedtuple(
     "SkypilotRoute",
@@ -94,6 +98,12 @@ ROUTES: list[SkypilotRoute] = [
         path="/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/virtualMachines/<vmName>/instanceView",
         fields=["subscriptionId", "resourceGroupName", "vmName"],
     ),
+    SkypilotRoute(
+        methods=["GET", "PUT"],
+        path="/<container>/<blob>",
+        fields=["container", "blob"],
+        view_func=lambda container, blob: handle_blob_request(request, container, blob),
+    ),
     # skydentity internal route
     SkypilotRoute(
         methods=["POST"],
@@ -129,7 +139,8 @@ def get_headers_with_signature(request):
     new_headers["X-Timestamp"] = str(timestamp)
     new_headers["X-PublicKey"] = encoded_public_key_string
 
-    del new_headers["Host"]
+    if "Host" in new_headers:
+        del new_headers["Host"]
 
     return new_headers
 
@@ -311,7 +322,7 @@ def get_new_url(request):
     return new_url
 
 
-def forward_to_client(request, new_url: str, new_headers=None, new_json=None):
+def forward_to_client(request, new_url: str, new_headers=None, new_json=None, new_data=None):
     """
     Forward the request to the client proxy, with new headers, URL, and request body.
     """
@@ -327,6 +338,7 @@ def forward_to_client(request, new_url: str, new_headers=None, new_json=None):
             headers=new_headers,
             cookies=request.cookies,
             allow_redirects=False,
+            data=new_data
         )
     return requests.request(
         method=request.method,
@@ -335,4 +347,121 @@ def forward_to_client(request, new_url: str, new_headers=None, new_json=None):
         json=new_json,
         cookies=request.cookies,
         allow_redirects=False,
+        data=new_data
     )
+
+def request_storage_token(
+    container: str, actions: list[str]
+) -> Tuple[Optional[str], Optional[str], int]:
+    """
+    Requests an access token for the given container and actions.
+
+    Returns a tuple containing:
+    - access token (or None if error)
+    - expiration timestamp (or None if error)
+    - response status code (for error handling)
+    """
+    client_url = get_client_proxy_endpoint(request).strip("/") + "/"
+    headers = get_headers_with_signature(requests.Request(method="POST"))
+    response = requests.post(
+        client_url + f"skydentity/cloud/azure/create-storage-authorization",
+        json={
+            "cloud_provider": "azure",
+            "container": container,
+            "actions": actions,
+        },
+        headers=headers,
+    )
+
+    if not response.ok:
+        return None, None, response.status_code
+
+    response_json = response.json()
+    access_token = response_json["access_token"]
+    expiration_timestamp = response_json["expires"]
+    print("access token", access_token)
+
+    if access_token:
+        return access_token, expiration_timestamp, response.status_code
+
+    # no access token; server error
+    return None, None, 500
+
+def handle_blob_request(request, container, blob):
+    if request.method == "PUT":
+        return upload_blob(request, container, blob)
+    elif request.method == "GET":
+        return download_blob(request, container, blob)
+
+def upload_blob(request, container, blob):
+    """
+    POST /<container>/<blob> - Upload a blob to the specified container.
+    """
+    access_token, expiration_timestamp, req_status = request_storage_token(
+        container, ["OVERWRITE_FALLBACK_UPLOAD"]
+    )
+    if access_token is None or expiration_timestamp is None:
+        if 400 <= req_status < 500:
+            # auth error
+            return Response("Unauthorized", 401)
+        return Response("Error creating authorization", 500)
+
+    # check expiration timestamp
+    expiration_datetime = datetime.datetime.fromisoformat(expiration_timestamp)
+    if datetime.datetime.now(datetime.timezone.utc) > expiration_datetime:
+        return Response("Expired credentials", 401)
+
+    # attach access token
+    new_headers = {k: v for k, v in request.headers}
+    if "Host" in new_headers:
+        del new_headers["Host"]
+
+    # get new url directly to the storage endpoint
+    storage_url = request.url.replace(
+        # normalize to include one slash
+        request.host_url.strip("/") + "/",
+        STORAGE_ENDPOINT.strip("/") + "/",
+    )
+    access_token = access_token.replace("%3A", ":")
+    storage_url += f"?{access_token}"
+
+    print("Sending to storage URL:", storage_url)
+    # forward directly to the Azure endpoint; no need to go through client proxy
+    azure_response = forward_to_client(request, storage_url, new_headers=new_headers, new_data=request.data)
+    print(azure_response.content)
+    return Response(azure_response.content, azure_response.status_code)
+
+def download_blob(request, container, blob):
+    """
+    GET /<container>/<blob> - Upload a blob to the specified container.
+    """
+    access_token, expiration_timestamp, req_status = request_storage_token(container, ["READ"])
+    if access_token is None or expiration_timestamp is None:
+        if 400 <= req_status < 500:
+            # auth error
+            return Response("Unauthorized", 401)
+        return Response("Error creating authorization", 500)
+
+    # check expiration timestamp
+    expiration_datetime = datetime.datetime.fromisoformat(expiration_timestamp)
+    if datetime.datetime.now(datetime.timezone.utc) > expiration_datetime:
+        return Response("Expired credentials", 401)
+
+    # attach access token
+    new_headers = {k: v for k, v in request.headers}
+    if "Host" in new_headers:
+        del new_headers["Host"]
+
+    # get new url directly to the storage endpoint
+    storage_url = request.url.replace(
+        # normalize to include one slash
+        request.host_url.strip("/") + "/",
+        STORAGE_ENDPOINT.strip("/") + "/",
+    )
+    access_token = access_token.replace("%3A", ":")
+    storage_url += f"?{access_token}"
+
+    # forward directly to the Azure endpoint; no need to go through client proxy
+    azure_response = forward_to_client(request, storage_url, new_headers=new_headers)
+    print(azure_response.content)
+    return Response(azure_response.content, azure_response.status_code, headers=dict(azure_response.headers))
