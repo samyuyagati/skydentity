@@ -1,12 +1,13 @@
 import json
 from typing import List, Tuple
+from datetime import datetime, timedelta, timezone
 
 from azure.cosmos import CosmosClient
 from azure.cosmos.partition_key import PartitionKey
 
 from skydentity.policies.checker.azure_storage_policy import StoragePolicyAction
 from skydentity.policies.managers.policy_manager import PolicyManager
-
+from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPermissions
 
 class AzureStoragePolicyManager(PolicyManager):
     def __init__(
@@ -14,15 +15,24 @@ class AzureStoragePolicyManager(PolicyManager):
         db_endpoint: str = None,
         db_key: str = None,
         db_info_file: str = None,
+        storage_account_connection_string: str = None,
         db_name = 'skydentity',
-        db_container_name = 'storage_policies'    
+        db_container_name = 'storage_policies'
         ):
         """
         Initializes the azure policy manager for storage policies.
 
+        :param db_endpoint: The endpoint of the Azure database.
+        :param db_key: The key of the Azure database.
+        :param db_info_file: The path to the database info file.
+        :param db_name: The name of the database.
+        :param db_container_name: The name of the container.
         """
         if db_info_file is None and db_endpoint is None and db_key is None:
             raise Exception("Must provide either db_info_file or db_endpoint and db_key")
+
+        if storage_account_connection_string is None:
+            raise Exception("Must provide storage_account_connection_string")
 
         if db_info_file is not None:
             db_info = self.get_db_info_from_file(db_info_file)
@@ -33,6 +43,8 @@ class AzureStoragePolicyManager(PolicyManager):
         self._db = self._client.create_database_if_not_exists(db_name)
         partition_key = PartitionKey(path = '/id')
         self._container = self._db.create_container_if_not_exists(db_container_name, partition_key = partition_key)
+
+        self._storage_client = BlobServiceClient.from_connection_string(storage_account_connection_string)
 
     def get_db_info_from_file(self, db_info_file: str):
         """
@@ -63,5 +75,24 @@ class AzureStoragePolicyManager(PolicyManager):
         Generates a SAS token for the given container and actions.
         :return: The SAS token and the expiration time.
         """
-        
-        return sas_token
+        # Define the access policy expiration time (15 minutes from now)
+        expiration_time = datetime.now(timezone.utc) + timedelta(minutes=15)
+
+        # Define the permissions for the SAS token
+        permissions = BlobSasPermissions()
+        if StoragePolicyAction.READ in actions:
+            permissions.read = True
+        if StoragePolicyAction.UPLOAD in actions:
+            permissions.create = True
+        if StoragePolicyAction.OVERWRITE in actions:
+            permissions.write = True
+
+        # Generate the SAS token for the container
+        sas_token = generate_blob_sas(
+            self._storage_client.account_name,
+            container,
+            account_key=self._storage_client.credential.account_key,
+            permission=permissions,
+            expiry=expiration_time
+        )
+        return sas_token, expiration_time

@@ -15,10 +15,13 @@ _CAPABILITY_ENC_KEY = os.environ.get("CAPABILITY_ENC_KEY", None)
 _DB_ENDPOINT = os.environ.get("AZURE_DB_ENDPOINT", None)
 _DB_KEY = os.environ.get("AZURE_DB_KEY", None)
 
+_CONNECTION_STRING = os.environ.get("AZURE_STORAGE_CONNECTION_STRING", None)
+
 # validate global constants from environment variables
 assert (_CAPABILITY_ENC_KEY_FILE is not None and os.path.isfile(_CAPABILITY_ENC_KEY_FILE)) \
     or _CAPABILITY_ENC_KEY is not None
 assert (_DB_INFO_FILE is not None) or (_DB_ENDPOINT is not None and _DB_KEY is not None)
+assert _CONNECTION_STRING is not None
 
 @cache
 def get_managed_identity_auth_token() -> bytes:
@@ -49,6 +52,7 @@ def get_capability_enc_key() -> str:
     """
     return _CAPABILITY_ENC_KEY_FILE
 
+@cache
 def get_capability_enc_key_bytes() -> bytes:
     """
     Retrieve the capability encoding key as bytes.
@@ -66,3 +70,9 @@ def get_db_key() -> str:
     Retrieve the key for the Azure Cosmos DB.
     """
     return _DB_KEY
+
+def get_storage_connection_string() -> str:
+    """
+    Retrieve the connection string for the Azure Storage Account.
+    """
+    return _CONNECTION_STRING
