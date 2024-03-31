@@ -125,15 +125,14 @@ def generic_forward_request(request, log_dict=None):
         print_and_log(logger, log_str.strip())
 
     if not verify_request_signature(request):
-        # Not sure if this is the correct status code. This case will only happen when the timestamp
-        # associated with the signature is too old at the time when the signature is verified.
-        return Response("", HTTPStatus.REQUEST_TIMEOUT, {})
+        print_and_log(logger, "Request is unauthorized (signature verification failed)")
+        return Response("Unauthorized", 401)
 
     # Check the request
     public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
     authorized, managed_identity_id = check_request_from_policy(public_key_bytes, request)
     if not authorized:
-        print_and_log(logger, "Request is unauthorized")
+        print_and_log(logger, "Request is unauthorized (policy check failed)")
         return Response("Unauthorized", 401)
     
     # TODO: Delete this print statement
@@ -349,7 +348,7 @@ def create_authorization_route(cloud):
     public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
     # Compute hash of public key
     public_key_hash = hash_public_key(public_key_bytes)
-    print("Attempting to get public key hash:", public_key_hash)
+    print_and_log(logger, f"Public key hash: {public_key_hash}")
     request_auth_dict = authorization_policy_manager.get_policy_dict(public_key_hash)
     print("Request auth dict:", request_auth_dict)
     authorization_policy = AzureAuthorizationPolicy(policy_dict=request_auth_dict)

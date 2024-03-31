@@ -52,7 +52,7 @@ def check_request_from_policy(public_key_bytes, request) -> Tuple[bool, Union[st
     
     # Compute the hash of the public key
     public_key_hash = hash_public_key(public_key_bytes)
-    print_and_log(logger, f"Hashed public key: {public_key_hash}")
+    print_and_log(logger, f"Public key hash: {public_key_hash}")
 
     # Retrieve policy from CosmosDB
     policy = policy_manager.get_policy(public_key_hash)

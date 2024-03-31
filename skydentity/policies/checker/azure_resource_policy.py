@@ -193,6 +193,8 @@ class AzureVMPolicy(VMPolicy):
         :throws: Error if the policy is not valid.
         :return: The policy representation of the dict.
         """
+        print(str(policy_dict_cloud_level))
+
         cloud_specific_policy = {}
         cloud_specific_policy["can_cloud_run"] = AzurePolicy.Azure_CLOUD_NAME \
                             in policy_dict_cloud_level["cloud_provider"]
@@ -200,6 +202,7 @@ class AzureVMPolicy(VMPolicy):
             raise PolicyContentException("Policy does not accept Azure")
 
         try:
+            print(policy_dict_cloud_level["actions"])
             action = PolicyAction[policy_dict_cloud_level["actions"][0]]
             cloud_specific_policy["actions"] = action
         except KeyError:
@@ -317,6 +320,7 @@ class AzureAttachedAuthorizationPolicy(ResourcePolicy):
         :return: The dictionary representation of the policy.
         """
         out_dict = {}
+        print(self._policy)
         if AzurePolicy.Azure_CLOUD_NAME in self._policy:
             out_dict[AzurePolicy.Azure_CLOUD_NAME] = self._policy[AzurePolicy.Azure_CLOUD_NAME]
         return out_dict
@@ -923,11 +927,12 @@ class AzurePolicy(CloudPolicy):
                     resource_types.add(("default_deny", default_deny_type))
 
             for key in request.get_json(cache=True).keys():
+                print(key)
                 if key in AzurePolicy.ATTACHED_AUTHORIZATION_KEYS:
                     resource_types.add(("attached_authorizations",))
         if len(resource_types) == 0:
             resource_types.add(("unrecognized",))
-            print(">>>>> UNRECOGNIZED RESOURCE TYPE <<<<<")
+            print(">>>>> ALL UNRECOGNIZED RESOURCE TYPES <<<<<")
         print("All resource types:", list(resource_types))
         return list(resource_types)
     
@@ -940,6 +945,8 @@ class AzurePolicy(CloudPolicy):
         """
         resource_type_key, *resource_type_aux = resource_type
         assert resource_type_key in self._resource_policies
+        print("AzurePolicy check_resource_type:", resource_type_key)
+
         if resource_type_key == "attached_authorizations":
             # Authorization policies
             result = self._resource_policies[resource_type_key].check_request(request, self._authorization_manager)
@@ -968,9 +975,12 @@ class AzurePolicy(CloudPolicy):
         """
         out_dict = {}
         for resource_type, policy in self._resource_policies.items():
+            print("AzurePolicy resource type:", resource_type)
+            print("AzurePolicy policy:", policy)
             if resource_type == "unrecognized" or resource_type == "deployments" or resource_type == "default_deny":
                 continue
             out_dict[resource_type] = policy.to_dict()
+        print(out_dict)
         return out_dict
 
     @staticmethod
@@ -983,12 +993,15 @@ class AzurePolicy(CloudPolicy):
         vm_dict = {}
         if "virtual_machine" in policy_dict:
             vm_dict = policy_dict["virtual_machine"]
+            print("VM_DICT in AzurePolicy:from_dict", vm_dict)
         vm_policy = AzureVMPolicy.from_dict(vm_dict)
+
         attached_policy_dict = {}
         if "attached_authorizations" in policy_dict:
             attached_policy_dict = policy_dict["attached_authorizations"]
         if "attached_authorizations" in vm_dict:
             attached_policy_dict = vm_dict["attached_authorizations"]
+        print("AzurePolicy attached authorizations dict:", attached_policy_dict)
         attached_authorization_policy = AzureAttachedAuthorizationPolicy.from_dict(attached_policy_dict)
         if PolicyAction.READ.is_allowed_be_performed(vm_policy.get_policy_standard_form()["actions"]):
             if "reads" in policy_dict:
