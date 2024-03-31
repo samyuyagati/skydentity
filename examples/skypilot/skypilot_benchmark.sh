@@ -12,4 +12,4 @@ CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE="http://127.0.0.1:5000/"
 python run_skypilot_jobs.py --num-jobs $2
 
 unset CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE
-sky down -a
+sky down -a -y
