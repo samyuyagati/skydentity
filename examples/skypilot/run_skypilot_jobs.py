@@ -1,4 +1,5 @@
 import argparse
+import os
 import subprocess
 import time
 
@@ -37,8 +38,34 @@ for i in range(NUM_JOBS):
     # Paper used subprocess.Run (fully sequential, waits for completion)
     # The -d flag detaches, so the call will return after provisioning.
     start = time.time()
+#    subprocess.run(
+#            f"CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE='http://127.0.0.1:5000/' sky launch {prefix}-{i} job.yaml",
+#        shell=True,
+#        check=True
+#    )
+    p = subprocess.Popen(
+        [
+            "time",
+            "sky",
+            "launch",
+            "--retry-until-up",
+            "-y",
+            "-d",
+            "-n",
+            f"{prefix}-{i}",
+            "job.yaml",
+        ],
+        env={
+            **os.environ,
+            "CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE": "http://127.0.0.1:5000/",
+        },
+        stdout=subprocess.PIPE
+    )
+    (output, err) = p.communicate() 
+    p_status = p.wait()
+    
     subprocess.run(
-            f"sky launch --retry-until-up -y -d -n {prefix}-{i} job.yaml",
+            f"CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE='http://127.0.0.1:5000/' sky launch --retry-until-up -y -d -n {prefix}-{i} job.yaml",
         shell=True,
         check=True
     )

@@ -20,4 +20,5 @@ def hash_public_key_from_file(public_key_file: str) -> str:
         public_key = RSA.import_key(data)
         print("Public key from file:", public_key.export_key())
         public_key_bytes = public_key.export_key()
-        return SHA256.new(data=public_key_bytes).hexdigest()
+        return hash_public_key(public_key_bytes)
+        #return SHA256.new(data=public_key_bytes).hexdigest()

@@ -158,6 +158,7 @@ def generic_forward_request(request, log_dict=None):
 
     # Check the request against the policy for this workload orchestrator
     public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
+    print_and_log(logger, f"Decoded public key: {public_key_bytes}")
     authorized, service_account_id = check_request_from_policy(
         public_key_bytes, request
     )
