@@ -9,11 +9,15 @@ from collections import namedtuple
 from http import HTTPStatus
 from urllib.parse import urlparse
 
+import random
 import requests
+import time
 from flask import Flask, Response, request
 
-from skydentity.policies.checker.gcp_authorization_policy import GCPAuthorizationPolicy
-from skydentity.utils.hash_util import hash_public_key
+from ...policies.checker.gcp_authorization_policy import GCPAuthorizationPolicy
+from ...utils.signature import strip_signature_headers, verify_request_signature
+from ...utils.hash_util import hash_public_key
+from ...utils.log_util import build_time_logging_string
 
 from .credentials import (
     activate_service_account,
@@ -22,7 +26,6 @@ from .credentials import (
 )
 from .logging import get_logger, print_and_log
 from .policy_check import check_request_from_policy, get_authorization_policy_manager
-from .signature import strip_signature_headers, verify_request_signature
 
 # global constants
 COMPUTE_API_ENDPOINT = os.environ.get(
@@ -144,40 +147,63 @@ def generic_forward_request(request, log_dict=None):
     [SkyPilot Integration]
     Forward a generic request to google APIs.
     """
+    start = time.time()
     logger = get_logger()
+
+    request_name = request.method.upper() + str(random.randint(0, 1000))
+    caller = "skypilot_forward:generic_forward_request"
+
     if log_dict is not None:
         log_str = f"PATH: {request.full_path}\n"
         for key, val in log_dict.items():
             log_str += f"\t{key}: {val}\n"
         print_and_log(logger, log_str.strip())
+    
+    print_and_log(logger, build_time_logging_string(request_name, caller, "setup_logs", start, time.time()))
 
     # Verify the request signature
+    start_verify_request_signature = time.time()
     if not verify_request_signature(request):
         print_and_log(logger, "Request is unauthorized (signature verification failed)")
+        print_and_log(logger, build_time_logging_string(request_name, caller, "total (signature verif. failed)", start, time.time()))
         return Response("Unauthorized", 401)
+    print_and_log(logger, build_time_logging_string(request_name, caller, "verify_request_signature", start_verify_request_signature, time.time()))
 
     # Check the request against the policy for this workload orchestrator
+    start_check_request_from_policy = time.time()
     public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
     authorized, service_account_id = check_request_from_policy(
-        public_key_bytes, request
+        public_key_bytes, request, request_id=request_name, caller_name=caller
     )
+    print_and_log(logger, build_time_logging_string(request_name, caller, "check_request_from_policy", start_check_request_from_policy, time.time()))
     if not authorized:
         print_and_log(logger, "Request is unauthorized (policy check failed)")
+        print_and_log(logger, build_time_logging_string(request_name, caller, "total (policy check failed)", start, time.time()))
         return Response("Unauthorized", 401)
 
     # Get new endpoint and new headers
+    start_get_new_url = time.time()
     new_url = get_new_url(request)
+    print_and_log(logger, build_time_logging_string(request_name, caller, "get_new_url", start_get_new_url, time.time()))
+    start_get_new_headers = time.time()
     new_headers = get_headers_with_auth(request)
+    print_and_log(logger, build_time_logging_string(request_name, caller, "get_headers_with_auth", start_get_new_headers, time.time()))
 
     # If a valid service account was provided, attach it to the request
     new_json = None
     if len(request.get_data()) > 0:
+        start_get_json_with_sa = time.time()
         new_json = request.json
         if service_account_id:
             new_json = get_json_with_service_account(request, service_account_id)
             print_and_log(logger, f"Json with service account: {new_json}")
+        print_and_log(logger, build_time_logging_string(request_name, caller, "get_json_with_service_account", start_get_json_with_sa, time.time()))
 
+    # Send the request to the GCP endpoint
+    start_send_gcp_request = time.time()
     gcp_response = send_gcp_request(request, new_headers, new_url, new_json=new_json)
+    print_and_log(logger, build_time_logging_string(request_name, caller, "send_gcp_request", start_send_gcp_request, time.time()))
+    print_and_log(logger, build_time_logging_string(request_name, caller, "total", start, time.time()))
     return Response(gcp_response.content, gcp_response.status_code, new_headers)
 
 
@@ -367,9 +393,11 @@ def send_gcp_request(request, new_headers, new_url, new_json=None):
 
 
 def create_authorization_route(cloud):
+    print("Create authorization handler")
     logger = get_logger()
     authorization_policy_manager = get_authorization_policy_manager()
     print_and_log(logger, f"Creating authorization (json: {request.json})")
+    print(f"Creating authorization (json: {request.json})")
 
     # Get hash of public key
     public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)

@@ -10,10 +10,9 @@ import os
 import re
 
 skydentity_creds = '../tokens/.cloud_creds/skydentity-token.json'
-
 #api_endpoint="https://34.168.128.47:5000"
-api_endpoint="http://127.0.0.1:5000"
-#api_endpoint=api_endpoint
+#api_endpoint="http://127.0.0.1:5000"
+api_endpoint=None
 
 def get_skydentity_credentials() -> service_account.Credentials:
     return service_account.Credentials.from_service_account_file(
@@ -33,9 +32,12 @@ def get_image_from_family(project: str, family: str) -> compute_v1.Image:
     # GET https://127.0.0.1:5000/compute/v1/skydentity/us-west-1/describe/images/family/debian
     # --> send request to https://127.0.0.1:5000 to launch serverless function
     # ------> with /compute/v1/skydentity/us-west-1/describe/images/family/debian included in the HTTPS request
-    options = ClientOptions(api_endpoint=api_endpoint)
-    image_client = compute_v1.ImagesClient(credentials=get_skydentity_credentials(),
-        client_options=options)
+    if (api_endpoint is None):
+        image_client = compute_v1.ImagesClient(credentials=get_skydentity_credentials())
+    else: 
+        options = ClientOptions(api_endpoint=api_endpoint)
+        image_client = compute_v1.ImagesClient(credentials=get_skydentity_credentials(),
+            client_options=options)
     # List of public operating system (OS) images: https://cloud.google.com/compute/docs/images/os-details
     newest_image = image_client.get_from_family(project=project, family=family)
     # -----> in backend: get_from_family uses REST API to send GET ....
@@ -179,24 +181,25 @@ def create_instance(
     Returns:
         Instance object.
     """
-    options = ClientOptions(api_endpoint=api_endpoint)
-    instance_client = compute_v1.InstancesClient(credentials=get_skydentity_credentials(),
-        client_options=options)
+    if api_endpoint is None:
+        instance_client = compute_v1.InstancesClient(credentials=get_skydentity_credentials())
+    else: 
+        options = ClientOptions(api_endpoint=api_endpoint)
+        instance_client = compute_v1.InstancesClient(credentials=get_skydentity_credentials(),
+            client_options=options)
 
     # Use the network interface provided in the network_link argument.
     network_interface = compute_v1.NetworkInterface()
     network_interface.network = network_link  
 
     # Collect information into the Instance object.
-    instance = compute_v1.Instance() # TODO is this a request we need to proxy?
+    instance = compute_v1.Instance() 
     instance.network_interfaces = [network_interface]
     instance.name = instance_name
-#    if re.match(r"^zones/[a-z\d\-]+/machineTypes/[a-z\d\-]+$", machine_type):
-#        instance.machine_type = machine_type
-#    else:
     instance.machine_type = f"zones/{zone}/machineTypes/{machine_type}"
     instance.disks = disks
-    instance.service_accounts = [compute_v1.ServiceAccount(email="dummy_account")]
+    if api_endpoint is not None:
+        instance.service_accounts = [compute_v1.ServiceAccount(email="dummy_account")]
 
     # Cloud init script    
     instance.metadata = compute_v1.Metadata()
@@ -232,8 +235,8 @@ def main():
 #        outfile.write(json_object)
 
     # Send VM creation request
-    os.environ["SSL_CERT_FILE"] = "/Users/samyu/skydentity/certs/rootCA.crt"
-    os.environ["SSL_CERT_DIR"] = "/Users/samyu/skydentity/certs"
+#    os.environ["SSL_CERT_FILE"] = "/Users/samyu/skydentity/certs/rootCA.crt"
+#    os.environ["SSL_CERT_DIR"] = "/Users/samyu/skydentity/certs"
     zone = "us-west1-b"
     newest_debian = get_image_from_family(project="debian-cloud", family="debian-10")
     disk_type = f"zones/{zone}/diskTypes/pd-standard"

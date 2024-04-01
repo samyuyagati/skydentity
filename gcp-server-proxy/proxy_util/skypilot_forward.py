@@ -115,12 +115,18 @@ def get_headers_with_signature(request):
     new_headers = {k: v for k, v in request.headers}
 
     with open(PRIVATE_KEY_PATH, "rb") as key_file:
-        private_key = RSA.import_key(key_file.read())
+        contents = key_file.read()
+        print("Private key:", contents, flush=True)
+        private_key = RSA.import_key(contents)
+
+    print("server-proxy get_headers_with_signature PRIVATE KEY PATH:", PRIVATE_KEY_PATH, flush=True)
 
     # assume set, predetermined/agreed upon tolerance on client proxy/receiving end
     # use utc for consistency if server runs in cloud in different region
     timestamp = datetime.datetime.now(datetime.timezone.utc).timestamp()
     public_key_string = private_key.public_key().export_key()
+
+    print("server-proxy get_headers_with_signature PUBLIC KEY STRING:", public_key_string, flush=True)
 
     # message = f"{str(request.method)}-{timestamp}-{public_key_string}"
     message = f"{str(request.method)}-{timestamp}-{public_key_string}"
@@ -159,6 +165,7 @@ def generic_forward_request(request, log_dict=None):
 
     new_url = get_new_url(request)
     new_headers = get_headers_with_signature(request)
+    print(new_headers, flush=True)
 
     # Only modifies the body to attach the service account capability
     new_json = None
@@ -178,9 +185,13 @@ def generic_forward_request(request, log_dict=None):
 
             print("JSON with service acct capability:", new_json, flush=True)
 
+    print("Forwarding to client...", flush=True)
+
     gcp_response = forward_to_client(
         request, new_url, new_headers=new_headers, new_json=new_json
     )
+
+    print(f"Received response from client...\n {gcp_response}", flush=True)
     return Response(gcp_response.content, gcp_response.status_code)
 
 
