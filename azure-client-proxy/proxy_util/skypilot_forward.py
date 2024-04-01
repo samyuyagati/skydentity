@@ -1,12 +1,13 @@
 """
 Forwarding for SkyPilot requests.
 """
+import time
 
+import random
 import base64
 import json
 import os
 from collections import namedtuple
-from http import HTTPStatus
 from urllib.parse import urlparse
 
 import requests
@@ -18,7 +19,7 @@ from skydentity.utils.hash_util import hash_public_key
 from .credentials import (
     get_managed_identity_auth_token,
 )
-from .logging import get_logger, print_and_log
+from .logging import get_logger, print_and_log, build_time_logging_string
 from .policy_check import check_request_from_policy, get_authorization_policy_manager
 from .signature import strip_signature_headers, verify_request_signature
 
@@ -117,43 +118,60 @@ def generic_forward_request(request, log_dict=None):
     [SkyPilot Integration]
     Forward a generic request to Azure APIs.
     """
+    start = time.time()
     logger = get_logger()
+
+    request_name = request.method.upper() + str(random.randint(0, 1000))
+    caller = "skypilot_forward:generic_forward_request"
+
     if log_dict is not None:
         log_str = f"PATH: {request.full_path}\n"
         for key, val in log_dict.items():
             log_str += f"\t{key}: {val}\n"
         print_and_log(logger, log_str.strip())
 
+    print_and_log(logger, build_time_logging_string(request_name, caller, "setup_logs", start, time.time()))
+
+    start_verify_request_signature = time.time()
     if not verify_request_signature(request):
         print_and_log(logger, "Request is unauthorized (signature verification failed)")
+        print_and_log(logger, build_time_logging_string(request_name, caller, "total (signature verif. failed)", start, time.time()))
         return Response("Unauthorized", 401)
+    print_and_log(logger, build_time_logging_string(request_name, caller, "verify_request_signature", start_verify_request_signature, time.time()))
 
     # Check the request
+    start_check_request_from_policy = time.time()
     public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
-    authorized, managed_identity_id = check_request_from_policy(public_key_bytes, request)
+    authorized, managed_identity_id = check_request_from_policy(public_key_bytes, request, request_id=request_name, caller_name=caller)
+    print_and_log(logger, build_time_logging_string(request_name, caller, "check_request_from_policy", start_check_request_from_policy, time.time()))
     if not authorized:
         print_and_log(logger, "Request is unauthorized (policy check failed)")
+        print_and_log(logger, build_time_logging_string(request_name, caller, "total (policy check failed)", start, time.time()))
         return Response("Unauthorized", 401)
-    
-    # TODO: Delete this print statement
-    try:
-        print(request.json)
-    except:
-        pass
 
     # Get new endpoint and new headers
+    start_get_new_url = time.time()
     new_url = get_new_url(request)
+    print_and_log(logger, build_time_logging_string(request_name, caller, "get_new_url", start_get_new_url, time.time()))
+    start_get_new_headers = time.time()
     new_headers = get_headers_with_auth(request)
+    print_and_log(logger, build_time_logging_string(request_name, caller, "get_headers_with_auth", start_get_new_headers, time.time()))
 
     # Only modify the JSON if a valid service account capability was provided
     new_json = None
     if len(request.get_data()) > 0:
+        start_get_json_with_sa = time.time()
         new_json = request.json
         if managed_identity_id:
             new_json = get_json_with_managed_identity(request, managed_identity_id)
             print_and_log(logger, f"Json with service account: {new_json}")
+        print_and_log(logger, build_time_logging_string(request_name, caller, "get_json_with_service_account", start_get_json_with_sa, time.time()))
 
+    # Send the request to Azure
+    start_send_azure_request = time.time()
     azure_response = send_azure_request(request, new_headers, new_url, new_json=new_json)
+    print_and_log(logger, build_time_logging_string(request_name, caller, "send_azure_request", start_send_azure_request, time.time()))
+    print_and_log(logger, build_time_logging_string(request_name, caller, "total", start, time.time()))
     return Response(azure_response.content, azure_response.status_code, headers=new_headers, content_type=azure_response.headers["Content-Type"])
 
 
@@ -163,51 +181,51 @@ def build_generic_forward(path: str, fields: list[str]):
 
     The path is only used to create a unique and readable name for the anonymous function.
     """
-    func = None
-    if fields == ["cloud"]:
-        func = lambda cloud: generic_forward_request(request, {"cloud": cloud})
-    elif fields == ["subscriptionId"]:
-        func = lambda subscriptionId: generic_forward_request(request, {"subscriptionId": subscriptionId})
-    elif fields == ["subscriptionId", "resourceGroupName"]:
-        func = lambda subscriptionId, resourceGroupName: generic_forward_request(
-            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName}
-        )
-    elif fields == ["subscriptionId", "resourceGroupName", "nicName"]:
-        func = lambda subscriptionId, resourceGroupName, nicName: generic_forward_request(
-            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "nicName": nicName}
-        )
-    elif fields == ["subscriptionId", "resourceGroupName", "ipName"]:
-        func = lambda subscriptionId, resourceGroupName, ipName: generic_forward_request(
-            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "ipName": ipName}
-        )
-    elif fields == ["subscriptionId", "region", "operationId"]:
-        func = lambda subscriptionId, region, operationId: generic_forward_request(
-            request, {"subscriptionId": subscriptionId, "region": region, "operationId": operationId}
-        )
-    elif fields == ["subscriptionId", "resourceGroupName", "virtualNetworkName"]:
-        func = lambda subscriptionId, resourceGroupName, virtualNetworkName: generic_forward_request(
-            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "virtualNetworkName": virtualNetworkName}
-        )
-    elif fields == ["subscriptionId", "resourceGroupName", "virtualNetworkName", "subnetName"]:
-        func = lambda subscriptionId, resourceGroupName, virtualNetworkName, subnetName: generic_forward_request(
-            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "virtualNetworkName": virtualNetworkName, "subnetName": subnetName}
-        )
-    elif fields == ["subscriptionId", "resourceGroupName", "vmName"]:
-        func = lambda subscriptionId, resourceGroupName, vmName: generic_forward_request(
-            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "vmName": vmName}
-        )
-    elif fields == ["subscriptionId", "resourceGroupName", "nsgName"]:
-        func = lambda subscriptionId, resourceGroupName, nsgName: generic_forward_request(
-            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "nsgName": nsgName}
-        )
-    elif fields == ["subscriptionId", "resourceGroupName", "deploymentName"]:
-        func = lambda subscriptionId, resourceGroupName, deploymentName: generic_forward_request(
-            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "deploymentName": deploymentName}
-        )
-    else:
-        raise ValueError(
-            f"Invalid list of variables to build generic forward for: {fields}"
-        )
+    func = lambda **kwargs: generic_forward_request(request, kwargs)
+    # if fields == ["cloud"]:
+    #     func = lambda cloud: generic_forward_request(request, {"cloud": cloud})
+    # elif fields == ["subscriptionId"]:
+    #     func = lambda subscriptionId: generic_forward_request(request, {"subscriptionId": subscriptionId})
+    # elif fields == ["subscriptionId", "resourceGroupName"]:
+    #     func = lambda subscriptionId, resourceGroupName: generic_forward_request(
+    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName}
+    #     )
+    # elif fields == ["subscriptionId", "resourceGroupName", "nicName"]:
+    #     func = lambda subscriptionId, resourceGroupName, nicName: generic_forward_request(
+    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "nicName": nicName}
+    #     )
+    # elif fields == ["subscriptionId", "resourceGroupName", "ipName"]:
+    #     func = lambda subscriptionId, resourceGroupName, ipName: generic_forward_request(
+    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "ipName": ipName}
+    #     )
+    # elif fields == ["subscriptionId", "region", "operationId"]:
+    #     func = lambda subscriptionId, region, operationId: generic_forward_request(
+    #         request, {"subscriptionId": subscriptionId, "region": region, "operationId": operationId}
+    #     )
+    # elif fields == ["subscriptionId", "resourceGroupName", "virtualNetworkName"]:
+    #     func = lambda subscriptionId, resourceGroupName, virtualNetworkName: generic_forward_request(
+    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "virtualNetworkName": virtualNetworkName}
+    #     )
+    # elif fields == ["subscriptionId", "resourceGroupName", "virtualNetworkName", "subnetName"]:
+    #     func = lambda subscriptionId, resourceGroupName, virtualNetworkName, subnetName: generic_forward_request(
+    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "virtualNetworkName": virtualNetworkName, "subnetName": subnetName}
+    #     )
+    # elif fields == ["subscriptionId", "resourceGroupName", "vmName"]:
+    #     func = lambda subscriptionId, resourceGroupName, vmName: generic_forward_request(
+    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "vmName": vmName}
+    #     )
+    # elif fields == ["subscriptionId", "resourceGroupName", "nsgName"]:
+    #     func = lambda subscriptionId, resourceGroupName, nsgName: generic_forward_request(
+    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "nsgName": nsgName}
+    #     )
+    # elif fields == ["subscriptionId", "resourceGroupName", "deploymentName"]:
+    #     func = lambda subscriptionId, resourceGroupName, deploymentName: generic_forward_request(
+    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "deploymentName": deploymentName}
+    #     )
+    # else:
+    #     raise ValueError(
+    #         f"Invalid list of variables to build generic forward for: {fields}"
+    #     )
 
     # Flask expects all view functions to have unique names
     # (otherwise it complains about overriding view functions)
