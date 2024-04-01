@@ -7,6 +7,7 @@ virtual_machine:
 
   regions:
     - gcp:
+        - us-west1
         - us-west1-b
 
   # Can specify max hardware spec or a list of allowed machines
