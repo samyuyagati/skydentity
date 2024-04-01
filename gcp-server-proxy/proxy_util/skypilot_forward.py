@@ -2,12 +2,12 @@
 Forwarding for SkyPilot requests.
 """
 
-from datetime import datetime
 import json
 import logging as py_logging
 import os
 from collections import namedtuple
-from typing import Optional, Tuple
+from datetime import datetime, timezone
+from typing import Dict, Optional, Tuple
 
 import requests
 from flask import Flask, Response, request
@@ -142,8 +142,22 @@ def setup_routes(app: Flask):
     # set up default route
     default_view = lambda path: generic_forward_request(request, {"path": path})
     default_view.__name__ = "default_view"
-    app.add_url_rule("/", view_func=default_view, defaults={"path": ""})
-    app.add_url_rule("/<path:path>", view_func=default_view)
+
+    all_methods = [
+        "GET",
+        "HEAD",
+        "POST",
+        "PUT",
+        "DELETE",
+        "CONNECT",
+        "OPTIONS",
+        "TRACE",
+        "PATCH",
+    ]
+    app.add_url_rule(
+        "/", view_func=default_view, defaults={"path": ""}, methods=all_methods
+    )
+    app.add_url_rule("/<path:path>", view_func=default_view, methods=all_methods)
 
 
 def get_client_proxy_endpoint(request):
@@ -238,17 +252,32 @@ def forward_to_client(
         )
 
 
+# cache for access tokens
+ACCESS_TOKEN_CACHE: Dict[Tuple[str, str], Tuple[str, str]] = {}
+
+
 def request_storage_access_token(
-    bucket: str, actions: list[str]
+    bucket: str, action: str
 ) -> Tuple[Optional[str], Optional[str], int]:
     """
-    Requests an access token for a service account for the given bucket and actions.
+    Requests an access token for a service account for the given bucket and action.
 
     Returns a tuple containing:
     - access token (or None if error)
     - expiration timestamp in ISO format (or None if error)
     - response status code (for error handling)
     """
+    # return token from cache if it exists
+    if (bucket, action) in ACCESS_TOKEN_CACHE:
+        access_token, expiration_timestamp = ACCESS_TOKEN_CACHE[(bucket, action)]
+        if datetime.now(timezone.utc) < datetime.fromisoformat(
+            expiration_timestamp
+        ).astimezone(timezone.utc):
+            # still valid, return it
+            return access_token, expiration_timestamp, 200
+        # expired; delete from cache
+        del ACCESS_TOKEN_CACHE[(bucket, action)]
+
     client_url = get_client_proxy_endpoint(request).strip("/") + "/"
     headers = get_headers_with_signature(requests.Request(method="POST"))
     response = requests.post(
@@ -256,7 +285,7 @@ def request_storage_access_token(
         json={
             "cloud_provider": "GCP",
             "bucket": bucket,
-            "actions": actions,
+            "action": action,
         },
         headers=headers,
     )
@@ -270,6 +299,7 @@ def request_storage_access_token(
     print("access token", access_token)
 
     if access_token:
+        ACCESS_TOKEN_CACHE[(bucket, action)] = (access_token, expiration_timestamp)
         return access_token, expiration_timestamp, response.status_code
 
     # no access token; server error
@@ -281,7 +311,7 @@ def upload_blob(request, bucket: str):
     POST /upload/storage/v1/b/<bucket>/o
     """
     access_token, expiration_timestamp, req_status = request_storage_access_token(
-        bucket, ["OVERWRITE_FALLBACK_UPLOAD"]
+        bucket, "OVERWRITE_FALLBACK_UPLOAD"
     )
     if access_token is None or expiration_timestamp is None:
         if 400 <= req_status < 500:
@@ -290,8 +320,10 @@ def upload_blob(request, bucket: str):
         return Response("Error creating authorization", 500)
 
     # check expiration timestamp
-    expiration_datetime = datetime.fromisoformat(expiration_timestamp)
-    if datetime.now() > expiration_datetime:
+    expiration_datetime = datetime.fromisoformat(expiration_timestamp).astimezone(
+        timezone.utc
+    )
+    if datetime.now(timezone.utc) > expiration_datetime:
         return Response("Expired credentials", 401)
 
     # attach access token
@@ -316,7 +348,9 @@ def download_blob(request, bucket: str, file: str):
     """
     GET /download/storage/v1/b/<bucket>/o/<file:path>
     """
-    access_token, expiration_timestamp, req_status = request_storage_access_token(bucket, ["READ"])
+    access_token, expiration_timestamp, req_status = request_storage_access_token(
+        bucket, "READ"
+    )
     if access_token is None or expiration_timestamp is None:
         if 400 <= req_status < 500:
             # auth error
@@ -324,8 +358,10 @@ def download_blob(request, bucket: str, file: str):
         return Response("Error creating authorization", 500)
 
     # check expiration timestamp
-    expiration_datetime = datetime.fromisoformat(expiration_timestamp)
-    if datetime.now() > expiration_datetime:
+    expiration_datetime = datetime.fromisoformat(expiration_timestamp).astimezone(
+        timezone.utc
+    )
+    if datetime.now(timezone.utc) > expiration_datetime:
         return Response("Expired credentials", 401)
 
     # attach access token

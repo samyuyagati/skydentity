@@ -1,5 +1,3 @@
-import secrets
-import string
 from typing import List, Tuple
 
 import firebase_admin
@@ -83,7 +81,7 @@ class GCPStoragePolicyManager(PolicyManager):
     def create_timed_service_account(
         self,
         bucket: str,
-        request_actions: List[StoragePolicyAction],
+        request_action: StoragePolicyAction,
     ) -> Tuple[str, str]:
         """
         Creates a service account with write access to the specified bucket.
@@ -97,32 +95,30 @@ class GCPStoragePolicyManager(PolicyManager):
         print("project id", project_id)
 
         gcp_storage_account_manager = GCPStorageServiceAccountManager(
-            credentials_path=self._credentials_path
-        )
-
-        # Create random service account name from a random 64 bit value
-        account_name = secrets.choice(string.ascii_letters) + secrets.token_hex(8)
-        print("account name", account_name)
-
-        # Create service account
-        gcp_storage_account_manager.create_service_account(
+            credentials_path=self._credentials_path,
             project_id=project_id,
-            service_account_name=account_name,
         )
-        print("created service account")
 
-        # Add roles to service account
-        expiration_timestamp = gcp_storage_account_manager.add_roles_to_service_account(
-            project_id=project_id,
-            bucket=bucket,
-            request_actions=request_actions,
-            service_account_name=account_name,
+        service_account_email, expiration_timestamp = (
+            gcp_storage_account_manager.rotate_service_account(bucket, request_action)
         )
-        print("added roles to service account")
 
         access_token = gcp_storage_account_manager.get_access_token(
-            project_id=project_id,
-            service_account_name=account_name,
+            service_account_email=service_account_email,
         )
 
         return access_token, expiration_timestamp
+
+    def init_service_accounts(
+        self, buckets: List[str], actions: List[StoragePolicyAction]
+    ):
+        if len(buckets) == 0 or len(actions) == 0:
+            # no service accounts to initialize; no buckets allowed
+            return
+
+        project_id = self.get_project_info_from_bucket_name(buckets[0])
+
+        gcp_storage_account_manager = GCPStorageServiceAccountManager(
+            credentials_path=self._credentials_path, project_id=project_id
+        )
+        gcp_storage_account_manager.init_service_accounts(buckets, actions)

@@ -44,6 +44,7 @@ class CloudProvider(Enum):
 @dataclass
 class Authorization:
     """Parsed storage auth policy"""
+
     cloud_provider: CloudProvider
     project: str
     actions: List[StoragePolicyAction]
@@ -56,8 +57,8 @@ class AuthorizationRequest:
 
     cloud_provider: CloudProvider
     bucket: str
-    # translated actions from storage request actions
-    actions: List[StoragePolicyAction]
+    # translated action from storage request action
+    action: StoragePolicyAction
 
 
 class GCPStoragePolicy(AuthorizationPolicy):
@@ -118,7 +119,9 @@ class GCPStoragePolicy(AuthorizationPolicy):
 
             return self.authorization_from_dict(policy_dict)
 
-    def authorization_request_from_dict(self, policy_dict: dict) -> AuthorizationRequest:
+    def authorization_request_from_dict(
+        self, policy_dict: dict
+    ) -> AuthorizationRequest:
         """
         Parses a dictionary into an AuthorizationRequest.
 
@@ -134,53 +137,32 @@ class GCPStoragePolicy(AuthorizationPolicy):
 
         # request data should have a bucket name, project name, actions
         try:
-            cloud_provider = CloudProvider[policy_dict["cloud_provider"]]
+            cloud_provider = CloudProvider(policy_dict["cloud_provider"])
         except KeyError:
             cloud_provider = None
         bucket = policy_dict["bucket"]
-        request_actions = policy_dict["actions"]
 
-        combined_actions = set()
-        for request_action in request_actions:
-            try:
-                request_action_enum = StorageRequestAction[request_action]
-            except KeyError:
-                # unrecognized request action
-                print(f"Unrecognized requested action: {request_action}")
-                combined_actions.add(StoragePolicyAction.NONE)
-                continue
+        request_action = policy_dict["action"]
+        try:
+            request_action_enum = StorageRequestAction(request_action)
+        except ValueError:
+            print(f"Unrecognized requested action: {request_action}")
+            request_action_enum = None
 
-            if request_action_enum == StorageRequestAction.READ:
-                if StoragePolicyAction.READ not in self._policy.actions:
-                    print("[request check failed] action")
-                    combined_actions.add(StoragePolicyAction.NONE)
-                else:
-                    combined_actions.add(StoragePolicyAction.READ)
-            elif (
-                request_action_enum
-                == StorageRequestAction.OVERWRITE_FALLBACK_UPLOAD
-            ):
-                if StoragePolicyAction.OVERWRITE in self._policy.actions:
-                    combined_actions.add(StoragePolicyAction.OVERWRITE)
-                elif StoragePolicyAction.UPLOAD in self._policy.actions:
-                    combined_actions.add(StoragePolicyAction.UPLOAD)
-                else:
-                    # neither upload or overwrite allowed
-                    combined_actions.add(StoragePolicyAction.NONE)
-            else:
-                # unhandled request action
-                print(f"[request check failed] unknown action, {request_action}")
-
-        if StoragePolicyAction.NONE in combined_actions:
-            # if any failures occurred, replace all actions with only NONE
-            combined_actions = [StoragePolicyAction.NONE]
+        converted_action = StoragePolicyAction.NONE
+        if request_action_enum == StorageRequestAction.READ:
+            if StoragePolicyAction.READ in self._policy.actions:
+                converted_action = StoragePolicyAction.READ
+        elif request_action_enum == StorageRequestAction.OVERWRITE_FALLBACK_UPLOAD:
+            if StoragePolicyAction.OVERWRITE in self._policy.actions:
+                converted_action = StoragePolicyAction.OVERWRITE
+            elif StoragePolicyAction.UPLOAD in self._policy.actions:
+                converted_action = StoragePolicyAction.UPLOAD
         else:
-            combined_actions = list(combined_actions)
+            print(f"[request check failed] unknown action, {request_action}")
 
         auth_request = AuthorizationRequest(
-            cloud_provider=cloud_provider,
-            bucket=bucket,
-            actions=combined_actions,
+            cloud_provider=cloud_provider, bucket=bucket, action=converted_action
         )
 
         return auth_request
@@ -200,23 +182,27 @@ class GCPStoragePolicy(AuthorizationPolicy):
 
             # check requested cloud provider
             if auth_request.cloud_provider != self._policy.cloud_provider:
-                print(f"[request check failed] cloud provider; expected {self._policy.cloud_provider}, got {auth_request.cloud_provider}")
+                print(
+                    f"[request check failed] cloud provider; expected {self._policy.cloud_provider}, got {auth_request.cloud_provider}"
+                )
                 return (None, False)
 
             # check requested bucket
             if auth_request.bucket not in self._policy.buckets:
-                print(f"[request check failed] bucket; expected {self._policy.buckets}, got {auth_request.bucket}")
+                print(
+                    f"[request check failed] bucket; expected {self._policy.buckets}, got {auth_request.bucket}"
+                )
                 return (None, False)
 
             # check requested actions
-            if StoragePolicyAction.NONE in auth_request.actions:
-                print(f"[request check failed] action; expected subset of {self._policy.actions}, got {auth_request.actions}")
+            if (
+                auth_request.action is not StoragePolicyAction.NONE
+                and auth_request.action not in self._policy.actions
+            ):
+                print(
+                    f"[request check failed] action; expected subset of {self._policy.actions}, got {auth_request.action}"
+                )
                 return (None, False)
-            else:
-                for requested_action in auth_request.actions:
-                    if requested_action not in self._policy.actions:
-                        print(f"[request check failed] action; expected subset of {self._policy.actions}, got {auth_request.actions}")
-                        return (None, False)
 
             # passed all checks
             return (auth_request, True)
@@ -231,4 +217,3 @@ class GCPStoragePolicy(AuthorizationPolicy):
                     f"Request is unrecognized (gcp_storage_policy.py): {request.url}, {request.method}"
                 )
             return (None, False)
-

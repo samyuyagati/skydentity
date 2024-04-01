@@ -19,6 +19,9 @@ from skydentity.policies.checker.gcp_storage_policy import (
     GCPStoragePolicy,
 )
 from skydentity.policies.checker.policy_actions import PolicyAction
+from skydentity.policies.iam.gcp_storage_service_account_manager import (
+    GCPStorageServiceAccountManager,
+)
 
 from ...policies.checker.gcp_authorization_policy import GCPAuthorizationPolicy
 from ...utils.hash_util import hash_public_key
@@ -166,6 +169,12 @@ ROUTES: list[Route] = [
         path="/skydentity/cloud/<cloud>/create-storage-authorization",
         fields=["cloud"],
         view_func=lambda cloud: create_storage_authorization_route(cloud),
+    ),
+    Route(
+        methods=["POST"],
+        path="/skydentity/cloud/<cloud>/init-storage-authorization",
+        fields=["cloud"],
+        view_func=lambda cloud: init_storage_authorization_route(cloud),
     ),
 ]
 
@@ -523,7 +532,7 @@ def create_storage_authorization_route(cloud):
     if success and request_auth is not None:
         access_token, expiration_timestamp = (
             storage_policy_manager.create_timed_service_account(
-                request_auth.bucket, request_auth.actions
+                request_auth.bucket, request_auth.action
             )
         )
         return Response(
@@ -531,3 +540,33 @@ def create_storage_authorization_route(cloud):
             200,
         )
     return Response("Unauthorized", 401)
+
+
+def init_storage_authorization_route(cloud):
+    """
+    Initialize the initial cached service accounts.
+    """
+    print("Init storage authorization handler")
+    logger = get_logger()
+
+    storage_policy_manager = get_storage_policy_manager()
+    print_and_log(logger, "Initializing authorization")
+
+    # Get hash of public key
+    public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
+    # Compute hash of public key
+    public_key_hash = hash_public_key(public_key_bytes)
+    print_and_log(logger, f"Public key hash: {public_key_hash}")
+
+    # Retrieve authorization policy from firestore with public key hash
+    storage_policy_dict = storage_policy_manager.get_policy_dict(public_key_hash)
+    print("Storage policy dict:", storage_policy_dict)
+
+    # storage authorization policy
+    storage_policy = GCPStoragePolicy(policy_dict=storage_policy_dict)
+    allowed_actions = storage_policy._policy.actions
+    allowed_buckets = storage_policy._policy.buckets
+
+    storage_policy_manager.init_service_accounts(allowed_buckets, allowed_actions)
+
+    return Response(status=204)

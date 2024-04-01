@@ -1,6 +1,7 @@
 import argparse
 
 import firebase_admin
+import requests
 import yaml
 from firebase_admin import credentials, firestore
 
@@ -80,6 +81,19 @@ def main():
                 cloud_policy_manager = GCPStoragePolicyManager(
                     credentials_path=args.credentials
                 )
+
+            # send request to initialize storage service accounts
+            print("Initializing storage service accounts...")
+            response = requests.post(
+                "http://127.0.0.1:5000/skydentity/cloud/gcp/init-storage-authorization"
+            )
+            if not response.ok:
+                print(
+                    response.status_code,
+                    "Error initializing storage authorization:",
+                    response.content,
+                )
+
             print("Policy has been uploaded!")
             return
         else:
