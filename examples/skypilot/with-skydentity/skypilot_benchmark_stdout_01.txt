@@ -1,0 +1,34 @@
+Task from YAML spec: job.yaml
+I 03-30 23:43:16 optimizer.py:694] == Optimizer ==
+I 03-30 23:43:16 optimizer.py:717] [1mEstimated cost: [0m$0.0 / hour
+I 03-30 23:43:16 optimizer.py:717] 
+I 03-30 23:43:16 optimizer.py:840] [1mConsidered resources (1 node):[0m
+I 03-30 23:43:16 optimizer.py:910] --------------------------------------------------------------------------------------------
+I 03-30 23:43:16 optimizer.py:910]  CLOUD   INSTANCE        vCPUs   Mem(GB)   ACCELERATORS   REGION/ZONE   COST ($)   CHOSEN   
+I 03-30 23:43:16 optimizer.py:910] --------------------------------------------------------------------------------------------
+I 03-30 23:43:16 optimizer.py:910]  GCP     n1-standard-1   1       3.8       -              us-west1-b    0.05       [32m   ✔[0m     
+I 03-30 23:43:16 optimizer.py:910] --------------------------------------------------------------------------------------------
+I 03-30 23:43:16 optimizer.py:910] 
+Running task on cluster sky-c7d5-smart...
+I 03-30 23:43:16 cloud_vm_ray_backend.py:4501] [36mCreating a new cluster: 'sky-c7d5-smart' [1x GCP(n1-standard-1, image_id={'us-west1': 'projects/ubuntu-os-cloud/global/images/ubuntu-2204-jammy-v20240223'})].[0m
+I 03-30 23:43:16 cloud_vm_ray_backend.py:4501] Tip: to reuse an existing cluster, specify --cluster (-c). Run `sky status` to see existing clusters.
+I 03-30 23:43:17 cloud_vm_ray_backend.py:1473] To view detailed progress: [1mtail -n100 -f /home/smart/sky_logs/sky-2024-03-30-23-43-14-211809/provision.log[0m
+I 03-30 23:43:19 cloud_vm_ray_backend.py:1911] [1mLaunching on GCP us-west1[0m (us-west1-b)
+I 03-30 23:44:19 log_utils.py:45] [32mHead node is up.[0m
+I 03-30 23:46:07 cloud_vm_ray_backend.py:1716] [32mSuccessfully provisioned or found existing VM.[0m
+I 03-30 23:46:16 cloud_vm_ray_backend.py:3415] Job submitted with Job ID: [1m1[0m
+I 03-30 23:46:16 cloud_vm_ray_backend.py:3449] [36mJob ID: [1m1[0m
+I 03-30 23:46:16 cloud_vm_ray_backend.py:3449] To cancel the job:	[1msky cancel sky-c7d5-smart 1[0m
+I 03-30 23:46:16 cloud_vm_ray_backend.py:3449] To stream job logs:	[1msky logs sky-c7d5-smart 1[0m
+I 03-30 23:46:16 cloud_vm_ray_backend.py:3449] To view the job queue:	[1msky queue sky-c7d5-smart[0m
+I 03-30 23:46:16 cloud_vm_ray_backend.py:3588] 
+I 03-30 23:46:16 cloud_vm_ray_backend.py:3588] [36mCluster name: [1msky-c7d5-smart[0m
+I 03-30 23:46:16 cloud_vm_ray_backend.py:3588] To log into the head VM:	[1mssh sky-c7d5-smart[0m
+I 03-30 23:46:16 cloud_vm_ray_backend.py:3588] To submit a job:		[1msky exec sky-c7d5-smart yaml_file[0m
+I 03-30 23:46:16 cloud_vm_ray_backend.py:3588] To stop the cluster:	[1msky stop sky-c7d5-smart[0m
+I 03-30 23:46:16 cloud_vm_ray_backend.py:3588] To teardown the cluster:	[1msky down sky-c7d5-smart[0m
+Clusters
+NAME            LAUNCHED        RESOURCES                                                                  STATUS  AUTOSTOP  COMMAND                       
+sky-c7d5-smart  a few secs ago  1x GCP(n1-standard-1, image_id={'us-west1': 'projects/ubuntu-os-cloud/...  UP      -         sky launch --retry-until-...  
+
+[?25h

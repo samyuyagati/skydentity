@@ -27,7 +27,9 @@ def main():
 
     if formatted_cloud != 'gcp':
         raise Exception('Cloud not supported.')
-    
+
+    with open(args.public_key_path, 'r') as f:
+        print("Public key:", f.read()) 
     hashed_public_key = hash_public_key_from_file(args.public_key_path)
     print("Hashed public key: ", hashed_public_key)
 

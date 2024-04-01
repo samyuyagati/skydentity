@@ -33,7 +33,7 @@ def get_authorization_policy_manager() -> GCPAuthorizationPolicyManager:
         service_acct_cred_file, capability_enc_key_file
     )
 
-
+  
 def check_request_from_policy(public_key_bytes, request, request_id=None, caller_name=None) -> Tuple[bool, Union[str, None]]:
     """
     Check the request using the predefined policy manager.
@@ -87,5 +87,6 @@ def check_request_from_policy(public_key_bytes, request, request_id=None, caller
     
     # If no service account should be attached, return True
     print(">>> CHECK REQUEST: No service account should be attached")
+
     print_and_log(logger, build_time_logging_string(request_id, caller, "total (policy check passed, no SA attach)", start, time.time()))
     return (True, None)

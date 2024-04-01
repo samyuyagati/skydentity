@@ -47,7 +47,7 @@ if $CREATE_SECRETS; then
 fi
 
 # Update value of enc-key to the local_tokens value that test_authorizations uses
-gcloud secrets versions add enc-key --data-file=local_tokens/capability_enc.key
+gcloud secrets versions add enc-key --data-file=../local_tokens/capability_enc.key
 
 # Set region
 gcloud config set run/region us-west1
