@@ -48,7 +48,7 @@ def create_resource_group(resource_group_name, subscription_id, location="westus
         vnet_name,
         {
             "location": location,
-            "address_space": {"address_prefixes": ["10.0.0.0/16"]},
+            "address_space": {"address_prefixes": ["10.143.0.0/16"]},
         },
     ).result()
 
@@ -82,7 +82,7 @@ def create_resource_group(resource_group_name, subscription_id, location="westus
         vnet_name,
         subnet_name,
         {
-            "address_prefix": "10.0.0.0/24",
+            "address_prefix": "10.143.0.0/16",
             "network_security_group": {"id": nsg.id},
          },
     ).result()
