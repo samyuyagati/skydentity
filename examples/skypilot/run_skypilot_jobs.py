@@ -1,13 +1,17 @@
+import time
+import os
 import argparse
 import os
 import subprocess
 import time
 
 parser = argparse.ArgumentParser(
-                    prog='RunSkyPilotJobs',
-                    description='Launches SkyPilot jobs')
+    prog="RunSkyPilotJobs", description="Launches SkyPilot jobs"
+)
 
-parser.add_argument('--num-jobs', type=int, default=40, help='Number of instances to launch')
+parser.add_argument(
+    "--num-jobs", type=int, default=40, help="Number of instances to launch"
+)
 args = parser.parse_args()
 
 job = """\
@@ -30,20 +34,24 @@ prefix = "skydentity-test"
 
 NUM_JOBS = args.num_jobs
 
+subprocesses: list[subprocess.Popen] = []
+fds = []
+
+start_time = time.perf_counter()
+
 for i in range(NUM_JOBS):
     with open("job.yaml", "w") as f:
         f.write(job.format(i=i))
 
     print(f"Launching job {i}")
+
+    out_fd = open(f"skypilot_benchmark_stdout_{i}.txt", "wb")
+    err_fd = open(f"skypilot_benchmark_stderr_{i}.txt", "wb")
+    fds.append(out_fd)
+    fds.append(err_fd)
+
     # Paper used subprocess.Run (fully sequential, waits for completion)
-    # The -d flag detaches, so the call will return after provisioning.
-    start = time.time()
-#    subprocess.run(
-#            f"CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE='http://127.0.0.1:5000/' sky launch {prefix}-{i} job.yaml",
-#        shell=True,
-#        check=True
-#    )
-    p = subprocess.Popen(
+    cur_subprocess = subprocess.Popen(
         [
             "time",
             "sky",
@@ -55,18 +63,25 @@ for i in range(NUM_JOBS):
             f"{prefix}-{i}",
             "job.yaml",
         ],
+        stdout=out_fd,
+        stderr=err_fd,
         env={
             **os.environ,
             "CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE": "http://127.0.0.1:5000/",
+            # "CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE": "https://compute.googleapis.com/",
         },
-        stdout=subprocess.PIPE
     )
-    (output, err) = p.communicate() 
-    p_status = p.wait()
-    
-    subprocess.run(
-            f"CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE='http://127.0.0.1:5000/' sky launch --retry-until-up -y -d -n {prefix}-{i} job.yaml",
-        shell=True,
-        check=True
-    )
-    print(f"Time to provision job {i}: {time.time() - start}")
+    subprocesses.append(cur_subprocess)
+
+# wait for all subprocesses to complete
+for proc in subprocesses:
+    proc.wait()
+
+end_time = time.perf_counter()
+
+# close all file descriptors
+for fd in fds:
+    fd.flush()
+    fd.close()
+
+print("TOTAL TIME (s):", end_time - start_time)
