@@ -69,7 +69,7 @@ elif [ "" != "$VM_PROXY" ]; then
 elif [[ $(gcloud run services list | grep "skyidproxy-service" | wc -l) -eq 0 ]]; then
     # serverless client proxy
     pushd $ROOT/gcp-client-proxy/serverless
-    ./deploy_setup.sh -p $PROJECT 
+    ./deploy_setup.sh -p "$PROJECT" 
     ./deploy.sh $PROJECT
     CLIENT_ADDRESS=$(gcloud run services list | grep "https://skyidproxy-service" | awk '{ print $4 }')
     CLIENT_ADDRESS="$CLIENT_ADDRESS/"
@@ -96,17 +96,17 @@ sleep 10
 #    to Firestore using upload_policy.py with the --authorization flag
 pushd $ROOT/skydentity/scripts
 echo "Uploading $YAML_DIR/auth_policy_example.yaml to Firestore..."
-python upload_policy.py --policy $YAML_DIR/auth_policy_example.yaml --cloud gcp --public-key $PUBLIC_KEY_PATH --credentials $CREDS --authorization
+time python upload_policy.py --policy $YAML_DIR/auth_policy_example.yaml --cloud gcp --public-key $PUBLIC_KEY_PATH --credentials $CREDS --authorization
 
 # 1. Run send_auth_request.py. In skydentity/skydentity/policies/config/skypilot_eval_with_auth.yaml, 
 # modify the email address of the service account to match the created one.
 echo "Sending auth request..."
-python send_auth_request.py --resource_yaml_input="$YAML_DIR/skypilot.yaml" \
+time python send_auth_request.py --resource_yaml_input="$YAML_DIR/skypilot.yaml" \
     --resource_yaml_output="$YAML_DIR/skypilot_eval_with_auth.yaml"\
     --auth_request_yaml="$YAML_DIR/auth_request_example.yaml" \
     --capability_enc_key="$ROOT/gcp-client-proxy/local_tokens/capability_enc.key"
 
 # 2. Upload skypilot_eval_with_auth.yaml to Firestore using upload_policy.py
 echo "Uploading skypilot_eval_with_auth.yaml to Firestore..."
-python upload_policy.py --policy $YAML_DIR/skypilot_eval_with_auth.yaml --cloud gcp --public-key $PUBLIC_KEY_PATH --credentials $CREDS
+time python upload_policy.py --policy $YAML_DIR/skypilot_eval_with_auth.yaml --cloud gcp --public-key $PUBLIC_KEY_PATH --credentials $CREDS
 popd

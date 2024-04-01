@@ -192,17 +192,8 @@ async def delete_instance(project_id: str, zone: str, machine_name: str) -> None
 def get_end_time(task):
     print(f"End time of {task.get_name()} from callback: {time.time()}")
 
-async def future_create_instance(i):
+async def future_create_instance(i, disks):
     print(f"Sending request {i+1} of {args.num_requests} to Sky Identity... (start time: {time.time()})")
-    # Configure disk
-    start = time.time()
-    newest_debian = get_image_from_family(project="debian-cloud", family="debian-10")
-    disk_type = f"zones/{args.zone}/diskTypes/pd-standard"
-    disks = [
-        disk_from_image(disk_type, 10, True, newest_debian.self_link, True)
-    ]
-    print(f"Time to get image {i}: ", time.time() - start)
-
     # Creating instance
     operation = create_instance(args.project, args.zone, f"gcp-clilib-{i}", disks)
     task = asyncio.create_task(operation)
@@ -211,8 +202,20 @@ async def future_create_instance(i):
     print(f"{task.get_name()} corresponds to index {i+1}")
 
 async def send_create_instance_requests_concurrently():
+    # Configure disks
+    all_disks = []
+    for i in range(args.num_requests):
+        start = time.time()
+        newest_debian = get_image_from_family(project="debian-cloud", family="debian-10")
+        disk_type = f"zones/{args.zone}/diskTypes/pd-standard"
+        all_disks.append([
+            disk_from_image(disk_type, 10, True, newest_debian.self_link, True)
+        ])
+        print(f"Time to get image {i}: ", time.time() - start)
+
+    # Send VM creation requests concurrently
     print(f"Sending {args.num_requests} requests to Sky Identity concurrently... (start time: {time.time()})")
-    task_futures = [asyncio.ensure_future(future_create_instance(i)) for i in range(args.num_requests)]
+    task_futures = [asyncio.ensure_future(future_create_instance(i, all_disks[i])) for i in range(args.num_requests)]
     
     # Wait for all tasks to complete
     for f in asyncio.as_completed(task_futures):
