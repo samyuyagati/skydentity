@@ -83,6 +83,7 @@ echo "Client proxy address: $CLIENT_ADDRESS"
 
 # Start server proxy
 pushd $ROOT/gcp-server-proxy
+echo "Private key path: $SECRET_KEY_PATH"
 SKYID_CLIENT_ADDRESS=$CLIENT_ADDRESS PRIVATE_KEY_PATH=$SECRET_KEY_PATH ./run_proxy_http.sh &
 SERVER_PROCESS=$!
 echo "Server proxy process: $SERVER_PROCESS"

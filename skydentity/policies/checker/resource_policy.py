@@ -1,3 +1,5 @@
+import logging as py_logging
+
 from abc import ABC
 from typing import Dict, List, Tuple
 from flask import Request
@@ -36,6 +38,11 @@ class VMPolicy(ResourcePolicy, ABC):
     General resource policy for VMs
     """
 
+    def __init__(self) -> None:
+        super().__init__()
+        py_logging.basicConfig(filename='resource_policy.log', level=py_logging.INFO)
+        self._pylogger = py_logging.getLogger("ResourcePolicy")
+
     def check_request(self, request: Request) -> bool:
         """
         Enforces the policy on a request.
@@ -47,31 +54,31 @@ class VMPolicy(ResourcePolicy, ABC):
 
         # First check the action
         if not standardized_request["actions"].is_allowed_be_performed(standardized_vm_policy["actions"]):
-            print("Action not allowed")
+            self._pylogger.debug("Action not allowed")
             return False
         
         # Then check the regions
         for region in standardized_request["regions"]:
             if region not in standardized_vm_policy["regions"]:
-                print("Region not allowed")
+                self._pylogger.debug("Region not allowed")
                 return False
 
         # Then check the instance type
         for instance_type in standardized_request["instance_type"]:
             if instance_type not in standardized_vm_policy["instance_type"]:
-                print("Instance type not allowed")
+                self._pylogger.debug("Instance type not allowed")
                 return False
 
         # Then check the allowed images
         for image in standardized_request["allowed_images"]:
             if image not in standardized_vm_policy["allowed_images"]:
-                print("Image not allowed")
+                self._pylogger.debug("Image not allowed")
                 return False
         
         # Then check the startup script
         if standardized_request["startup_script"] is not None and \
                 not standardized_request["startup_script"] in standardized_vm_policy["startup_scripts"]:
-            print("Startup script not allowed")
+            self._pylogger.debug("Startup script not allowed")
             return False
             
         return True
@@ -113,6 +120,11 @@ class VMPolicy(ResourcePolicy, ABC):
         raise NotImplementedError
 
 class UnrecognizedResourcePolicy(ResourcePolicy):
+    def __init__(self) -> None:
+        super().__init__()
+        py_logging.basicConfig(filename='resource_policy.log', level=py_logging.INFO)
+        self._pylogger = py_logging.getLogger("ResourcePolicy")
+
     def check_request(self, request: Request) -> bool:
         """
         Enforces the policy on a request.
@@ -123,7 +135,7 @@ class UnrecognizedResourcePolicy(ResourcePolicy):
         :param request: The request to enforce the policy on.
         :return: False.
         """
-        print(f"Request is unrecognized: {request.url}")
+        self._pylogger.debug(f"Request is unrecognized: {request.url}")
         return False
 
     def to_dict(self) -> Dict:

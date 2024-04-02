@@ -5,6 +5,7 @@ Forwarding for SkyPilot requests.
 import base64
 import datetime
 import json
+import logging as py_logging
 import os
 from collections import namedtuple
 
@@ -15,6 +16,8 @@ from Crypto.Signature import pkcs1_15
 from flask import Flask, Response, request
 
 from .logging import get_logger, print_and_log
+py_logging.basicConfig(filename='redirector_skypilot_forward.log', level=py_logging.INFO)
+pylogger = py_logging.getLogger(__name__)
 
 SkypilotRoute = namedtuple(
     "SkypilotRoute",
@@ -116,17 +119,12 @@ def get_headers_with_signature(request):
 
     with open(PRIVATE_KEY_PATH, "rb") as key_file:
         contents = key_file.read()
-        print("Private key:", contents, flush=True)
         private_key = RSA.import_key(contents)
-
-    print("server-proxy get_headers_with_signature PRIVATE KEY PATH:", PRIVATE_KEY_PATH, flush=True)
 
     # assume set, predetermined/agreed upon tolerance on client proxy/receiving end
     # use utc for consistency if server runs in cloud in different region
     timestamp = datetime.datetime.now(datetime.timezone.utc).timestamp()
     public_key_string = private_key.public_key().export_key()
-
-    print("server-proxy get_headers_with_signature PUBLIC KEY STRING:", public_key_string, flush=True)
 
     # message = f"{str(request.method)}-{timestamp}-{public_key_string}"
     message = f"{str(request.method)}-{timestamp}-{public_key_string}"
@@ -155,17 +153,17 @@ def generic_forward_request(request, log_dict=None):
     Forward a generic request to google APIs.
     """
     logger = get_logger()
-    print(log_dict, flush=True)
+    pylogger.debug(f"{log_dict}")
     if log_dict is not None:
         log_str = f"PATH: {request.full_path}\n"
         for key, val in log_dict.items():
             log_str += f"\t{key}: {val}\n"
-        print(log_str, flush=True)
+        pylogger.debug(f"{log_str}")
         print_and_log(logger, log_str.strip())
 
     new_url = get_new_url(request)
     new_headers = get_headers_with_signature(request)
-    print(new_headers, flush=True)
+    # pylogger.debug(f"{new_headers}")
 
     # Only modifies the body to attach the service account capability
     new_json = None
@@ -183,7 +181,7 @@ def generic_forward_request(request, log_dict=None):
             with open(capability_path, "r") as f:
                 new_json["serviceAccounts"] = [json.load(f)]
 
-            print("JSON with service acct capability:", new_json, flush=True)
+            pylogger.debug(f"JSON with service acct capability: {new_json}")
 
     print("Forwarding to client...", flush=True)
 
@@ -272,7 +270,7 @@ def get_client_proxy_endpoint(request):
     Retrieve the correct client proxy endpoint from the client identifier.
     """
     # user_agent = request.headers.get("User-Agent")
-    # print(f"USER AGENT: {user_agent}")
+    # logger.debug(f"USER AGENT: {user_agent}")
 
     # TODO: replace with actual fetch
     return os.environ.get("SKYID_CLIENT_ADDRESS", "https://127.0.0.1:5001/")

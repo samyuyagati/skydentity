@@ -49,7 +49,10 @@ def main():
     
     # Authorization policy
     creds = credentials.Certificate(args.credentials)
-    app = firebase_admin.initialize_app(creds)
+    try:
+        app = firebase_admin.initialize_app(creds)
+    except ValueError:
+        app = firebase_admin.get_app('[DEFAULT]')
     db = firestore.client()
     with open(args.policy, 'r') as f:
         policy_dict = yaml.load(f, Loader=yaml.SafeLoader)

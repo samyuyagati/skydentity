@@ -5,7 +5,7 @@ resources:
   image_id: projects/ubuntu-os-cloud/global/images/ubuntu-2204-jammy-v20240223
 
 run: |
-  secs=$(python -S -c 'import random; random.seed(0); print(random.randint(20*60, 30*60))')
+  secs=$(python -S -c 'import random; random.seed(39); print(random.randint(20*60, 30*60))')
 
   echo Job duration $secs seconds.
   sleep $secs

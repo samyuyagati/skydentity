@@ -1,7 +1,7 @@
 attached_authorizations:
 - gcp:
   - authorization:
-    - X6f5a9503d7ae941e@sky-identity.iam.gserviceaccount.com
+    - e92833502fad8bcdf@sky-identity.iam.gserviceaccount.com
 reads:
   gcp:
     firewalls: true
@@ -31,4 +31,5 @@ virtual_machine:
     - n1-standard-2
   regions:
   - gcp:
+    - us-west1
     - us-west1-b
