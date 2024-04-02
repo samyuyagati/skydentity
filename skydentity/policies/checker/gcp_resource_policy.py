@@ -561,9 +561,9 @@ class GCPReadPolicy(ResourcePolicy):
         raise NotImplemented("Use `check_read_request` instead.")
 
     def check_read_request(self, request: Request, *aux_info: str) -> bool:
-        # TODO: allow any non-GET request through?
+        # deny any non-GET request
         if request.method != "GET":
-            return True
+            return False
 
         # check for blanket ALLOW/DENY policy
         if self._policy_override is not None:
@@ -610,8 +610,8 @@ class GCPReadPolicy(ResourcePolicy):
         elif read_type == "operations":
             return self._policy["operations"]
 
-        # TODO: allow request if unrecognized?
-        return True
+        # deny request if unrecognized
+        return False
 
     def _get_request_info(self, request: Request, read_type: str):
         """Parse path to get the appropriate request information"""
