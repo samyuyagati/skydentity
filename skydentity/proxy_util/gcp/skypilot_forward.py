@@ -24,7 +24,7 @@ from .credentials import (
     get_service_account_auth_token,
     get_service_account_path,
 )
-from .logging import get_logger, print_and_log
+from .logging import LogLevel, get_logger, print_and_log
 from .policy_check import check_request_from_policy, get_authorization_policy_manager
 
 # global constants
@@ -150,7 +150,7 @@ def generic_forward_request(request, log_dict=None):
     start = time.time()
     logger = get_logger()
 
-    request_name = request.method.upper() + str(random.randint(0, 1000))
+    request_name = request.method.upper() + str(random.randint(0, 1000)) + request.path
     caller = "skypilot_forward:generic_forward_request"
 
     if log_dict is not None:
@@ -159,15 +159,21 @@ def generic_forward_request(request, log_dict=None):
             log_str += f"\t{key}: {val}\n"
         print_and_log(logger, log_str.strip())
     
-    print_and_log(logger, build_time_logging_string(request_name, caller, "setup_logs", start, time.time()))
+    print_and_log(logger, 
+                  build_time_logging_string(request_name, caller, "setup_logs", start, time.time()),
+                  severity=LogLevel.INFO)
 
     # Verify the request signature
     start_verify_request_signature = time.time()
-    if not verify_request_signature(request):
+    if not verify_request_signature(request, logger, request_name, caller):
         print_and_log(logger, "Request is unauthorized (signature verification failed)")
-        print_and_log(logger, build_time_logging_string(request_name, caller, "total (signature verif. failed)", start, time.time()))
+        print_and_log(logger,
+                      build_time_logging_string(request_name, caller, "total (signature verif. failed)", start, time.time()),
+                      severity=LogLevel.INFO)
         return Response("Unauthorized", 401)
-    print_and_log(logger, build_time_logging_string(request_name, caller, "verify_request_signature", start_verify_request_signature, time.time()))
+    print_and_log(logger,
+                  build_time_logging_string(request_name, caller, "verify_request_signature", start_verify_request_signature, time.time()),
+                  severity=LogLevel.INFO)
 
     # Check the request against the policy for this workload orchestrator
     start_check_request_from_policy = time.time()
@@ -175,19 +181,27 @@ def generic_forward_request(request, log_dict=None):
     authorized, service_account_id = check_request_from_policy(
         public_key_bytes, request, request_id=request_name, caller_name=caller
     )
-    print_and_log(logger, build_time_logging_string(request_name, caller, "check_request_from_policy", start_check_request_from_policy, time.time()))
+    print_and_log(logger,
+                  build_time_logging_string(request_name, caller, "check_request_from_policy", start_check_request_from_policy, time.time()),
+                  severity=LogLevel.INFO)
     if not authorized:
         print_and_log(logger, "Request is unauthorized (policy check failed)")
-        print_and_log(logger, build_time_logging_string(request_name, caller, "total (policy check failed)", start, time.time()))
+        print_and_log(logger,
+                      build_time_logging_string(request_name, caller, "total (policy check failed)", start, time.time()),
+                      severity=LogLevel.INFO)
         return Response("Unauthorized", 401)
 
     # Get new endpoint and new headers
     start_get_new_url = time.time()
     new_url = get_new_url(request)
-    print_and_log(logger, build_time_logging_string(request_name, caller, "get_new_url", start_get_new_url, time.time()))
+    print_and_log(logger, 
+                  build_time_logging_string(request_name, caller, "get_new_url", start_get_new_url, time.time()),
+                  severity=LogLevel.INFO)
     start_get_new_headers = time.time()
     new_headers = get_headers_with_auth(request)
-    print_and_log(logger, build_time_logging_string(request_name, caller, "get_headers_with_auth", start_get_new_headers, time.time()))
+    print_and_log(logger, 
+                  build_time_logging_string(request_name, caller, "get_headers_with_auth", start_get_new_headers, time.time()),
+                  severity=LogLevel.INFO)
 
     # If a valid service account was provided, attach it to the request
     new_json = None
@@ -197,13 +211,19 @@ def generic_forward_request(request, log_dict=None):
         if service_account_id:
             new_json = get_json_with_service_account(request, service_account_id)
             print_and_log(logger, f"Json with service account: {new_json}")
-        print_and_log(logger, build_time_logging_string(request_name, caller, "get_json_with_service_account", start_get_json_with_sa, time.time()))
+        print_and_log(logger, 
+                      build_time_logging_string(request_name, caller, "get_json_with_service_account", start_get_json_with_sa, time.time()),
+                      severity=LogLevel.INFO)
 
     # Send the request to the GCP endpoint
     start_send_gcp_request = time.time()
     gcp_response = send_gcp_request(request, new_headers, new_url, new_json=new_json)
-    print_and_log(logger, build_time_logging_string(request_name, caller, "send_gcp_request", start_send_gcp_request, time.time()))
-    print_and_log(logger, build_time_logging_string(request_name, caller, "total", start, time.time()))
+    print_and_log(logger,
+                  build_time_logging_string(request_name, caller, "send_gcp_request", start_send_gcp_request, time.time()),
+                  severity=LogLevel.INFO)
+    print_and_log(logger, 
+                  build_time_logging_string(request_name, caller, "total", start, time.time()),
+                  severity=LogLevel.INFO)
     return Response(gcp_response.content, gcp_response.status_code, new_headers)
 
 
@@ -393,11 +413,10 @@ def send_gcp_request(request, new_headers, new_url, new_json=None):
 
 
 def create_authorization_route(cloud):
-    print("Create authorization handler")
     logger = get_logger()
+    print_and_log(logger, "Create authorization handler")
     authorization_policy_manager = get_authorization_policy_manager()
     print_and_log(logger, f"Creating authorization (json: {request.json})")
-    print(f"Creating authorization (json: {request.json})")
 
     # Get hash of public key
     public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
@@ -407,7 +426,7 @@ def create_authorization_route(cloud):
 
     # Retrieve authorization policy from firestore with public key hash
     request_auth_dict = authorization_policy_manager.get_policy_dict(public_key_hash)
-    print("Request auth dict:", request_auth_dict)
+    print_and_log("Request auth dict:", request_auth_dict)
 
     # Check request against authorization policy
     authorization_policy = GCPAuthorizationPolicy(policy_dict=request_auth_dict)
