@@ -295,7 +295,6 @@ def get_json_with_managed_identity(request, managed_identity_id):
                 vm_resource = resource
                 break
         vm_resource["identity"] = managed_identity_dict
-        import pdb; pdb.set_trace()
     else:
         new_dict["identity"] = managed_identity_dict
     del new_dict["managedIdentities"]
