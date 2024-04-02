@@ -196,8 +196,8 @@ class GCPStoragePolicy(AuthorizationPolicy):
 
             # check requested actions
             if (
-                auth_request.action is not StoragePolicyAction.NONE
-                and auth_request.action not in self._policy.actions
+                auth_request.action == StoragePolicyAction.NONE
+                or auth_request.action not in self._policy.actions
             ):
                 print(
                     f"[request check failed] action; expected subset of {self._policy.actions}, got {auth_request.action}"
