@@ -1,4 +1,5 @@
 import argparse
+import logging as py_logging
 import os
 from google.oauth2 import service_account
 import googleapiclient.discovery
@@ -13,7 +14,9 @@ class GCPServiceAccountManager:
         """
         :param credentials_path: path to service account json
         """
-        print("Credentials path:", credentials_path)
+        py_logging.basicConfig(filename='gcp_service_account_manager.log', level=py_logging.INFO)
+        self._pylogger = py_logging.getLogger("GCPServiceAccountManager")
+        self._pylogger.debug(f"Credentials path: {credentials_path}")
         self._service_accounts = {}
         self._credentials = service_account.Credentials.from_service_account_file(
             filename=credentials_path,
@@ -67,7 +70,7 @@ class GCPServiceAccountManager:
         service_email = service_account["email"]
 
         # Get current policy to modify and add roles
-        print("Project:", auth.project)
+        self._pylogger.debug(f"Project: {auth.project}")
         iam_policy = self._cloudresourcemanager_service.projects().getIamPolicy(
                 resource='projects/' + auth.project,
                 body={

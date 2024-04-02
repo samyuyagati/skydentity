@@ -11,7 +11,7 @@ ROOT=$(dirname $(dirname $(dirname $(pwd))))
 echo "Root: $ROOT"
 # Setup authorizations and start servers
 echo "Setting up authorizations..."
-./start_proxies_and_setup_auth.sh -l -r $ROOT \
+./start_proxies_and_setup_auth.sh -r $ROOT \
                          -p "sky-identity" \
                          -k $ROOT/skydentity/examples/skypilot/keys/public.pem \
                          -s $ROOT/skydentity/examples/skypilot/keys/private.pem \

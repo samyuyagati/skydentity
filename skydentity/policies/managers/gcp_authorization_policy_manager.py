@@ -1,4 +1,5 @@
 import firebase_admin
+import logging as py_logging
 import secrets
 import string
 
@@ -21,8 +22,13 @@ class GCPAuthorizationPolicyManager(PolicyManager):
         Initializes the GCP policy manager.
         :param credentials_path: The path to the credentials file.
         """
+        py_logging.basicConfig(filename='gcp_authorization_policy_manager.log', level=py_logging.INFO)
+        self._pylogger = py_logging.getLogger("GCPAuthorizationPolicyManager")
         self._credentials_path = credentials_path
-        self._app = firebase_admin.initialize_app(credentials.Certificate(credentials_path), name='authorization_policy_manager')
+        try:
+            self._app = firebase_admin.initialize_app(credentials.Certificate(credentials_path), name='authorization_policy_manager')
+        except ValueError:
+            self._app = firebase_admin.get_app('authorization_policy_manager')
         self._db = firestore.client(self._app)
         self._firestore_policy_collection = firestore_policy_collection
         with open(capability_enc_path, 'rb') as f:
@@ -34,8 +40,8 @@ class GCPAuthorizationPolicyManager(PolicyManager):
         :param public_key_hash: The hash of the public key tied to the policy.
         :return: The policy.
         """
-        print(self._firestore_policy_collection)
-        print(public_key_hash)
+        self._pylogger.debug(f"{self._firestore_policy_collection}")
+        self._pylogger.debug(f"{public_key_hash}")
         return self._db \
             .collection(self._firestore_policy_collection) \
             .document(public_key_hash) \
@@ -68,7 +74,7 @@ class GCPAuthorizationPolicyManager(PolicyManager):
             candidate_service_account_id = cipher.decrypt_and_verify(ciphertext, tag)
             return (candidate_service_account_id.decode('utf-8'), True)
         except ValueError:
-            print("Invalid capability: could not decrypt or verify")
+            self._pylogger.debug("Invalid capability: could not decrypt or verify")
             return (None, False)
         
     def create_service_account_with_roles(self, authorization: GCPAuthorizationPolicy) -> str:
