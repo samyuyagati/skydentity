@@ -4,7 +4,7 @@ import string
 import subprocess
 from datetime import datetime, timedelta, timezone, tzinfo
 from functools import cached_property
-from typing import TYPE_CHECKING, List, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Callable, List, Optional, Tuple, cast
 
 from Crypto.Hash import HMAC
 from google.oauth2 import service_account
@@ -43,13 +43,18 @@ class GCPStorageServiceAccountManager:
     # service account permission expiration time in minutes
     _EXPIRATION_MINUTES = 15
 
-    def __init__(self, credentials_path: str, project_id: str) -> None:
+    def __init__(
+        self,
+        credentials_path: str,
+        project_id: str,
+        log_func: Optional[Callable] = None,
+    ) -> None:
         """
         :param credentials_path: path to service account json
         """
         self.project_id = project_id
+        self._log_func = log_func
 
-        self._service_accounts = {}
         self._credentials_path = credentials_path
         self._credentials = service_account.Credentials.from_service_account_file(
             filename=credentials_path,
@@ -63,6 +68,15 @@ class GCPStorageServiceAccountManager:
         self._storage_service = discovery.build(
             "storage", "v1", credentials=self._credentials
         )
+
+    def log(self, *args, **kwargs):
+        """
+        Wrapper for the log function; if it exists, logs using the log function, otherwise just prints.
+        """
+        if self._log_func is not None:
+            self._log_func(*args, **kwargs)
+        else:
+            print(*args)
 
     def generate_service_account_name(self):
         """
@@ -124,7 +138,7 @@ class GCPStorageServiceAccountManager:
                 _, backup = self.get_service_accounts_for_resource(bucket, action)
 
                 # only create if it doesn't exist already
-                if backup is None:
+                if len(backup) == 0:
                     self.create_service_account(bucket, action, backup=True)
 
     def create_service_account(
@@ -148,6 +162,11 @@ class GCPStorageServiceAccountManager:
         """
 
         service_account_name = self.generate_service_account_name()
+
+        self.log(
+            f"[{bucket}/{action.value}/{'backup' if backup else 'timed'}]"
+            f" Creating service account {service_account_name}..."
+        )
 
         # Check if service account exists (generally shouldn't happen)
         try:
@@ -183,36 +202,12 @@ class GCPStorageServiceAccountManager:
             service_account["email"], bucket, action, timed=add_timed
         )
 
-        print(
-            f"[{bucket}/{action.value}] Created service account",
-            service_account["email"],
-            "expires",
-            expiration_timestamp,
+        self.log(
+            f"[{bucket}/{action.value}/{'backup' if backup else 'timed'}]"
+            f" Created service account {service_account['email']};"
+            f" expires {expiration_timestamp}",
         )
         return service_account, expiration_timestamp
-
-    def _get_service_account(self, project_id: str, service_account_name: str):
-        service_account = None
-        if service_account_name in self._service_accounts:
-            service_account = self._service_accounts[service_account_name]
-        else:
-            # fetch service account
-            try:
-                service_account = (
-                    self._iam_service.projects()
-                    .serviceAccounts()
-                    .get(
-                        name=f"projects/{project_id}/serviceAccounts/{service_account_name}@{project_id}.iam.gserviceaccount.com"
-                    )
-                    .execute()
-                )
-                self._service_accounts[service_account_name] = service_account
-            except Exception as e:
-                raise ValueError(
-                    f"Service account {service_account_name} does not exist in project {project_id}"
-                ) from e
-
-        return service_account
 
     @cached_property
     def all_service_accounts(self) -> List[dict]:
@@ -221,7 +216,7 @@ class GCPStorageServiceAccountManager:
 
         Cached property; only computed once for the life of the instance.
         """
-        print("Listing all service accounts")
+        self.log("Listing all service accounts")
         all_service_accounts = []
 
         list_request = (
@@ -242,18 +237,20 @@ class GCPStorageServiceAccountManager:
                     previous_request=list_request, previous_response=list_response
                 )
             )
-        print("Done listing all service accounts;", len(all_service_accounts), "total")
+        self.log(
+            f"Done listing all service accounts; {len(all_service_accounts)} total"
+        )
 
         return all_service_accounts
 
     def get_service_accounts_for_resource(
         self, bucket: str, action: StoragePolicyAction
-    ) -> Tuple[Optional[dict], Optional[dict]]:
+    ) -> Tuple[List[dict], List[dict]]:
         """
         Check stored service accounts to match the bucket and action.
 
-        Returns a tuple (current, backup) of service accounts;
-        if any account does not exist, the corresponding element is replaced by None.
+        Returns a tuple (current_list, backup_list) of service accounts;
+        the corresponding lists will be empty if no service accounts match.
         """
 
         current_accounts = []
@@ -278,35 +275,8 @@ class GCPStorageServiceAccountManager:
             if backup_match is not None:
                 backup_accounts.append(service_account)
 
-        current_account = None
-        backup_account = None
-
-        if len(current_accounts) > 1:
-            # in ideal scenario, there is only <= 1 service account;
-            # otherwise, delete the accounts that have expired.
-            current_account = self.delete_expired_accounts(
-                current_accounts, bucket, action
-            )
-        elif len(current_accounts) == 1:
-            current_account = current_accounts[0]
-
-        if len(backup_accounts) >= 1:
-            # if there is > 1 backup account, then just return the first one arbitrarily;
-            # none of them have any expiration, so it doesn't matter which we use
-            backup_account = backup_accounts[0]
-
         # return accounts
-        return current_account, backup_account
-
-    def delete_expired_accounts(
-        self, current_accounts: List[dict], bucket: str, action: StoragePolicyAction
-    ) -> Optional[dict]:
-        """
-        Delete all expired accounts, returning the newest account.
-        If no valid accounts, then returns None.
-        """
-        # TODO
-        return None
+        return current_accounts, backup_accounts
 
     def add_roles_to_service_account(
         self,
@@ -544,18 +514,25 @@ class GCPStorageServiceAccountManager:
 
         Returns the new service account email along with the expiration timestamp.
         """
-        current, backup = self.get_service_accounts_for_resource(bucket, action)
+        current_list, backup_list = self.get_service_accounts_for_resource(
+            bucket, action
+        )
 
-        if current is not None:
-            # delete the current service account
-            current_email = current["email"]
-            self._iam_service.projects().serviceAccounts().delete(
-                name=f"projects/{self.project_id}/serviceAccounts/{current_email}"
-            ).execute()
+        if len(current_list) > 0:
+            # delete the current service accounts
+            for current in current_list:
+                current_email = current["email"]
+                self.log(f"[{bucket}/{action.value}] Deleting {current_email}")
+                self._iam_service.projects().serviceAccounts().delete(
+                    name=f"projects/{self.project_id}/serviceAccounts/{current_email}"
+                ).execute()
 
-        if backup is not None:
+        if len(backup_list) > 0:
+            # if more than one exists, arbitrarliy choose the first
+            backup = backup_list[0]
             # update the backup account to add an expiration
             backup_email = backup["email"]
+            self.log(f"[{bucket}/{action.value}] Adding expiration to {backup_email}")
             expiration_timestamp = self.add_expiration_to_service_account(
                 backup_email, bucket, action
             )

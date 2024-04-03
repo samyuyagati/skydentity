@@ -41,7 +41,9 @@ def get_authorization_policy_manager() -> GCPAuthorizationPolicyManager:
 @cache
 def get_storage_policy_manager() -> GCPStoragePolicyManager:
     service_acct_cred_file = get_service_account_path()
-    return GCPStoragePolicyManager(service_acct_cred_file)
+    logger = get_logger()
+    log_func = lambda *args, **kwargs: print_and_log(logger, *args, **kwargs)
+    return GCPStoragePolicyManager(service_acct_cred_file, log_func=log_func)
 
 
 def check_request_from_policy(

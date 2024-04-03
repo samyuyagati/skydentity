@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -17,6 +17,7 @@ class GCPStoragePolicyManager(PolicyManager):
         self,
         credentials_path: str,
         firestore_policy_collection: str = "storage_policies",
+        log_func: Optional[Callable] = None,
     ):
         """
         Initializes the GCP policy manager for storage policies.
@@ -29,6 +30,7 @@ class GCPStoragePolicyManager(PolicyManager):
             filename=credentials_path,
             scopes=["https://www.googleapis.com/auth/cloud-platform"],
         )
+        self._log_func = log_func
 
         # firestore
         self._app = firebase_admin.initialize_app(
@@ -46,14 +48,22 @@ class GCPStoragePolicyManager(PolicyManager):
             "cloudresourcemanager", "v3", credentials=self._credentials
         )
 
+    def log(self, *args, **kwargs):
+        """
+        Wrapper for the log function; if it exists, logs using the log function, otherwise just prints.
+        """
+        if self._log_func is not None:
+            self._log_func(*args, **kwargs)
+        else:
+            print(*args)
+
     def get_policy_dict(self, public_key_hash) -> dict:
         """
         Gets a policy from the cloud vendor.
         :param public_key_hash: The hash of the public key tied to the policy.
         :return: The policy.
         """
-        print(self._firestore_policy_collection)
-        print(public_key_hash)
+        self.log(f"public key hash {public_key_hash}")
         return (
             self._db.collection(self._firestore_policy_collection)
             .document(public_key_hash)
@@ -92,11 +102,12 @@ class GCPStoragePolicyManager(PolicyManager):
         """
 
         project_id = self.get_project_info_from_bucket_name(bucket)
-        print("project id", project_id)
+        self.log(f"project id {project_id}")
 
         gcp_storage_account_manager = GCPStorageServiceAccountManager(
             credentials_path=self._credentials_path,
             project_id=project_id,
+            log_func=self._log_func,
         )
 
         service_account_email, expiration_timestamp = (
@@ -119,6 +130,8 @@ class GCPStoragePolicyManager(PolicyManager):
         project_id = self.get_project_info_from_bucket_name(buckets[0])
 
         gcp_storage_account_manager = GCPStorageServiceAccountManager(
-            credentials_path=self._credentials_path, project_id=project_id
+            credentials_path=self._credentials_path,
+            project_id=project_id,
+            log_func=self._log_func,
         )
         gcp_storage_account_manager.init_service_accounts(buckets, actions)

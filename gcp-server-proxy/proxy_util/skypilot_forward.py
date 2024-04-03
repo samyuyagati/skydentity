@@ -306,6 +306,13 @@ def request_storage_access_token(
     return None, None, 500
 
 
+def invalidate_cache(bucket: str, action: str):
+    """
+    Invalidate the cache for the given bucket/action.
+    """
+    ACCESS_TOKEN_CACHE.pop((bucket, action), None)
+
+
 def upload_blob(request, bucket: str):
     """
     POST /upload/storage/v1/b/<bucket>/o
@@ -341,6 +348,11 @@ def upload_blob(request, bucket: str):
     # forward directly to the GCP endpoint; no need to go through client proxy
     gcp_response = forward_to_client(request, storage_url, new_headers=new_headers)
     print(gcp_response.content)
+
+    if gcp_response.status_code in (401, 403):
+        # invalidate access token if auth error
+        invalidate_cache(bucket, "OVERWRITE_FALLBACK_UPLOAD")
+
     return Response(gcp_response.content, gcp_response.status_code)
 
 
@@ -379,4 +391,9 @@ def download_blob(request, bucket: str, file: str):
     # forward directly to the GCP endpoint; no need to go through client proxy
     gcp_response = forward_to_client(request, storage_url, new_headers=new_headers)
     print(gcp_response.content)
+
+    if gcp_response.status_code in (401, 403):
+        # invalidate access token if auth error
+        invalidate_cache(bucket, "READ")
+
     return Response(gcp_response.content, gcp_response.status_code)
