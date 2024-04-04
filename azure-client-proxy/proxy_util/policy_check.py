@@ -49,9 +49,9 @@ def check_request_from_policy(public_key_bytes, request, request_id=None, caller
     start = time.time()
 
     logger = get_logger()
-    print_and_log(
-        logger, f"Check request public key: {public_key_bytes} (request: {request})"
-    )
+    # print_and_log(
+    #     logger, f"Check request public key: {public_key_bytes} (request: {request})"
+    # )
 
     print_and_log(logger, build_time_logging_string(request_id, caller, "setup_logs", start, time.time()))
 

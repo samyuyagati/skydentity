@@ -3,7 +3,7 @@ authorization:
     - azure
 
   resource_group:
-    - skydentity-e318-westus
+    - skydentity-westus
   
   actions:
     - CREATE
@@ -16,4 +16,4 @@ authorization:
     - restricted_role:
       - role: Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c
       - scope: resource_group
-      - object: skydentity-e318-westus
+      - object: skydentity-westus

@@ -103,6 +103,12 @@ class AzureVMPolicy(VMPolicy):
 
                     if not request_contents["properties"]["osProfile"]["linuxConfiguration"]["disablePasswordAuthentication"]:
                         return False
+
+                    # Check for the existence of a given public key attached, even though this will be overriden later
+                    if not "ssh" in request_contents["properties"]["osProfile"]["linuxConfiguration"] or \
+                        not "publicKeys" in request_contents["properties"]["osProfile"]["linuxConfiguration"]["ssh"] or \
+                        len(request_contents["properties"]["osProfile"]["linuxConfiguration"]["ssh"]["publicKeys"]) == 0:
+                        return False
         return True
 
     def get_policy_standard_form(self) -> Dict:
@@ -158,6 +164,7 @@ class AzureVMPolicy(VMPolicy):
             if "osProfile" in request_contents["properties"]:
                 if "customData" in request_contents["properties"]["osProfile"]:
                         # The cloud-init script in Azure is base64 encoded, so decode before hashing
+                        import pdb; pdb.set_trace()
                         decoded_script = base64.b64decode(request_contents["properties"]["osProfile"]["customData"])
                         out_dict["startup_script"] = hashlib.sha256(decoded_script).hexdigest()
 
@@ -559,12 +566,12 @@ class AzureDefaultDenyPolicy(CloudPolicy):
                 'location': 'westus', 
                 'properties': {
                     'addressSpace': {
-                        'addressPrefixes': ['10.143.0.0/16']
+                        'addressPrefixes': ['10.146.0.0/16']
                     },
                     'subnets': [
                         {
                             'properties': {
-                                'addressPrefix': '10.143.0.0/16'
+                                'addressPrefix': '10.146.0.0/16'
                             }
                         }
                     ]
@@ -575,14 +582,14 @@ class AzureDefaultDenyPolicy(CloudPolicy):
                 if "addressSpace" in request_contents["properties"]:
                     address_space = request_contents["properties"]["addressSpace"]
                     if "addressPrefixes" in address_space:
-                        if address_space["addressPrefixes"] != ["10.143.0.0/16"]:
+                        if address_space["addressPrefixes"] != ["10.146.0.0/16"]:
                             return False
                 
                 if "subnets" in request_contents["properties"]:
                     subnets = request_contents["properties"]["subnets"]
                     for subnet in subnets:
                         if "properties" in subnet and "addressPrefix" in subnet["properties"]:
-                            if subnet["properties"]["addressPrefix"] != "10.143.0.0/16":
+                            if subnet["properties"]["addressPrefix"] != "10.146.0.0/16":
                                 return False
 
         elif default_deny_type == "networkSecurityGroups":
@@ -717,7 +724,6 @@ class AzureDeploymentPolicy(ResourcePolicy):
             return (None, False)
         
         returned_managed_identity = None
-
         if "properties" in request_contents:
             # Load up all of the parameters
             parameters = {}

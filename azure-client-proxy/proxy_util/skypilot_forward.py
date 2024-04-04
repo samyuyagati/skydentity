@@ -18,6 +18,7 @@ from skydentity.utils.hash_util import hash_public_key
 
 from .credentials import (
     get_managed_identity_auth_token,
+    _generate_rsa_key_pair
 )
 from .logging import get_logger, print_and_log, build_time_logging_string
 from .policy_check import check_request_from_policy, get_authorization_policy_manager
@@ -165,8 +166,11 @@ def generic_forward_request(request, log_dict=None):
             new_json = request.json
             if managed_identity_id:
                 new_json = get_json_with_managed_identity(request, managed_identity_id)
-                print_and_log(logger, f"Json with service account: {new_json}")
+                # print_and_log(logger, f"Json with service account: {new_json}")
             print_and_log(logger, build_time_logging_string(request_name, caller, "get_json_with_service_account", start_get_json_with_sa, time.time()))
+
+        # Inject random public ssh keys if applicable
+        inject_random_public_key(new_json)
 
         # Send the request to Azure
         start_send_azure_request = time.time()
@@ -290,6 +294,7 @@ def get_json_with_managed_identity(request, managed_identity_id):
     new_dict = json_dict.copy()
 
     # TODO(kdharmarajan): Clean this up later
+    ssh_settings_dict = []
     if "deployments" in request.url:
         vm_resource = {}
         resources = new_dict["properties"]["template"]["resources"]
@@ -302,6 +307,31 @@ def get_json_with_managed_identity(request, managed_identity_id):
         new_dict["identity"] = managed_identity_dict
     del new_dict["managedIdentities"]
     return new_dict
+
+def inject_random_public_key(request_body, request_url):
+    """
+    Inject a random public key into the request JSON.
+
+    This function directly modifies the request_body if applicable
+    """
+    vm_body = request_body
+    if "deployments" in request.url:
+        resources = new_dict["properties"]["template"]["resources"]
+        for resource in resources:
+            if resource["type"] == "Microsoft.Compute/virtualMachines":
+                vm_body = resource
+                break
+
+    if "properties" in vm_body:
+        if "osProfile" in vm_body["properties"]:
+            if "linuxConfiguration" in vm_body["properties"]["osProfile"]:
+                if "ssh" in vm_body["properties"]["osProfile"]["linuxConfiguration"]:
+                    if "publicKeys" in vm_body["properties"]["osProfile"]["linuxConfiguration"]["ssh"]:
+                        new_public_key = _generate_rsa_key_pair()
+                        request_dict["properties"]["osProfile"]["linuxConfiguration"]["ssh"]["publicKeys"] = [{
+                            "path": request_dict["properties"]["osProfile"]["linuxConfiguration"]["ssh"]["publicKeys"][0]["path"],
+                            "keyData": new_public_key[0]
+                        }]
 
 
 def get_headers_with_auth(request):
