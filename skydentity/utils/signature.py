@@ -29,6 +29,7 @@ def verify_request_signature(request, logger=None, request_name=None, caller_nam
     except ValueError:
         # invalid timestamp
         if logger:
+            print_and_log(logger, f"Invalid timestamp: Received timestamp {timestamp} is not a float.", severity=LogLevel.WARNING)
             print_and_log(logger, 
                           build_time_logging_string(request_name, caller, "total (Invalid timestamp)", start, time.perf_counter()), 
                           severity=LogLevel.INFO)
@@ -41,6 +42,7 @@ def verify_request_signature(request, logger=None, request_name=None, caller_nam
     now = datetime.datetime.now(datetime.timezone.utc)
     if now - datetime.timedelta(seconds=60) > timestamp_datetime:
         # if timestamp when request was sent is > 60 seconds old, deny the request
+        print_and_log(logger, f"Timestamp of request > 60s old: {timestamp_datetime} (now: {now})", severity=LogLevel.WARNING)
         print_and_log(logger,
                       build_time_logging_string(request_name, caller, "total (Timestamp of request > 60s old)", start, time.perf_counter()),
                       severity=LogLevel.INFO)
@@ -55,6 +57,7 @@ def verify_request_signature(request, logger=None, request_name=None, caller_nam
     try:
         pkcs1_15.new(public_key).verify(h, signature)
     except (ValueError, TypeError):
+        print_and_log(logger, "Invalid signature: Unable to verify signature (PK: {public_key_bytes}).", severity=LogLevel.WARNING)
         print_and_log(logger,
                       build_time_logging_string(request_name, caller, "total (Invalid signature, unable to verify)", start, time.perf_counter()),
                       severity=LogLevel.INFO)

@@ -26,10 +26,10 @@ virtual_machine:
 
 # vpcs as a diff fresource type
 
-#  startup_scripts:
-#      - gcp:
-# Hash of "#! /bin/bash\nsudo echo \"success\" > startup_script.out\n"
-#        - efb793ed84458eee9d4098a17c6f1cd5ed14b858ff35f8f3c51448a252eeee32
+  startup_scripts:
+      - gcp:
+        # Output of hash_cloud_init_gcp.py
+        - 44be9388234b4d9a50d44e693d756eab3b95924e0a0d5786677ffdd404d72668
 
 attached_authorizations:
   - gcp:

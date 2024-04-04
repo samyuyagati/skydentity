@@ -108,7 +108,24 @@ class GCPVMPolicy(VMPolicy):
                         self._pylogger.debug("disk denied (source_image)")
                         return False
 
-        # TODO: check metadata; currently will break skypilot
+        # Check metadata; currently will break skypilot
+        if "metadata" in request_contents:
+            metadata = request_contents["metadata"]
+            if "items"  in metadata:
+                for item in metadata["items"]:
+                    if item["key"] == "startup-script":
+                        startup_script_hash = hashlib.sha256(
+                            item["value"].encode()
+                        ).hexdigest()
+                        if (
+                            startup_script_hash
+                            not in standardized_vm_policy["startup_scripts"]
+                        ):
+                            self._pylogger.debug(f"metadata denied (startup_script hash mismatch) {item}")
+                            return False
+                    else:
+                        self._pylogger.debug(f"metadata denied (only key permitted is startup-script) {item}")
+                        return False
 
         # check network interfaces
         if "networkInterfaces" in request_contents:
@@ -556,14 +573,15 @@ class GCPReadPolicy(ResourcePolicy):
         """
         self._policy = policy
         self._policy_override = policy_override
+        self._pylogger = py_logging.getLogger("GCPResourcePolicy")
 
     def check_request(self, request: Request) -> bool:
         raise NotImplemented("Use `check_read_request` instead.")
 
     def check_read_request(self, request: Request, *aux_info: str) -> bool:
-        # TODO: allow any non-GET request through?
+        # Shouldn't hit this fn if request method is not GET
         if request.method != "GET":
-            return True
+            return False 
 
         # check for blanket ALLOW/DENY policy
         if self._policy_override is not None:
@@ -610,8 +628,9 @@ class GCPReadPolicy(ResourcePolicy):
         elif read_type == "operations":
             return self._policy["operations"]
 
-        # TODO: allow request if unrecognized?
-        return True
+        # Deny request if unrecognized read type
+        self._pylogger.warning(f"Request ({request.path}) denied. Unrecognized read type: {read_type}")
+        return False
 
     def _get_request_info(self, request: Request, read_type: str):
         """Parse path to get the appropriate request information"""
@@ -787,6 +806,7 @@ class GCPPolicy(CloudPolicy):
                 if not has_match:
                     # if no matches, then add unrecognized
                     resource_types.add(("unrecognized",))
+                    self._pylogger.info(f"UNRECOGNIZED RESOURCE (GET): {request.path}")
         elif request.method == "POST":
             # Handle POST request
             self._pylogger.debug(f"{request.get_json(cache=True)}")
@@ -805,6 +825,7 @@ class GCPPolicy(CloudPolicy):
                     else:
                         # disallow any unrecognized keys
                         resource_types.add(("unrecognized", key))
+                        self._pylogger.info(f"UNRECOGNIZED RESOURCE (POST): {key}")
 
                 # only add unrecognized if nothing yet
                 # if len(resource_types) == 0:
@@ -813,7 +834,7 @@ class GCPPolicy(CloudPolicy):
         else:
             # unrecognized request method
             resource_types.add(("unrecognized,"))
-            self._pylogger.debug(f"UNRECOGNIZED REQUEST METHOD: {request.method}")
+            self._pylogger.info(f"UNRECOGNIZED REQUEST METHOD: {request.method}")
         self._pylogger.debug(f"All resource types: {list(resource_types)}")
         return list(resource_types)
 
