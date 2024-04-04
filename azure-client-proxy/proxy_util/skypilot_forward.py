@@ -118,62 +118,65 @@ def generic_forward_request(request, log_dict=None):
     [SkyPilot Integration]
     Forward a generic request to Azure APIs.
     """
-    start = time.time()
-    logger = get_logger()
+    try:
+        start = time.time()
+        logger = get_logger()
 
-    request_name = request.method.upper() + str(random.randint(0, 1000))
-    caller = "skypilot_forward:generic_forward_request"
+        request_name = request.method.upper() + str(random.randint(0, 1000))
+        caller = "skypilot_forward:generic_forward_request"
 
-    if log_dict is not None:
-        log_str = f"PATH: {request.full_path}\n"
-        for key, val in log_dict.items():
-            log_str += f"\t{key}: {val}\n"
-        print_and_log(logger, log_str.strip())
+        if log_dict is not None:
+            log_str = f"PATH: {request.full_path}\n"
+            for key, val in log_dict.items():
+                log_str += f"\t{key}: {val}\n"
+            print_and_log(logger, log_str.strip())
 
-    print_and_log(logger, build_time_logging_string(request_name, caller, "setup_logs", start, time.time()))
+        print_and_log(logger, build_time_logging_string(request_name, caller, "setup_logs", start, time.time()))
 
-    start_verify_request_signature = time.time()
-    if not verify_request_signature(request):
-        print_and_log(logger, "Request is unauthorized (signature verification failed)")
-        print_and_log(logger, build_time_logging_string(request_name, caller, "total (signature verif. failed)", start, time.time()))
-        return Response("Unauthorized", 401)
-    print_and_log(logger, build_time_logging_string(request_name, caller, "verify_request_signature", start_verify_request_signature, time.time()))
+        start_verify_request_signature = time.time()
+        if not verify_request_signature(request):
+            print_and_log(logger, "Request is unauthorized (signature verification failed)")
+            print_and_log(logger, build_time_logging_string(request_name, caller, "total (signature verif. failed)", start, time.time()))
+            return Response("Unauthorized", 401)
+        print_and_log(logger, build_time_logging_string(request_name, caller, "verify_request_signature", start_verify_request_signature, time.time()))
 
-    # Check the request
-    start_check_request_from_policy = time.time()
-    public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
-    authorized, managed_identity_id = check_request_from_policy(public_key_bytes, request, request_id=request_name, caller_name=caller)
-    print_and_log(logger, build_time_logging_string(request_name, caller, "check_request_from_policy", start_check_request_from_policy, time.time()))
-    if not authorized:
-        print_and_log(logger, "Request is unauthorized (policy check failed)")
-        print_and_log(logger, build_time_logging_string(request_name, caller, "total (policy check failed)", start, time.time()))
-        return Response("Unauthorized", 401)
+        # Check the request
+        start_check_request_from_policy = time.time()
+        public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
+        authorized, managed_identity_id = check_request_from_policy(public_key_bytes, request, request_id=request_name, caller_name=caller)
+        print_and_log(logger, build_time_logging_string(request_name, caller, "check_request_from_policy", start_check_request_from_policy, time.time()))
+        if not authorized:
+            print_and_log(logger, "Request is unauthorized (policy check failed)")
+            print_and_log(logger, build_time_logging_string(request_name, caller, "total (policy check failed)", start, time.time()))
+            return Response("Unauthorized", 401)
 
-    # Get new endpoint and new headers
-    start_get_new_url = time.time()
-    new_url = get_new_url(request)
-    print_and_log(logger, build_time_logging_string(request_name, caller, "get_new_url", start_get_new_url, time.time()))
-    start_get_new_headers = time.time()
-    new_headers = get_headers_with_auth(request)
-    print_and_log(logger, build_time_logging_string(request_name, caller, "get_headers_with_auth", start_get_new_headers, time.time()))
+        # Get new endpoint and new headers
+        start_get_new_url = time.time()
+        new_url = get_new_url(request)
+        print_and_log(logger, build_time_logging_string(request_name, caller, "get_new_url", start_get_new_url, time.time()))
+        start_get_new_headers = time.time()
+        new_headers = get_headers_with_auth(request)
+        print_and_log(logger, build_time_logging_string(request_name, caller, "get_headers_with_auth", start_get_new_headers, time.time()))
 
-    # Only modify the JSON if a valid service account capability was provided
-    new_json = None
-    if len(request.get_data()) > 0:
-        start_get_json_with_sa = time.time()
-        new_json = request.json
-        if managed_identity_id:
-            new_json = get_json_with_managed_identity(request, managed_identity_id)
-            print_and_log(logger, f"Json with service account: {new_json}")
-        print_and_log(logger, build_time_logging_string(request_name, caller, "get_json_with_service_account", start_get_json_with_sa, time.time()))
+        # Only modify the JSON if a valid service account capability was provided
+        new_json = None
+        if len(request.get_data()) > 0:
+            start_get_json_with_sa = time.time()
+            new_json = request.json
+            if managed_identity_id:
+                new_json = get_json_with_managed_identity(request, managed_identity_id)
+                print_and_log(logger, f"Json with service account: {new_json}")
+            print_and_log(logger, build_time_logging_string(request_name, caller, "get_json_with_service_account", start_get_json_with_sa, time.time()))
 
-    # Send the request to Azure
-    start_send_azure_request = time.time()
-    azure_response = send_azure_request(request, new_headers, new_url, new_json=new_json)
-    print_and_log(logger, build_time_logging_string(request_name, caller, "send_azure_request", start_send_azure_request, time.time()))
-    print_and_log(logger, build_time_logging_string(request_name, caller, "total", start, time.time()))
-    return Response(azure_response.content, azure_response.status_code, headers=new_headers, content_type=azure_response.headers["Content-Type"])
-
+        # Send the request to Azure
+        start_send_azure_request = time.time()
+        azure_response = send_azure_request(request, new_headers, new_url, new_json=new_json)
+        print_and_log(logger, build_time_logging_string(request_name, caller, "send_azure_request", start_send_azure_request, time.time()))
+        print_and_log(logger, build_time_logging_string(request_name, caller, "total", start, time.time()))
+        return Response(azure_response.content, azure_response.status_code, headers=new_headers, content_type=azure_response.headers["Content-Type"])
+    except Exception as e:
+        print_and_log(logger, f"Error in generic_forward_request: {e}")
+        return Response("Error", 500)
 
 def build_generic_forward(path: str, fields: list[str]):
     """
@@ -358,26 +361,30 @@ def send_azure_request(request, new_headers, new_url, new_json=None):
 
 
 def create_authorization_route(cloud):
-    logger = get_logger()
-    authorization_policy_manager = get_authorization_policy_manager()
-    print_and_log(logger, f"Creating authorization (json: {request.json})")
+    try:
+        logger = get_logger()
+        authorization_policy_manager = get_authorization_policy_manager()
+        print_and_log(logger, f"Creating authorization (json: {request.json})")
 
-    public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
-    # Compute hash of public key
-    public_key_hash = hash_public_key(public_key_bytes)
-    print_and_log(logger, f"Public key hash: {public_key_hash}")
-    request_auth_dict = authorization_policy_manager.get_policy_dict(public_key_hash)
-    print("Request auth dict:", request_auth_dict)
-    authorization_policy = AzureAuthorizationPolicy(policy_dict=request_auth_dict)
-    authorization_request, success = authorization_policy.check_request(request)
-    if success:
-        managed_identity_id = (
-            authorization_policy_manager.create_managed_identity_with_roles(
-                authorization_request
+        public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
+        # Compute hash of public key
+        public_key_hash = hash_public_key(public_key_bytes)
+        print_and_log(logger, f"Public key hash: {public_key_hash}")
+        request_auth_dict = authorization_policy_manager.get_policy_dict(public_key_hash)
+        print("Request auth dict:", request_auth_dict)
+        authorization_policy = AzureAuthorizationPolicy(policy_dict=request_auth_dict)
+        authorization_request, success = authorization_policy.check_request(request)
+        if success:
+            managed_identity_id = (
+                authorization_policy_manager.create_managed_identity_with_roles(
+                    authorization_request
+                )
             )
-        )
-        capability_dict = authorization_policy_manager.generate_capability(
-            managed_identity_id
-        )
-        return Response(json.dumps(capability_dict), 200)
-    return Response("Unauthorized", 401)
+            capability_dict = authorization_policy_manager.generate_capability(
+                managed_identity_id
+            )
+            return Response(json.dumps(capability_dict), 200)
+        return Response("Unauthorized", 401)
+    except Exception as e:
+        print_and_log(logger, f"Error in create_authorization_route: {e}")
+        return Response("Error", 500)

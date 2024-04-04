@@ -5,6 +5,7 @@ Utility methods for fetching credentials.
 import json
 import os
 import subprocess
+import base64
 from functools import cache
 
 # Global file variables; underscore to prevent external imports
@@ -14,6 +15,10 @@ _DB_INFO_FILE = os.environ.get("AZURE_DB_INFO_FILE", None)
 _CAPABILITY_ENC_KEY = os.environ.get("CAPABILITY_ENC_KEY", None)
 _DB_ENDPOINT = os.environ.get("AZURE_DB_ENDPOINT", None)
 _DB_KEY = os.environ.get("AZURE_DB_KEY", None)
+
+_TENANT_ID = os.environ.get("TENANT_ID", None)
+_APP_SECRET = os.environ.get("APP_SECRET", None)
+_APP_ID = os.environ.get("APP_ID", None)
 
 # validate global constants from environment variables
 assert (_CAPABILITY_ENC_KEY_FILE is not None and os.path.isfile(_CAPABILITY_ENC_KEY_FILE)) \
@@ -55,6 +60,15 @@ def get_capability_enc_key_bytes() -> bytes:
     """
     return _CAPABILITY_ENC_KEY.encode("utf-8")
 
+@cache
+def get_capability_enc_key_base64() -> bytes:
+    """
+    Retrieve the capability encoding key as bytes.
+    """
+    if _CAPABILITY_ENC_KEY is None:
+        return None
+    return base64.b64decode(_CAPABILITY_ENC_KEY)
+
 def get_db_endpoint() -> str:
     """
     Retrieve the endpoint for the Azure Cosmos DB.
@@ -66,3 +80,21 @@ def get_db_key() -> str:
     Retrieve the key for the Azure Cosmos DB.
     """
     return _DB_KEY
+
+def get_tenant_id() -> str:
+    """
+    Retrieve the tenant id for the Azure AD.
+    """
+    return _TENANT_ID
+
+def get_app_secret() -> str:
+    """
+    Retrieve the app secret for the Azure AD.
+    """
+    return _APP_SECRET
+
+def get_app_id() -> str:
+    """
+    Retrieve the app id for the Azure AD.
+    """
+    return _APP_ID

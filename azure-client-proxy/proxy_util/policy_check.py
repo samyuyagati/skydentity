@@ -12,7 +12,7 @@ from skydentity.policies.managers.azure_authorization_policy_manager import (
 from skydentity.policies.managers.azure_policy_manager import AzurePolicyManager
 from skydentity.utils.hash_util import hash_public_key
 
-from .credentials import get_capability_enc_key, get_db_info_file, get_db_endpoint, get_db_key
+from .credentials import get_capability_enc_key, get_db_info_file, get_db_endpoint, get_db_key, get_capability_enc_key_base64
 from .logging import get_logger, print_and_log, build_time_logging_string
 
 
@@ -28,9 +28,10 @@ def get_policy_manager() -> AzurePolicyManager:
 @cache
 def get_authorization_policy_manager() -> AzureAuthorizationPolicyManager:
     capability_enc_key_file = get_capability_enc_key()
-    print("CREATING AUTH POLICY MANAGER")
+    capability_enc_key = get_capability_enc_key_base64()
     return AzureAuthorizationPolicyManager(
         capability_enc_path=capability_enc_key_file,
+        capability_enc=capability_enc_key,
         db_info_file=get_db_info_file(),
         db_endpoint=get_db_endpoint(),
         db_key=get_db_key()
@@ -88,6 +89,6 @@ def check_request_from_policy(public_key_bytes, request, request_id=None, caller
         print_and_log(logger, build_time_logging_string(request_id, caller, "total (policy check passed, w/ SA attach)", start, time.time()))
         return (True, policy.valid_authorization)
     # If no managed identity should be attached, return True
-    print(">>> CHECK REQUEST: No managed identity should be attached")
+    # print(">>> CHECK REQUEST: No managed identity should be attached")
     print_and_log(logger, build_time_logging_string(request_id, caller, "total (policy check passed, no SA attach)", start, time.time()))
     return (True, None)

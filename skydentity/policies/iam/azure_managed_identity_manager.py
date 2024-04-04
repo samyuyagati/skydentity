@@ -116,11 +116,12 @@ class AzureManagedIdentityManager:
 
             azure_role_objects.append(role_definition)
 
+        print("Created role definitions")
         for i, new_binding in enumerate(auth.roles):
             azure_role = azure_role_objects[i]
 
             possible_condition = self.get_object_condition(new_binding)
-
+            print("Condition to assign is", possible_condition)
             # Assign role to service account
             role_assignment = self._authorization_client.role_assignments.create(
                 scope=f"/subscriptions/{self._subscription_id}/resourceGroups/{auth.resource_group}",
@@ -132,6 +133,8 @@ class AzureManagedIdentityManager:
                     condition=possible_condition,
                     condition_version="2.0" if possible_condition else None
                 ))
+            print("Good role assignment")
+        print("Assigned roles")
 
 
     def get_object_condition(self, binding):

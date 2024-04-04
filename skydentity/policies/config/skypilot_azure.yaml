@@ -8,7 +8,7 @@ virtual_machine:
   - azure
   instance_type:
   - azure:
-    - Standard_B1s
+    - Standard_B1ms
   regions:
   - azure:
     - westus
