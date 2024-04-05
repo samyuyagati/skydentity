@@ -61,8 +61,11 @@ NUM_JOBS = args.num_jobs
 api_endpoint = "https://compute.googleapis.com/"
 if args.cloud == "azure":
     api_endpoint = "https://management.azure.com/"
+    if args.with_skydentity:
+        api_endpoint = "https://127.0.0.1:5000/"
+# GCP with skydentity
 if args.with_skydentity:
-    api_endpoint = "https://127.0.0.1:5000/"
+    api_endpoint = "http://127.0.0.1:5000/"
 
 start_time = time.perf_counter()
 
