@@ -1,10 +1,22 @@
+import logging as py_logging
 import os
 
 from flask import Flask
-from skydentity.proxy_util.gcp.skypilot_forward import setup_routes
+from google.cloud import logging as gcp_logging
+
 from skydentity.proxy_util.gcp.logging import get_logger, print_and_log
+from skydentity.proxy_util.gcp.skypilot_forward import setup_routes
+from skydentity.utils.log_util import build_file_handler
 
 app = Flask(__name__)
+
+# set gcp logging for root logger; also sets default log level
+GCP_LOGGING_CLIENT = gcp_logging.Client()
+GCP_LOGGING_CLIENT.setup_logging(log_level=py_logging.INFO)
+
+# add file handler for local logging
+LOGGER = py_logging.getLogger()
+LOGGER.addHandler(build_file_handler("authorizer.log"))
 
 
 @app.route("/hello", methods=["GET"])
@@ -12,8 +24,7 @@ def handle_hello():
     """
     Debugging route.
     """
-    logger = get_logger()
-    print_and_log(logger, "Hello!")
+    LOGGER.debug("Hello!")
     return "Hello"
 
 
@@ -23,8 +34,7 @@ def setup_app():
 
     Sets required routes for forwarding requests.
     """
-    logger = get_logger()
-    print_and_log(logger, "Starting up server")
+    LOGGER.debug("Starting up server")
 
     # set up skypilot forwarding routes
     setup_routes(app)

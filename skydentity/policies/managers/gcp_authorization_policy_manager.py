@@ -13,6 +13,10 @@ from skydentity.policies.checker.policy_actions import PolicyAction
 from skydentity.policies.checker.resource_policy import CloudPolicy
 from skydentity.policies.iam.gcp_service_account_manager import GCPServiceAccountManager
 from skydentity.policies.managers.policy_manager import PolicyManager
+from skydentity.utils.log_util import build_file_handler
+
+LOGGER = py_logging.getLogger("policies.managers.GCPAuthorizationPolicyManager")
+LOGGER.addHandler(build_file_handler("gcp_authorization_policy_manager.log"))
 
 
 class GCPAuthorizationPolicyManager(PolicyManager):
@@ -26,10 +30,6 @@ class GCPAuthorizationPolicyManager(PolicyManager):
         Initializes the GCP policy manager.
         :param credentials_path: The path to the credentials file.
         """
-        py_logging.basicConfig(
-            filename="gcp_authorization_policy_manager.log", level=py_logging.INFO
-        )
-        self._pylogger = py_logging.getLogger("GCPAuthorizationPolicyManager")
         self._credentials_path = credentials_path
         try:
             self._app = firebase_admin.initialize_app(
@@ -49,8 +49,8 @@ class GCPAuthorizationPolicyManager(PolicyManager):
         :param public_key_hash: The hash of the public key tied to the policy.
         :return: The policy.
         """
-        self._pylogger.debug(f"{self._firestore_policy_collection}")
-        self._pylogger.debug(f"{public_key_hash}")
+        LOGGER.debug(f"{self._firestore_policy_collection}")
+        LOGGER.debug(f"{public_key_hash}")
         return (
             self._db.collection(self._firestore_policy_collection)
             .document(public_key_hash)
@@ -89,7 +89,7 @@ class GCPAuthorizationPolicyManager(PolicyManager):
             candidate_service_account_id = cipher.decrypt_and_verify(ciphertext, tag)
             return (candidate_service_account_id.decode("utf-8"), True)
         except ValueError:
-            self._pylogger.debug("Invalid capability: could not decrypt or verify")
+            LOGGER.debug("Invalid capability: could not decrypt or verify")
             return (None, False)
 
     def create_service_account_with_roles(

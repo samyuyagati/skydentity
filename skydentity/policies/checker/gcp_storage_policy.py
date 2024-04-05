@@ -1,3 +1,4 @@
+import logging as py_logging
 from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional, Tuple, Union
@@ -6,6 +7,10 @@ import yaml
 from flask import Request
 
 from skydentity.policies.checker.authorization_policy import AuthorizationPolicy
+from skydentity.utils.log_util import build_file_handler
+
+LOGGER = py_logging.getLogger("policies.checker.GCPStoragePolicy")
+LOGGER.addHandler(build_file_handler("gcp_storage_policy.log"))
 
 
 class StoragePolicyAction(Enum):
@@ -146,7 +151,7 @@ class GCPStoragePolicy(AuthorizationPolicy):
         try:
             request_action_enum = StorageRequestAction(request_action)
         except ValueError:
-            print(f"Unrecognized requested action: {request_action}")
+            LOGGER.warning(f"Unrecognized requested action: {request_action}")
             request_action_enum = None
 
         converted_action = StoragePolicyAction.NONE
@@ -159,7 +164,7 @@ class GCPStoragePolicy(AuthorizationPolicy):
             elif StoragePolicyAction.UPLOAD in self._policy.actions:
                 converted_action = StoragePolicyAction.UPLOAD
         else:
-            print(f"[request check failed] unknown action, {request_action}")
+            LOGGER.warning(f"[request check failed] unknown action, {request_action}")
 
         auth_request = AuthorizationRequest(
             cloud_provider=cloud_provider, bucket=bucket, action=converted_action
@@ -168,8 +173,10 @@ class GCPStoragePolicy(AuthorizationPolicy):
         return auth_request
 
     def check_request(
-        self, request: Request, logger=None
+        self, request: Request
     ) -> Tuple[Optional[AuthorizationRequest], bool]:
+        LOGGER.debug("STORAGE CHECK REQUEST")
+
         if request.method == "GET":
             # Disallow all reads; currently, this case should never trigger because there is no
             # handler for authorization GET requests.
@@ -177,19 +184,20 @@ class GCPStoragePolicy(AuthorizationPolicy):
         elif request.method == "POST":
             # handle the request
             request_data = request.get_json(cache=True)
+            LOGGER.debug(str(request_data))
 
             auth_request = self.authorization_request_from_dict(request_data)
 
             # check requested cloud provider
             if auth_request.cloud_provider != self._policy.cloud_provider:
-                print(
+                LOGGER.warning(
                     f"[request check failed] cloud provider; expected {self._policy.cloud_provider}, got {auth_request.cloud_provider}"
                 )
                 return (None, False)
 
             # check requested bucket
             if auth_request.bucket not in self._policy.buckets:
-                print(
+                LOGGER.warning(
                     f"[request check failed] bucket; expected {self._policy.buckets}, got {auth_request.bucket}"
                 )
                 return (None, False)
@@ -199,7 +207,7 @@ class GCPStoragePolicy(AuthorizationPolicy):
                 auth_request.action == StoragePolicyAction.NONE
                 or auth_request.action not in self._policy.actions
             ):
-                print(
+                LOGGER.warning(
                     f"[request check failed] action; expected subset of {self._policy.actions}, got {auth_request.action}"
                 )
                 return (None, False)
@@ -207,13 +215,7 @@ class GCPStoragePolicy(AuthorizationPolicy):
             # passed all checks
             return (auth_request, True)
         else:
-            if logger:
-                logger.log_text(
-                    f"Request is unrecognized (gcp_storage_policy.py): {request.url}",
-                    severity="WARNING",
-                )
-            else:
-                print(
-                    f"Request is unrecognized (gcp_storage_policy.py): {request.url}, {request.method}"
-                )
+            LOGGER.warning(
+                f"Request is unrecognized (gcp_storage_policy.py): {request.url}",
+            )
             return (None, False)

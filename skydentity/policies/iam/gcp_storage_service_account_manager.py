@@ -1,3 +1,4 @@
+import logging as py_logging
 import re
 import secrets
 import string
@@ -12,6 +13,10 @@ from googleapiclient import discovery
 from googleapiclient.errors import HttpError
 
 from skydentity.policies.checker.gcp_storage_policy import StoragePolicyAction
+from skydentity.utils.log_util import build_file_handler
+
+LOGGER = py_logging.getLogger("policies.iam.GCPStorageServiceAccountManager")
+LOGGER.addHandler(build_file_handler("gcp_storage_service_account_manager.log"))
 
 
 class GCPStorageServiceAccountManager:
@@ -47,13 +52,11 @@ class GCPStorageServiceAccountManager:
         self,
         credentials_path: str,
         project_id: str,
-        log_func: Optional[Callable] = None,
     ) -> None:
         """
         :param credentials_path: path to service account json
         """
         self.project_id = project_id
-        self._log_func = log_func
 
         self._credentials_path = credentials_path
         self._credentials = service_account.Credentials.from_service_account_file(
@@ -61,22 +64,18 @@ class GCPStorageServiceAccountManager:
             scopes=["https://www.googleapis.com/auth/cloud-platform"],
         )
 
-        self._iam_service = discovery.build("iam", "v1", credentials=self._credentials)
+        self._iam_service = discovery.build(
+            "iam", "v1", credentials=self._credentials, cache_discovery=False
+        )
         self._cloudresourcemanager_service = discovery.build(
-            "cloudresourcemanager", "v3", credentials=self._credentials
+            "cloudresourcemanager",
+            "v3",
+            credentials=self._credentials,
+            cache_discovery=False,
         )
         self._storage_service = discovery.build(
-            "storage", "v1", credentials=self._credentials
+            "storage", "v1", credentials=self._credentials, cache_discovery=False
         )
-
-    def log(self, *args, **kwargs):
-        """
-        Wrapper for the log function; if it exists, logs using the log function, otherwise just prints.
-        """
-        if self._log_func is not None:
-            self._log_func(*args, **kwargs)
-        else:
-            print(*args)
 
     def generate_service_account_name(self):
         """
@@ -163,9 +162,9 @@ class GCPStorageServiceAccountManager:
 
         service_account_name = self.generate_service_account_name()
 
-        self.log(
+        LOGGER.debug(
             f"[{bucket}/{action.value}/{'backup' if backup else 'timed'}]"
-            f" Creating service account {service_account_name}..."
+            f" Creating service account {service_account_name}...",
         )
 
         # Check if service account exists (generally shouldn't happen)
@@ -202,7 +201,7 @@ class GCPStorageServiceAccountManager:
             service_account["email"], bucket, action, timed=add_timed
         )
 
-        self.log(
+        LOGGER.info(
             f"[{bucket}/{action.value}/{'backup' if backup else 'timed'}]"
             f" Created service account {service_account['email']};"
             f" expires {expiration_timestamp}",
@@ -216,7 +215,7 @@ class GCPStorageServiceAccountManager:
 
         Cached property; only computed once for the life of the instance.
         """
-        self.log("Listing all service accounts")
+        LOGGER.debug("Listing all service accounts")
         all_service_accounts = []
 
         list_request = (
@@ -237,7 +236,7 @@ class GCPStorageServiceAccountManager:
                     previous_request=list_request, previous_response=list_response
                 )
             )
-        self.log(
+        LOGGER.debug(
             f"Done listing all service accounts; {len(all_service_accounts)} total"
         )
 
@@ -522,19 +521,25 @@ class GCPStorageServiceAccountManager:
             # delete the current service accounts
             for current in current_list:
                 current_email = current["email"]
-                self.log(f"[{bucket}/{action.value}] Deleting {current_email}")
+                LOGGER.debug(f"[{bucket}/{action.value}] Deleting {current_email}")
                 self._iam_service.projects().serviceAccounts().delete(
                     name=f"projects/{self.project_id}/serviceAccounts/{current_email}"
                 ).execute()
+                LOGGER.info(f"[{bucket}/{action.value}] Deleted {current_email}")
 
         if len(backup_list) > 0:
             # if more than one exists, arbitrarliy choose the first
             backup = backup_list[0]
             # update the backup account to add an expiration
             backup_email = backup["email"]
-            self.log(f"[{bucket}/{action.value}] Adding expiration to {backup_email}")
+            LOGGER.debug(
+                f"[{bucket}/{action.value}] Adding expiration to {backup_email}"
+            )
             expiration_timestamp = self.add_expiration_to_service_account(
                 backup_email, bucket, action
+            )
+            LOGGER.info(
+                f"[{bucket}/{action.value}] Expiration for {backup_email} set to {expiration_timestamp}"
             )
             new_email = backup_email
         else:

@@ -1,3 +1,4 @@
+import logging as py_logging
 from typing import Callable, List, Optional, Tuple
 
 import firebase_admin
@@ -10,6 +11,10 @@ from skydentity.policies.iam.gcp_storage_service_account_manager import (
     GCPStorageServiceAccountManager,
 )
 from skydentity.policies.managers.policy_manager import PolicyManager
+from skydentity.utils.log_util import build_file_handler
+
+LOGGER = py_logging.getLogger("policies.managers.GCPStoragePolicyManager")
+LOGGER.addHandler(build_file_handler("gcp_storage_policy_manager.log"))
 
 
 class GCPStoragePolicyManager(PolicyManager):
@@ -17,7 +22,6 @@ class GCPStoragePolicyManager(PolicyManager):
         self,
         credentials_path: str,
         firestore_policy_collection: str = "storage_policies",
-        log_func: Optional[Callable] = None,
     ):
         """
         Initializes the GCP policy manager for storage policies.
@@ -30,7 +34,6 @@ class GCPStoragePolicyManager(PolicyManager):
             filename=credentials_path,
             scopes=["https://www.googleapis.com/auth/cloud-platform"],
         )
-        self._log_func = log_func
 
         # firestore
         self._app = firebase_admin.initialize_app(
@@ -42,20 +45,14 @@ class GCPStoragePolicyManager(PolicyManager):
 
         # apis
         self._storage_service = discovery.build(
-            "storage", "v1", credentials=self._credentials
+            "storage", "v1", credentials=self._credentials, cache_discovery=False
         )
         self._cloudresourcemanager_service = discovery.build(
-            "cloudresourcemanager", "v3", credentials=self._credentials
+            "cloudresourcemanager",
+            "v3",
+            credentials=self._credentials,
+            cache_discovery=False,
         )
-
-    def log(self, *args, **kwargs):
-        """
-        Wrapper for the log function; if it exists, logs using the log function, otherwise just prints.
-        """
-        if self._log_func is not None:
-            self._log_func(*args, **kwargs)
-        else:
-            print(*args)
 
     def get_policy_dict(self, public_key_hash) -> dict:
         """
@@ -63,7 +60,7 @@ class GCPStoragePolicyManager(PolicyManager):
         :param public_key_hash: The hash of the public key tied to the policy.
         :return: The policy.
         """
-        self.log(f"public key hash {public_key_hash}")
+        LOGGER.debug(f"public key hash {public_key_hash}")
         return (
             self._db.collection(self._firestore_policy_collection)
             .document(public_key_hash)
@@ -102,12 +99,11 @@ class GCPStoragePolicyManager(PolicyManager):
         """
 
         project_id = self.get_project_info_from_bucket_name(bucket)
-        self.log(f"project id {project_id}")
+        LOGGER.debug(f"project id {project_id}")
 
         gcp_storage_account_manager = GCPStorageServiceAccountManager(
             credentials_path=self._credentials_path,
             project_id=project_id,
-            log_func=self._log_func,
         )
 
         service_account_email, expiration_timestamp = (
@@ -132,6 +128,5 @@ class GCPStoragePolicyManager(PolicyManager):
         gcp_storage_account_manager = GCPStorageServiceAccountManager(
             credentials_path=self._credentials_path,
             project_id=project_id,
-            log_func=self._log_func,
         )
         gcp_storage_account_manager.init_service_accounts(buckets, actions)
