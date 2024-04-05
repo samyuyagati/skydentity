@@ -1,8 +1,14 @@
-#import logging as py_logging
-
+import logging as py_logging
 from abc import ABC
 from typing import Dict, List, Tuple
+
 from flask import Request
+
+from skydentity.utils.log_util import build_file_handler
+
+LOGGER = py_logging.getLogger("policies.checker.ResourcePolicy")
+LOGGER.addHandler(build_file_handler("resource_policy.log"))
+
 
 class ResourcePolicy(ABC):
     """
@@ -23,7 +29,7 @@ class ResourcePolicy(ABC):
         :return: The dictionary representation of the policy.
         """
         raise NotImplementedError
-    
+
     @staticmethod
     def from_dict(policy_dict: Dict):
         """
@@ -33,6 +39,7 @@ class ResourcePolicy(ABC):
         """
         raise NotImplementedError
 
+
 class VMPolicy(ResourcePolicy, ABC):
     """
     General resource policy for VMs
@@ -40,10 +47,7 @@ class VMPolicy(ResourcePolicy, ABC):
 
     def __init__(self) -> None:
         super().__init__()
-        #py_logging.basicConfig(filename='resource_policy.log', level=py_logging.INFO)
-        #self._pylogger = py_logging.getLogger("ResourcePolicy")
 
-    # TODO CLEANUP is this function ever called? (vs.  its subclass version)
     def check_request(self, request: Request) -> bool:
         """
         Enforces the policy on a request.
@@ -52,36 +56,39 @@ class VMPolicy(ResourcePolicy, ABC):
         """
         standardized_request = self.get_standard_request_form(request)
         standardized_vm_policy = self.get_policy_standard_form()
-
         # First check the action
-        if not standardized_request["actions"].is_allowed_be_performed(standardized_vm_policy["actions"]):
-            print("Action not allowed")
+        if not standardized_request["actions"].is_allowed_be_performed(
+            standardized_vm_policy["actions"]
+        ):
+            LOGGER.debug("Action not allowed")
             return False
-        
+
         # Then check the regions
         for region in standardized_request["regions"]:
             if region not in standardized_vm_policy["regions"]:
-                print("Region not allowed")
+                LOGGER.debug("Region not allowed")
                 return False
 
         # Then check the instance type
         for instance_type in standardized_request["instance_type"]:
             if instance_type not in standardized_vm_policy["instance_type"]:
-                print("Instance type not allowed")
+                LOGGER.debug("Instance type not allowed")
                 return False
 
         # Then check the allowed images
         for image in standardized_request["allowed_images"]:
             if image not in standardized_vm_policy["allowed_images"]:
-                print("Image not allowed")
+                LOGGER.debug("Image not allowed")
                 return False
-        
+
         # Then check the startup script
-        if standardized_request["startup_script"] is not None and \
-                not standardized_request["startup_script"] in standardized_vm_policy["startup_scripts"]:
-            print("Startup script not allowed")
+        if (
+            standardized_request["startup_script"] is not None
+            and not standardized_request["startup_script"] in standardized_vm_policy["startup_scripts"]
+        ):
+            LOGGER.debug("Startup script not allowed")
             return False
-            
+
         return True
 
     def get_standard_request_form(self, request: Request) -> Dict:
@@ -96,7 +103,7 @@ class VMPolicy(ResourcePolicy, ABC):
         }
         """
         raise NotImplementedError
-    
+
     def get_policy_standard_form(self) -> Dict:
         """
         Gets the policy in a standard form.
@@ -110,7 +117,7 @@ class VMPolicy(ResourcePolicy, ABC):
         :return: The dictionary representation of the policy.
         """
         raise NotImplementedError
-    
+
     @staticmethod
     def from_dict(policy_dict: Dict):
         """
@@ -120,11 +127,10 @@ class VMPolicy(ResourcePolicy, ABC):
         """
         raise NotImplementedError
 
+
 class UnrecognizedResourcePolicy(ResourcePolicy):
     def __init__(self) -> None:
         super().__init__()
-        #py_logging.basicConfig(filename='resource_policy.log', level=py_logging.INFO)
-        #self._pylogger = py_logging.getLogger("ResourcePolicy")
 
     def check_request(self, request: Request) -> bool:
         """
@@ -136,7 +142,7 @@ class UnrecognizedResourcePolicy(ResourcePolicy):
         :param request: The request to enforce the policy on.
         :return: False.
         """
-        print(f"Request is unrecognized: {request.url}")
+        LOGGER.debug(f"Request is unrecognized: {request.url}")
         return False
 
     def to_dict(self) -> Dict:
@@ -145,7 +151,7 @@ class UnrecognizedResourcePolicy(ResourcePolicy):
         :return: The dictionary representation of the policy.
         """
         raise NotImplementedError
-    
+
     @staticmethod
     def from_dict(policy_dict: Dict):
         """
@@ -154,6 +160,7 @@ class UnrecognizedResourcePolicy(ResourcePolicy):
         :return: The policy representation of the dict.
         """
         raise NotImplementedError
+
 
 class CloudPolicy(ResourcePolicy, ABC):
     """
@@ -175,12 +182,13 @@ class CloudPolicy(ResourcePolicy, ABC):
         :return: True if the request is allowed, False otherwise.
         """
         request_resource_types = self.get_request_resource_types(request)
+        self.valid_authorization = None
         for resource_type in request_resource_types:
             if not self.check_resource_type(resource_type, request):
                 return False
         return True
-    
-    def check_resource_type(self, resource_type: Tuple[str], request: Request) -> (bool):
+
+    def check_resource_type(self, resource_type: Tuple[str], request: Request) -> bool:
         """
         Enforces the policy on a resource type.
         :param resource_type: The resource type to enforce the policy on.
@@ -188,12 +196,13 @@ class CloudPolicy(ResourcePolicy, ABC):
         :return: True if the request is allowed, False otherwise.
         """
         raise NotImplementedError
-    
+
+
 class PolicyContentException(Exception):
     """
     Exception for when a policy is not valid (may not be formatted properly or contain correct information).
     """
-    
+
     def __init__(self, message):
         """
         Initializes the exception.

@@ -2,31 +2,46 @@ from azure.identity import AzureCliCredential
 from azure.mgmt.resource import ResourceManagementClient
 from azure.mgmt.network import NetworkManagementClient
 from azure.mgmt.compute import ComputeManagementClient
-from azure.mgmt.compute.models import OSProfile, NetworkProfile, ImageReference, ManagedDiskParameters, OSDisk, StorageProfile, HardwareProfile, VirtualMachine, OperatingSystemTypes, DiskCreateOptionTypes
+from azure.mgmt.compute.models import OSProfile, NetworkProfile, ImageReference, ManagedDiskParameters, OSDisk, StorageProfile, HardwareProfile, VirtualMachine, OperatingSystemTypes, DiskCreateOptionTypes, VirtualMachineIdentity
+
+from azure.identity import DefaultAzureCredential
+from azure.mgmt.subscription import SubscriptionClient
+from azure.mgmt.resource.resources.models import ResourceGroup
+
+import base64
 
 # TODO: Handle secret management + remove uses of 'AzureCliCredential()'
-SUBSCRIPTION_ID =
-USERNAME =
-PASSWORD =
+credential = DefaultAzureCredential()
+subscription_client = SubscriptionClient(credential)
+subscription_id = next(subscription_client.subscriptions.list()).subscription_id
+# Dummy credentials 
+USERNAME = "skydentity"
+PASSWORD = "$kyD3ntity1sAwesome"
 NUM_VMS_TO_CREATE = 1
 
+BASE_URL = "https://127.0.0.1:5000"
+# BASE_URL = "https://management.azure.com"
+
 """
-    Creates a new resource group in the given location (region), or default eastus2.
+    Creates a new resource group in the given location (region), or default westus.
     This includes creating the virtual network and subnet that are shared between VMs.
     Returns the subnet id necessary to create individual VMs.
 """
-def create_resource_group(resource_group_name, subscription_id, location="eastus2"):
+def create_resource_group(resource_group_name, subscription_id, location="westus"):
     # Get credentials from CLI
     credential = AzureCliCredential()
 
     # Create resource group
-    resource_client = ResourceManagementClient(credential, subscription_id)
+    resource_client = ResourceManagementClient(credential, subscription_id, base_url=BASE_URL)
+    resource_group_params = ResourceGroup(location=location)
+
     resource_group = resource_client.resource_groups.create_or_update(
-        resource_group_name, {"location": location}
+        resource_group_name, resource_group_params
     )
 
     # Create virtual network
-    network_client = NetworkManagementClient(credential, subscription_id)
+    # TODO: Look into a default VPC / network setup
+    network_client = NetworkManagementClient(credential, subscription_id, base_url=BASE_URL)
 
     vnet_name = resource_group_name + "-vnet"
     vnet = network_client.virtual_networks.begin_create_or_update(
@@ -34,7 +49,30 @@ def create_resource_group(resource_group_name, subscription_id, location="eastus
         vnet_name,
         {
             "location": location,
-            "address_space": {"address_prefixes": ["10.0.0.0/16"]},
+            "address_space": {"address_prefixes": ["10.143.0.0/16"]},
+        },
+    ).result()
+
+    # Create network security group to allow ssh
+    nsg_name = resource_group_name + "-nsg"
+    nsg = network_client.network_security_groups.begin_create_or_update(
+        resource_group_name,
+        nsg_name,
+        {
+            "location": location,
+            "security_rules": [
+                {
+                    "name": "ssh",
+                    "protocol": "Tcp",
+                    "source_port_range": "*",
+                    "destination_port_range": "22",
+                    "source_address_prefix": "*",
+                    "destination_address_prefix": "*",
+                    "access": "Allow",
+                    "priority": 100,
+                    "direction": "Inbound",
+                }
+            ],
         },
     ).result()
 
@@ -44,21 +82,25 @@ def create_resource_group(resource_group_name, subscription_id, location="eastus
         resource_group_name,
         vnet_name,
         subnet_name,
-        {"address_prefix": "10.0.0.0/24"},
+        {
+            "address_prefix": "10.143.0.0/16",
+            "network_security_group": {"id": nsg.id},
+         },
     ).result()
+    print("Created subnet")
 
-    return subnet.id
+    return subnet.id, nsg.id
 
 """
     Create the public ip address and network interface for an individual VM in a given subnet.
     Returns the network interface id necessary to create a VM instance.
 """
-def create_public_ip_and_nic(resource_group_name, subscription_id, subnet_id, location="eastus2"):
+def create_public_ip_and_nic(resource_group_name, subscription_id, subnet_id, nsg_id, location="westus"):
     # Get credentials from CLI
     credential = AzureCliCredential()
 
     # Create public ip address
-    network_client = NetworkManagementClient(credential, subscription_id)
+    network_client = NetworkManagementClient(credential, subscription_id, base_url=BASE_URL)
 
     ip_name = resource_group_name + "-ip"
     ip_address = network_client.public_ip_addresses.begin_create_or_update(
@@ -87,6 +129,7 @@ def create_public_ip_and_nic(resource_group_name, subscription_id, subnet_id, lo
                     "public_ip_address": {"id": ip_address.id},
                 }
             ],
+            "network_security_group": {"id": nsg_id}
         },
     ).result()
 
@@ -95,9 +138,9 @@ def create_public_ip_and_nic(resource_group_name, subscription_id, subnet_id, lo
 # TODO: Add type annotations
 # TODO: WIP, issue with image reference for disk
 # Useful reference: https://learn.microsoft.com/en-us/azure/developer/python/sdk/examples/azure-sdk-samples-managed-disks
-def disk_from_image_reference(vm_name, disk_size_gb, image_reference, location="eastus2"):
+def disk_from_image_reference(vm_name, disk_size_gb, image_reference, location="westus"):
     credential = AzureCliCredential()
-    compute_client = ComputeManagementClient(credential, subscription_id)
+    compute_client = ComputeManagementClient(credential, subscription_id, base_url=BASE_URL)
     os_disk_name = vm_name + '-osdisk'
 
     disk = {
@@ -119,6 +162,7 @@ def disk_from_image_reference(vm_name, disk_size_gb, image_reference, location="
 
 # Instead of creating a separate managed disk, could use existing image as in GCP test_server.py
 def storage_profile_from_image(group_name, image_name):
+    compute_client = ComputeManagementClient(credential, subscription_id, base_url=BASE_URL)
     image = compute_client.images.get(group_name, image_name)
 
     storage_profile = azure.mgmt.compute.models.StorageProfile(
@@ -134,7 +178,7 @@ Creates a new VM with the provided network interface id.
 
     vm_size : Can be configured with a string or left as default. 
               Options can be found with azure CLI: 
-                az vm list-sizes --location your-location --output table, where your-location is 'eastus2' for example
+                az vm list-sizes --location your-location --output table, where your-location is 'westus' for example
     disk : Set to a azure.mgmt.compute.models.Disk type, can be used instead of the default. 
            If no disk is set, the create_vm request automatically creates a managed disk with the default image_reference:
                 publisher='Canonical'
@@ -142,9 +186,11 @@ Creates a new VM with the provided network interface id.
                 sku='16.04-LTS'
                 version='latest'
 """
-def create_instance(resource_group_name, subscription_id, nic_id, vm_name, vm_size="Standard_B1s", location="eastus2", disk=None):
+def create_instance(resource_group_name, subscription_id, nic_id, vm_name, vm_size="Standard_B1s", location="westus", disk=None):
     credential = AzureCliCredential()
-    compute_client = ComputeManagementClient(credential, subscription_id)
+    compute_client = ComputeManagementClient(credential, subscription_id, base_url=BASE_URL)
+
+    identity_name = "test"
 
     vm = VirtualMachine(
         location=location,
@@ -152,13 +198,21 @@ def create_instance(resource_group_name, subscription_id, nic_id, vm_name, vm_si
             computer_name=vm_name,
             admin_username=USERNAME,
             admin_password=PASSWORD,
+            # Cloud-init script
+            custom_data=base64.b64encode(("#! /bin/bash\nsudo echo \"success\" > startup_script.out\n").encode('utf-8')).decode('utf-8')
         ),
         hardware_profile=HardwareProfile(vm_size=vm_size),
         network_profile=NetworkProfile(
             network_interfaces=[{
                 'id': nic_id
             }]
-        )
+        ),
+        identity=VirtualMachineIdentity(
+            type='UserAssigned',
+            user_assigned_identities={
+                f"/subscriptions/{subscription_id}/resourceGroups/{resource_group_name}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identity_name}": {}
+            }
+        ),
     )
 
     if disk:
@@ -186,13 +240,13 @@ def create_instance(resource_group_name, subscription_id, nic_id, vm_name, vm_si
 def main():
     # Create resource group (including vnet and subnet) once
     resource_group_name = "skydentity"
-    subnet_id = create_resource_group(resource_group_name, SUBSCRIPTION_ID)
+    subnet_id, nsg_id = create_resource_group(resource_group_name, subscription_id, location="westus")
 
     # Create VMs
     for i in range(NUM_VMS_TO_CREATE):
-        nic_id = create_public_ip_and_nic(resource_group_name, SUBSCRIPTION_ID, subnet_id)
+        nic_id = create_public_ip_and_nic(resource_group_name, subscription_id, subnet_id, nsg_id)
         # Name VM 'skydentity-VM#' where # is the 1-indexed VM number
-        vm = create_instance(resource_group_name, SUBSCRIPTION_ID, nic_id, "{0}-VM{1}".format(resource_group_name, (i + 1)))
+        vm = create_instance(resource_group_name, subscription_id, nic_id, "{0}-VM{1}".format(resource_group_name, (i + 1)))
         print("Created {0} successfully".format(vm.name))
 
 if __name__ == "__main__":

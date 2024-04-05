@@ -1,0 +1,19 @@
+authorization:
+  cloud_provider: 
+    - azure
+
+  resource_group:
+    - skydentity-westus
+  
+  actions:
+    - CREATE
+
+  region: 
+    - westus
+
+  roles:
+    # This points to the existing Contributor role
+    - restricted_role:
+      - role: Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c
+      - scope: resource_group
+      - object: skydentity-westus
