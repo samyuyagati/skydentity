@@ -69,16 +69,16 @@ class AuthorizationRequest:
 class GCPStoragePolicy(AuthorizationPolicy):
     def __init__(self, policy_dict=None, policy_file=None):
         if policy_dict:
-            policy_dict = policy_dict["storage"]
-            self._policy = self.authorization_from_dict(policy_dict)
+            self._policy = self.from_dict(policy_dict)
         elif policy_file:
-            self._policy = self.authorization_from_yaml(policy_file)
+            self._policy = GCPStoragePolicy.authorization_from_yaml(policy_file)
         else:
             raise ValueError(
                 "Must provide either a policy dictionary or a policy file."
             )
 
-    def authorization_from_dict(self, policy_dict: dict) -> Authorization:
+    @staticmethod
+    def from_dict(policy_dict: dict) -> Authorization:
         """
         Parses a dictionary into an Authorization.
 
@@ -88,6 +88,7 @@ class GCPStoragePolicy(AuthorizationPolicy):
         - actions
         - buckets
         """
+        policy_dict = policy_dict["storage"]
 
         try:
             cloud_provider = CloudProvider[policy_dict["cloud_provider"][0]]
@@ -115,14 +116,29 @@ class GCPStoragePolicy(AuthorizationPolicy):
             buckets=buckets,
         )
 
-    def authorization_from_yaml(self, file: str) -> Authorization:
+    @staticmethod
+    def authorization_to_dict(policy: Authorization):
+        """
+        Convert a parsed Authorization policy into a dict.
+        """
+        return {
+            "storage": {
+                "cloud_provider": [policy.cloud_provider.value],
+                "project": [policy.project],
+                "actions": [action.value for action in policy.actions],
+                "buckets": policy.buckets,
+            }
+        }
+
+    @staticmethod
+    def authorization_from_yaml(file: str) -> Authorization:
         """
         Parses a YAML file into an Authorization.
         """
         with open(file, "r") as f:
-            policy_dict = yaml.load(f, Loader=yaml.SafeLoader)["storage_policy"]
+            policy_dict = yaml.load(f, Loader=yaml.SafeLoader)
 
-            return self.authorization_from_dict(policy_dict)
+            return GCPStoragePolicy.from_dict(policy_dict)
 
     def authorization_request_from_dict(
         self, policy_dict: dict

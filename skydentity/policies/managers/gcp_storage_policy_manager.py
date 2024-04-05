@@ -6,7 +6,11 @@ from firebase_admin import credentials, firestore
 from google.oauth2 import service_account
 from googleapiclient import discovery
 
-from skydentity.policies.checker.gcp_storage_policy import StoragePolicyAction
+from skydentity.policies.checker.gcp_storage_policy import (
+    Authorization,
+    GCPStoragePolicy,
+    StoragePolicyAction,
+)
 from skydentity.policies.iam.gcp_storage_service_account_manager import (
     GCPStorageServiceAccountManager,
 )
@@ -66,6 +70,17 @@ class GCPStoragePolicyManager(PolicyManager):
             .document(public_key_hash)
             .get()
             .to_dict()
+        )
+
+    def upload_policy(self, hashed_public_key: str, policy: Authorization):
+        """
+        Uploads a policy to the cloud vendor.
+        :param public_key: The public key of the policy.
+        :param policy: The policy to upload.
+        """
+        policy_dict = GCPStoragePolicy.authorization_to_dict(policy)
+        self._db.collection("storage_policies").document(hashed_public_key).set(
+            policy_dict
         )
 
     def get_project_info_from_bucket_name(self, bucket: str) -> str:
