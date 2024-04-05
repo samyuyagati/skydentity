@@ -838,10 +838,7 @@ class AzureDeploymentPolicy(ResourcePolicy):
         :param path: The path of the request.
         """
         request_body = {
-            "properties": {
             }
-        }
-        if "properties" in generic_source_dict:
             request_body["properties"] = self.recursively_resolve_parameters(generic_source_dict["properties"], parameters_dict)
         if "location" in generic_source_dict:
             request_body["location"] = generic_source_dict["location"]

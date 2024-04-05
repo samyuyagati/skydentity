@@ -28,8 +28,8 @@ def verify_request_signature(request) -> bool:
     public_key_bytes = base64.b64decode(encoded_public_key_string, validate=True)
 
     now = datetime.datetime.now(datetime.timezone.utc)
-    if now - datetime.timedelta(seconds=180) > timestamp_datetime:
-        # if timestamp when request was sent is > 180 seconds old, deny the request
+    if now - datetime.timedelta(seconds=60) > timestamp_datetime:
+        # if timestamp when request was sent is > 60 seconds old, deny the request
         return False
 
     reformed_message = f"{str(request.method)}-{timestamp}-{public_key_bytes}"

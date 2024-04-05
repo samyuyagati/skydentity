@@ -61,6 +61,12 @@ NUM_JOBS = args.num_jobs
 api_endpoint = "https://compute.googleapis.com/"
 if args.cloud == "azure":
     api_endpoint = "https://management.azure.com/"
+<<<<<<< HEAD
+=======
+    if args.with_skydentity:
+        api_endpoint = "https://127.0.0.1:5000/"
+# GCP with skydentity
+>>>>>>> 692e67e (Azure Default Deny (#25))
 if args.with_skydentity:
     api_endpoint = "https://127.0.0.1:5000/"
 
@@ -100,7 +106,11 @@ for batch in range(num_batches):
                 f"{prefix}-{i}",
                 "job.yaml",
                 "-c",
+<<<<<<< HEAD
                 f"skydentity-{i}"
+=======
+                "skydentity"
+>>>>>>> 692e67e (Azure Default Deny (#25))
             ],
             stdout=out_fd,
             stderr=err_fd,

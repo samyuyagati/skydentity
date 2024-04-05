@@ -7,7 +7,10 @@ import random
 import base64
 import json
 import os
+<<<<<<< HEAD
 import re
+=======
+>>>>>>> 692e67e (Azure Default Deny (#25))
 from collections import namedtuple
 from urllib.parse import urlparse
 
@@ -146,7 +149,6 @@ def generic_forward_request(request, log_dict=None):
         start_check_request_from_policy = time.time()
         public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
         authorized, managed_identity_id = check_request_from_policy(public_key_bytes, request, request_id=request_name, caller_name=caller)
-
         print_and_log(logger, build_time_logging_string(request_name, caller, "check_request_from_policy", start_check_request_from_policy, time.time()))
         if not authorized:
             print_and_log(logger, "Request is unauthorized (policy check failed)")
