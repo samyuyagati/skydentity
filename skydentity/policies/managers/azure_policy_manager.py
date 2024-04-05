@@ -1,5 +1,5 @@
 import json
-from typing import Union
+from typing import Type, Union
 
 from azure.cosmos import CosmosClient
 from azure.cosmos.partition_key import PartitionKey
@@ -18,7 +18,7 @@ class AzurePolicyManager(PolicyManager):
                  db_endpoint: str = None,
                  db_key: str = None,
                  db_info_file: str = None,
-                 policy_type = AzurePolicy,
+                 policy_type: Union[Type[AzurePolicy], Type[AzureAuthorizationPolicy]] = AzurePolicy,
                  db_name = 'skydentity',
                  db_container_name = 'policies'):
         """
