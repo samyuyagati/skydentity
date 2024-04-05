@@ -1,0 +1,40 @@
+virtual_machine:
+  actions:
+  - ALL
+  allowed_images:
+  - azure:
+    - ubuntu-hpc:2204
+  cloud_provider:
+  - azure
+  instance_type:
+  - azure:
+    - Standard_B1ms
+  regions:
+  - azure:
+    - westus
+  startup_scripts:
+      - azure:
+        # Hash of skypilot setup script
+        - 357664169a3da2faefd9507976f5e65c20ef3b04b3f88512b422cf4c01948864
+
+  attached_authorizations:
+  - azure:
+    - authorization:
+      - placeholder
+
+reads:
+  azure:
+    resource_group: skydentity-westus
+
+    regions:
+    - westus
+
+    virtualMachines: true
+    virtualMachineInstanceView: true
+    networkInterfaces: true
+    ipAddresses: true
+    operations: true
+    virtualNetworks: true
+    subnets: true
+    networkSecurityGroups: true
+    deployments: true

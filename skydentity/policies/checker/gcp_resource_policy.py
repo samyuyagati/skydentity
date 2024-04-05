@@ -874,7 +874,6 @@ class GCPPolicy(CloudPolicy):
             vm_dict = policy_dict["virtual_machine"]
             #print("VM_DICT in GCPPolicy:from_dict", vm_dict)
         vm_policy = GCPVMPolicy.from_dict(vm_dict, logger)
-
         attached_authorization_dict = {}
         if "attached_authorizations" in policy_dict:
             attached_authorization_dict = policy_dict["attached_authorizations"]

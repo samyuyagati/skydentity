@@ -18,6 +18,9 @@ parser.add_argument(
 parser.add_argument(
     "--with-skydentity", action="store_true", help="Whether to use Skydentity"
 )
+parser.add_argument(
+    "--cloud", type=str, default="gcp", help="Cloud to use"
+)
 args = parser.parse_args()
 
 job = """\
@@ -35,11 +38,32 @@ run: |
   echo Job done.
 """
 
+if args.cloud == "azure":
+    job = """\
+resources:
+  instance_type: Standard_B1ms
+  cloud: azure
+  region: westus
+
+run: |
+  secs=$(python -S -c 'import random; random.seed({i}); print(random.randint(20*60, 30*60))')
+
+  echo Job duration $secs seconds.
+  sleep $secs
+  echo Job done.
+"""
+
+
 # NOTE: if concurrent experiments - change name!
 prefix = "skydentity-test"
 
 NUM_JOBS = args.num_jobs
 api_endpoint = "https://compute.googleapis.com/"
+if args.cloud == "azure":
+    api_endpoint = "https://management.azure.com/"
+    if args.with_skydentity:
+        api_endpoint = "https://127.0.0.1:5000/"
+# GCP with skydentity
 if args.with_skydentity:
     api_endpoint = "http://127.0.0.1:5000/"
 
@@ -78,12 +102,15 @@ for batch in range(num_batches):
                 "-n",
                 f"{prefix}-{i}",
                 "job.yaml",
+                "-c",
+                "skydentity"
             ],
             stdout=out_fd,
             stderr=err_fd,
             env={
                 **os.environ,
                 "CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE": f"{api_endpoint}",
+                "REQUESTS_CA_BUNDLE": "/home/kdharmarajan/skydentity/local_tokens/cert.pem"
             },
         )
         subprocesses.append(cur_subprocess)

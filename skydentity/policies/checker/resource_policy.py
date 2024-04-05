@@ -51,7 +51,6 @@ class VMPolicy(ResourcePolicy, ABC):
         """
         standardized_request = self.get_standard_request_form(request)
         standardized_vm_policy = self.get_policy_standard_form()
-
         # First check the action
         if not standardized_request["actions"].is_allowed_be_performed(standardized_vm_policy["actions"]):
             self._pylogger.debug("Action not allowed")
@@ -174,6 +173,7 @@ class CloudPolicy(ResourcePolicy, ABC):
         :return: True if the request is allowed, False otherwise.
         """
         request_resource_types = self.get_request_resource_types(request)
+        self.valid_authorization = None
         for resource_type in request_resource_types:
             if not self.check_resource_type(resource_type, request):
                 return False
