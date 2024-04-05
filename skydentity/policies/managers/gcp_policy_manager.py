@@ -18,8 +18,8 @@ class GCPPolicyManager(PolicyManager):
         Initializes the GCP policy manager.
         :param credentials_path: The path to the credentials file.
         """
-        py_logging.basicConfig(filename='gcp_policy_manager.log', level=py_logging.INFO)
-        self._pylogger = py_logging.getLogger("GCPPolicyManager")
+        #py_logging.basicConfig(filename='gcp_policy_manager.log', level=py_logging.INFO)
+        #self._pylogger = py_logging.getLogger("GCPPolicyManager")
         self._cred = credentials.Certificate(credentials_path)
         try:
             self._app = firebase_admin.initialize_app(self._cred, name='policy_manager')
@@ -34,7 +34,7 @@ class GCPPolicyManager(PolicyManager):
         :param public_key: The public key of the policy.
         :param policy: The policy to upload.
         """
-        self._pylogger.debug(f"Uploading policy:\n {policy.to_dict()}")
+        print(f"Uploading policy:\n {policy.to_dict()}")
         self._db \
             .collection(self._firestore_policy_collection) \
             .document(public_key) \
@@ -58,5 +58,5 @@ class GCPPolicyManager(PolicyManager):
             )
             return policy
         except Exception as e:
-            self._pylogger.debug(f"Failed to get policy from GCP, possibly due to invalid public key: {e}")
+            print(f"Failed to get policy from GCP, possibly due to invalid public key: {e}")
             return None

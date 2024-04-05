@@ -1,4 +1,4 @@
-import logging as py_logging
+#import logging as py_logging
 
 from abc import ABC
 from typing import Dict, List, Tuple
@@ -40,9 +40,10 @@ class VMPolicy(ResourcePolicy, ABC):
 
     def __init__(self) -> None:
         super().__init__()
-        py_logging.basicConfig(filename='resource_policy.log', level=py_logging.INFO)
-        self._pylogger = py_logging.getLogger("ResourcePolicy")
+        #py_logging.basicConfig(filename='resource_policy.log', level=py_logging.INFO)
+        #self._pylogger = py_logging.getLogger("ResourcePolicy")
 
+    # TODO CLEANUP is this function ever called? (vs.  its subclass version)
     def check_request(self, request: Request) -> bool:
         """
         Enforces the policy on a request.
@@ -54,31 +55,31 @@ class VMPolicy(ResourcePolicy, ABC):
 
         # First check the action
         if not standardized_request["actions"].is_allowed_be_performed(standardized_vm_policy["actions"]):
-            self._pylogger.debug("Action not allowed")
+            print("Action not allowed")
             return False
         
         # Then check the regions
         for region in standardized_request["regions"]:
             if region not in standardized_vm_policy["regions"]:
-                self._pylogger.debug("Region not allowed")
+                print("Region not allowed")
                 return False
 
         # Then check the instance type
         for instance_type in standardized_request["instance_type"]:
             if instance_type not in standardized_vm_policy["instance_type"]:
-                self._pylogger.debug("Instance type not allowed")
+                print("Instance type not allowed")
                 return False
 
         # Then check the allowed images
         for image in standardized_request["allowed_images"]:
             if image not in standardized_vm_policy["allowed_images"]:
-                self._pylogger.debug("Image not allowed")
+                print("Image not allowed")
                 return False
         
         # Then check the startup script
         if standardized_request["startup_script"] is not None and \
                 not standardized_request["startup_script"] in standardized_vm_policy["startup_scripts"]:
-            self._pylogger.debug("Startup script not allowed")
+            print("Startup script not allowed")
             return False
             
         return True
@@ -122,8 +123,8 @@ class VMPolicy(ResourcePolicy, ABC):
 class UnrecognizedResourcePolicy(ResourcePolicy):
     def __init__(self) -> None:
         super().__init__()
-        py_logging.basicConfig(filename='resource_policy.log', level=py_logging.INFO)
-        self._pylogger = py_logging.getLogger("ResourcePolicy")
+        #py_logging.basicConfig(filename='resource_policy.log', level=py_logging.INFO)
+        #self._pylogger = py_logging.getLogger("ResourcePolicy")
 
     def check_request(self, request: Request) -> bool:
         """
@@ -135,7 +136,7 @@ class UnrecognizedResourcePolicy(ResourcePolicy):
         :param request: The request to enforce the policy on.
         :return: False.
         """
-        self._pylogger.debug(f"Request is unrecognized: {request.url}")
+        print(f"Request is unrecognized: {request.url}")
         return False
 
     def to_dict(self) -> Dict:

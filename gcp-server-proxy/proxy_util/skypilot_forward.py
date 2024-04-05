@@ -5,7 +5,7 @@ Forwarding for SkyPilot requests.
 import base64
 import datetime
 import json
-import logging as py_logging
+#import logging as py_logging
 import os
 from collections import namedtuple
 
@@ -16,8 +16,8 @@ from Crypto.Signature import pkcs1_15
 from flask import Flask, Response, request
 
 from .logging import get_logger, print_and_log
-py_logging.basicConfig(filename='redirector_skypilot_forward.log', level=py_logging.INFO)
-pylogger = py_logging.getLogger(__name__)
+#py_logging.basicConfig(filename='redirector_skypilot_forward.log', level=py_logging.INFO)
+#pylogger = py_logging.getLogger(__name__)
 
 SkypilotRoute = namedtuple(
     "SkypilotRoute",
@@ -153,12 +153,12 @@ def generic_forward_request(request, log_dict=None):
     Forward a generic request to google APIs.
     """
     logger = get_logger()
-    pylogger.debug(f"{log_dict}")
+    #pylogger.debug(f"{log_dict}")
     if log_dict is not None:
         log_str = f"PATH: {request.full_path}\n"
         for key, val in log_dict.items():
             log_str += f"\t{key}: {val}\n"
-        pylogger.debug(f"{log_str}")
+        #pylogger.debug(f"{log_str}")
         print_and_log(logger, log_str.strip())
 
     new_url = get_new_url(request)
@@ -181,7 +181,7 @@ def generic_forward_request(request, log_dict=None):
             with open(capability_path, "r") as f:
                 new_json["serviceAccounts"] = [json.load(f)]
 
-            pylogger.debug(f"JSON with service acct capability: {new_json}")
+            #pylogger.debug(f"JSON with service acct capability: {new_json}")
 
     print("Forwarding to client...", flush=True)
 

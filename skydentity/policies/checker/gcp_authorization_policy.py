@@ -1,4 +1,4 @@
-import logging as py_logging
+#import logging as py_logging
 import os
 import yaml
 
@@ -46,8 +46,8 @@ class GCPAuthorizationPolicy(AuthorizationPolicy):
     Defines methods for checking authorization on GCP.
     """
     def __init__(self, policy_dict=None, policy_file=None):
-        py_logging.basicConfig(filename='gcp_authorization_policy.log', level=py_logging.INFO)
-        self._pylogger = py_logging.getLogger("GCPAuthorizationPolicy")
+        #py_logging.basicConfig(filename='gcp_authorization_policy.log', level=py_logging.INFO)
+        #self._pylogger = py_logging.getLogger("GCPAuthorizationPolicy")
         if policy_dict:
             policy_dict = policy_dict['authorization']
             self._policy = self.authorization_from_dict(policy_dict)
@@ -131,7 +131,7 @@ class GCPAuthorizationPolicy(AuthorizationPolicy):
             if logger:
                 logger.log_text(f"Request is unrecognized (gcp_authorization_policy.py): {request.url}")
             else:
-                self._pylogger.debug(f"Request is unrecognized (gcp_authorization_policy.py): {request.url}, {request.method}")
+                print(f"Request is unrecognized (gcp_authorization_policy.py): {request.url}, {request.method}")
             return (None, False)
 
 def main():

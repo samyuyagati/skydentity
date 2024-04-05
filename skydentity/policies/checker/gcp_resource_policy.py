@@ -1,5 +1,5 @@
 import hashlib
-import logging as py_logging
+#import logging as py_logging
 import re
 import sys
 from typing import Dict, List, Optional, Tuple, TypedDict, Union
@@ -46,8 +46,8 @@ class GCPVMPolicy(VMPolicy):
         :param policy: The dict of the policy to enforce.
         """
         self._policy = policy
-        py_logging.basicConfig(filename='gcp_resource_policy.log', level=py_logging.INFO)
-        self._pylogger = py_logging.getLogger("GCPResourcePolicy")
+        #py_logging.basicConfig(filename='gcp_resource_policy.log', level=py_logging.INFO)
+        #self._pylogger = py_logging.getLogger("GCPResourcePolicy")
 
     def check_request(self, request: Request) -> bool:
         super_valid = super().check_request(request)
@@ -59,6 +59,7 @@ class GCPVMPolicy(VMPolicy):
         # also check hard-coded values in the request
 
         request_contents = request.get_json(cache=True)
+        print("GCP VM Policy request contents: ", request_contents)
 
         # check disks
         if "disks" in request_contents:
@@ -69,18 +70,18 @@ class GCPVMPolicy(VMPolicy):
                     or disk.get("boot", None) != True
                     or disk.get("type", None) != "PERSISTENT"
                 ):
-                    self._pylogger.debug(f"disk denied (plain) {disk}")
+                    #print(f"disk denied (plain) {disk}")
                     return False
 
                 initialize_params = disk.get("initializeParams", None)
                 if initialize_params is not None:
                     disk_size = initialize_params.get("diskSizeGb", None)
                     if disk_size is None or disk_size > 256:
-                        self._pylogger.debug(f"disk denied (disk size) {disk}")
+                        #print(f"disk denied (disk size) {disk}")
                         return False
                     disk_type = initialize_params.get("diskType", None)
                     if disk_type is None:
-                        self._pylogger.debug(f"disk denied (disk type) {disk}")
+                        #print(f"disk denied (disk type) {disk}")
                         return False
 
                     disk_match = re.search(GCPVMPolicy.DISK_TYPE_REGEX, disk_type)
@@ -89,12 +90,12 @@ class GCPVMPolicy(VMPolicy):
                         or disk_match.group("zone")
                         not in standardized_vm_policy["regions"]
                     ):
-                        self._pylogger.debug(f"disk denied (disk type) {disk}")
+                        #print(f"disk denied (disk type) {disk}")
                         return False
 
                     source_image = initialize_params.get("sourceImage", None)
                     if source_image is None:
-                        self._pylogger.debug(f"disk denied (source_image) {disk}")
+                        print(f"disk denied (source_image) {disk}")
                         return False
 
                     source_image_match = re.search(
@@ -105,15 +106,17 @@ class GCPVMPolicy(VMPolicy):
                         or source_image_match.group("image")
                         not in standardized_vm_policy["allowed_images"]
                     ):
-                        self._pylogger.debug("disk denied (source_image)")
+                        print("disk denied (source_image)")
                         return False
 
-        # Check metadata; currently will break skypilot
+        # Check metadata
         if "metadata" in request_contents:
             metadata = request_contents["metadata"]
+            print(f"Metadata found in request contents: {metadata}")
             if "items"  in metadata:
                 for item in metadata["items"]:
-                    if item["key"] == "startup-script":
+                    if item["key"] == "user-data":
+                        print(f"Potential startup script found in metadata: {item['value']}")
                         startup_script_hash = hashlib.sha256(
                             item["value"].encode()
                         ).hexdigest()
@@ -121,10 +124,14 @@ class GCPVMPolicy(VMPolicy):
                             startup_script_hash
                             not in standardized_vm_policy["startup_scripts"]
                         ):
-                            self._pylogger.debug(f"metadata denied (startup_script hash mismatch) {item}")
+                            print(f"metadata denied (startup_script hash mismatch) \n >>> Script:{item}\n >>> Got Hash:{startup_script_hash}\n >>> Expected Hash:{standardized_vm_policy['startup_scripts']}")
+                            return False
+                    elif item["key"] == "block-project-ssh-keys":
+                        if item["value"] != "true":
+                            print(f"metadata denied (block project ssh keys set to false) {item}")
                             return False
                     else:
-                        self._pylogger.debug(f"metadata denied (only key permitted is startup-script) {item}")
+                        print(f"metadata denied (only keys permitted are startup script and block project ssh keys) {item}")
                         return False
 
         # check network interfaces
@@ -133,7 +140,7 @@ class GCPVMPolicy(VMPolicy):
             for interface in interfaces:
                 access_configs = interface.get("accessConfigs", None)
                 if access_configs is None:
-                    self._pylogger.debug(f"network interface denied (access_configs) {interface}")
+                    print(f"network interface denied (access_configs) {interface}")
                     return False
 
                 for access_config in access_configs:
@@ -146,12 +153,12 @@ class GCPVMPolicy(VMPolicy):
                         or access_config_name != "External NAT"
                         or access_config_type != "ONE_TO_ONE_NAT"
                     ):
-                        self._pylogger.debug(f"network interface denied (access_configs) {access_config}")
+                        print(f"network interface denied (access_configs) {access_config}")
                         return False
 
                 subnetwork = interface.get("subnetwork")
                 if subnetwork is None:
-                    self._pylogger.debug(f"network interface denied (subnetwork) {interface}")
+                    print(f"network interface denied (subnetwork) {interface}")
                     return False
 
                 subnetwork_match = re.search(GCPVMPolicy.SUBNETWORK_REGEX, subnetwork)
@@ -165,12 +172,12 @@ class GCPVMPolicy(VMPolicy):
                     )
                     or subnetwork_match.group("subnetwork") != "skypilot-vpc"
                 ):
-                    self._pylogger.debug(f"network interface denied (subnetwork) {interface}")
+                    print(f"network interface denied (subnetwork) {interface}")
                     return False
 
         if "scheduling" in request_contents:
             if request_contents["scheduling"] != None:
-                self._pylogger.debug(f"scheduling denied {request_contents['scheduling']}")
+                print(f"scheduling denied {request_contents['scheduling']}")
                 return False
 
         return True
@@ -182,7 +189,9 @@ class GCPVMPolicy(VMPolicy):
         """
         return self._policy
 
+    # TODO CLEANUP looks like this function is never called
     def get_standard_request_form(self, request: Request) -> Dict:
+        print("GETTING STANDARD REQUEST FORM")
         """
         Extracts the important values from the request to check in a standardized form.
         The standard form is:
@@ -241,10 +250,12 @@ class GCPVMPolicy(VMPolicy):
         if "metadata" in request_contents:
             if "items" in request_contents["metadata"]:
                 for item in request_contents["metadata"]["items"]:
-                    if item["key"] == "startup-script":
+                    if item["key"] == "user-data":
                         out_dict["startup_script"] = hashlib.sha256(
                             item["value"].encode()
                         ).hexdigest()
+
+        print(f"Standard request form: {out_dict}")
 
         return out_dict
 
@@ -288,7 +299,7 @@ class GCPVMPolicy(VMPolicy):
         try:
             # TODO(kdharmarajan): Generalize this policy actioni
             # TODO what happens if multiple actions are permitted?
-            #self._pylogger.debug(f"{policy_dict_cloud_level["actions"]}")
+            #print(f"{policy_dict_cloud_level["actions"]}")
             if isinstance(policy_dict_cloud_level["actions"], list):
                 action = PolicyAction[policy_dict_cloud_level["actions"][0]]
             else:
@@ -356,8 +367,8 @@ class GCPAttachedAuthorizationPolicy(ResourcePolicy):
         :param policy: The dict of the policy to enforce.
         """
         self._policy = policy
-        py_logging.basicConfig(filename='gcp_resource_policy.log', level=py_logging.INFO)
-        self._pylogger = py_logging.getLogger("GCPResourcePolicy")
+        #py_logging.basicConfig(filename='gcp_resource_policy.log', level=py_logging.INFO)
+        #self._pylogger = py_logging.getLogger("GCPResourcePolicy")
 
     def check_request(
         self,
@@ -370,11 +381,11 @@ class GCPAttachedAuthorizationPolicy(ResourcePolicy):
         :param request: The request to enforce the policy on.
         :return: True if the request is allowed, False otherwise.
         """
-        self._pylogger.debug("check_request")
+        print("check_request")
         sys.stdout.flush()
 
         request_contents = request.get_json(cache=True)
-        self._pylogger.debug(f">>>request: {request_contents}")
+        print(f">>>request: {request_contents}")
 
         # Handle attached service account capability
         if "serviceAccounts" not in request_contents:
@@ -387,13 +398,13 @@ class GCPAttachedAuthorizationPolicy(ResourcePolicy):
                     "Only one service account may be attached"
                 )
             else:
-                self._pylogger.debug("Only one service account may be attached")
+                print("Only one service account may be attached")
             return (None, False)
 
         # Expect a capability of the form:
         #   { 'nonce': XX, 'header': XX, 'ciphertext': XX, 'tag': XX }
         service_account_capability = request_contents["serviceAccounts"][0]
-        self._pylogger.debug(f">>>service_account_capability: {service_account_capability}")
+        print(f">>>service_account_capability: {service_account_capability}")
         if (
             service_account_capability["nonce"] is None
             or service_account_capability["header"] is None
@@ -403,24 +414,24 @@ class GCPAttachedAuthorizationPolicy(ResourcePolicy):
             if logger:
                 logger.log_text("Invalid capability format")
             else:
-                self._pylogger.debug("Invalid capability format")
+                print("Invalid capability format")
             return (None, False)
 
         service_account_id, success = auth_policy_manager.check_capability(
             service_account_capability
         )
         if not success:
-            self._pylogger.debug("Unsuccessful in checking capability")
+            print("Unsuccessful in checking capability")
             return (None, False)
 
         # Double-check that the service account is allowed (e.g., if policy changed since
         # the capability was issued)
-        self._pylogger.debug(f"{self._policy[GCPPolicy.GCP_CLOUD_NAME][0]['authorization']}")
+        print(f"{self._policy[GCPPolicy.GCP_CLOUD_NAME][0]['authorization']}")
         if (
             service_account_id
             not in self._policy[GCPPolicy.GCP_CLOUD_NAME][0]["authorization"]
         ):
-            self._pylogger.debug(
+            print(
                 f"Service account id {service_account_id} not in {self._policy[GCPPolicy.GCP_CLOUD_NAME]}"
             )
             return (None, False)
@@ -434,7 +445,7 @@ class GCPAttachedAuthorizationPolicy(ResourcePolicy):
         :return: The dictionary representation of the policy.
         """
         out_dict = {}
-        self._pylogger.debug(f"{self._policy}")
+        print(f"{self._policy}")
         if GCPPolicy.GCP_CLOUD_NAME in self._policy:
             out_dict[GCPPolicy.GCP_CLOUD_NAME] = self._policy[GCPPolicy.GCP_CLOUD_NAME]
         return out_dict
@@ -472,7 +483,7 @@ class GCPAttachedAuthorizationPolicy(ResourcePolicy):
                 cloud_specific_policy[GCPPolicy.GCP_CLOUD_NAME] = service_accounts
                 break
         cloud_specific_policy["can_cloud_run"] = can_cloud_run
-        #self._pylogger.debug(f"Cloud-specific attached authorization policy: {cloud_specific_policy}")
+        #print(f"Cloud-specific attached authorization policy: {cloud_specific_policy}")
         return GCPAttachedAuthorizationPolicy(cloud_specific_policy)
 
 
@@ -573,7 +584,7 @@ class GCPReadPolicy(ResourcePolicy):
         """
         self._policy = policy
         self._policy_override = policy_override
-        self._pylogger = py_logging.getLogger("GCPResourcePolicy")
+        #self._pylogger = py_logging.getLogger("GCPResourcePolicy")
 
     def check_request(self, request: Request) -> bool:
         raise NotImplemented("Use `check_read_request` instead.")
@@ -629,7 +640,7 @@ class GCPReadPolicy(ResourcePolicy):
             return self._policy["operations"]
 
         # Deny request if unrecognized read type
-        self._pylogger.warning(f"Request ({request.path}) denied. Unrecognized read type: {read_type}")
+        print(f"Request ({request.path}) denied. Unrecognized read type: {read_type}")
         return False
 
     def _get_request_info(self, request: Request, read_type: str):
@@ -743,7 +754,6 @@ class GCPPolicy(CloudPolicy):
             "metadata",
             "labels",
             "scheduling",
-            "serviceAccounts",
             "tags",
         ]
     )
@@ -766,10 +776,10 @@ class GCPPolicy(CloudPolicy):
             "read": read_policy,
             "unrecognized": UnrecognizedResourcePolicy(),
         }
-        py_logging.basicConfig(filename='gcp_resource_policy.log', level=py_logging.INFO)
-        self._pylogger = py_logging.getLogger("GCPResourcePolicy")
+        #py_logging.basicConfig(filename='gcp_resource_policy.log', level=py_logging.INFO)
+        #self._pylogger = py_logging.getLogger("GCPResourcePolicy")
         self.valid_authorization: Union[str, None] = None
-        self._pylogger.debug(
+        print(
             "GCPAuthorizationPolicy init:",
             self._resource_policies["attached_authorizations"]._policy,
         )
@@ -788,7 +798,7 @@ class GCPPolicy(CloudPolicy):
 
         # Handle GET request
         if request.method == "GET":
-            self._pylogger.debug("NOT JSON")
+            print("NOT JSON")
             if "images" in request.path:
                 resource_types.add(("image_lookup",))
             else:
@@ -806,10 +816,10 @@ class GCPPolicy(CloudPolicy):
                 if not has_match:
                     # if no matches, then add unrecognized
                     resource_types.add(("unrecognized",))
-                    self._pylogger.info(f"UNRECOGNIZED RESOURCE (GET): {request.path}")
+                    print(f"UNRECOGNIZED RESOURCE (GET): {request.path}")
         elif request.method == "POST":
             # Handle POST request
-            self._pylogger.debug(f"{request.get_json(cache=True)}")
+            print(f"{request.get_json(cache=True)}")
             if (
                 re.search(GCPVMPolicy.VM_URL_REGEX["set_labels"], request.path)
                 is not None
@@ -817,15 +827,19 @@ class GCPPolicy(CloudPolicy):
                 resource_types.add(("virtual_machine",))
             else:
                 for key in request.get_json(cache=True).keys():
-                    self._pylogger.debug(f"{key}")
+                    print(f"Post Request, not set labels: {key}")
+                    print(f"Comparing to: {GCPPolicy.VM_REQUEST_KEYS}, {GCPPolicy.ATTACHED_AUTHORIZATION_KEYS}")
+                    print(f"Key: {key}, key==serviceAccounts: {key=='serviceAccounts'}")
                     if key in GCPPolicy.VM_REQUEST_KEYS:
+                        print("VM REQUEST")
                         resource_types.add(("virtual_machine",))
                     elif key in GCPPolicy.ATTACHED_AUTHORIZATION_KEYS:
+                        print("ATTACHED AUTHORIZATION")
                         resource_types.add(("attached_authorizations",))
                     else:
                         # disallow any unrecognized keys
                         resource_types.add(("unrecognized", key))
-                        self._pylogger.info(f"UNRECOGNIZED RESOURCE (POST): {key}")
+                        print(f"UNRECOGNIZED RESOURCE (POST): {key}")
 
                 # only add unrecognized if nothing yet
                 # if len(resource_types) == 0:
@@ -834,8 +848,8 @@ class GCPPolicy(CloudPolicy):
         else:
             # unrecognized request method
             resource_types.add(("unrecognized,"))
-            self._pylogger.info(f"UNRECOGNIZED REQUEST METHOD: {request.method}")
-        self._pylogger.debug(f"All resource types: {list(resource_types)}")
+            print(f"UNRECOGNIZED REQUEST METHOD: {request.method}")
+        print(f"All resource types: {list(resource_types)}")
         return list(resource_types)
 
     def check_resource_type(self, resource_type: Tuple[str], request: Request) -> bool:
@@ -847,7 +861,7 @@ class GCPPolicy(CloudPolicy):
         """
         resource_type_key, *resource_type_aux = resource_type
         assert resource_type_key in self._resource_policies
-        self._pylogger.debug(f"GCPPolicy check_resource_type: {resource_type}")
+        print(f"GCPPolicy check_resource_type: {resource_type}")
 
         if resource_type_key == "attached_authorizations":
             # Authorization policies
@@ -855,6 +869,7 @@ class GCPPolicy(CloudPolicy):
                 request, self._authorization_manager
             )
             self.valid_authorization = result[0]
+            print(f"Valid authorization in check_resource_type: {self.valid_authorization}")
             return result[1]
         elif resource_type_key == "read":
             # read policies
@@ -874,12 +889,12 @@ class GCPPolicy(CloudPolicy):
         """
         out_dict = {}
         for resource_type, policy in self._resource_policies.items():
-            self._pylogger.debug(f"GCPPolicy resource type: {resource_type}")
-            self._pylogger.debug(f"GCPPolicy policy: {policy}")
+            print(f"GCPPolicy resource type: {resource_type}")
+            print(f"GCPPolicy policy: {policy}")
             if resource_type == "unrecognized" or resource_type == "image_lookup":
                 continue
             out_dict[resource_type] = policy.to_dict()
-        self._pylogger.debug(f"out_dict: {out_dict}")
+        print(f"out_dict: {out_dict}")
         return out_dict
 
     @staticmethod

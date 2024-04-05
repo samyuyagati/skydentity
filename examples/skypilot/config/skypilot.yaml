@@ -29,7 +29,7 @@ virtual_machine:
   startup_scripts:
       - gcp:
         # Output of hash_cloud_init_gcp.py
-        - 44be9388234b4d9a50d44e693d756eab3b95924e0a0d5786677ffdd404d72668
+        - 2cc8351d05e4f5877b8c97ac73fd220b50c07729da55b089f4653aebac4efab6
 
 attached_authorizations:
   - gcp:
