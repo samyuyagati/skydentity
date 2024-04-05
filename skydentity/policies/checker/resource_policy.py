@@ -84,8 +84,7 @@ class VMPolicy(ResourcePolicy, ABC):
         # Then check the startup script
         if (
             standardized_request["startup_script"] is not None
-            and not standardized_request["startup_script"]
-            in standardized_vm_policy["startup_scripts"]
+            and not standardized_request["startup_script"] in standardized_vm_policy["startup_scripts"]
         ):
             LOGGER.debug("Startup script not allowed")
             return False
