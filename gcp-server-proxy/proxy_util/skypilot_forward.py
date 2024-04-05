@@ -2,22 +2,46 @@
 Forwarding for SkyPilot requests.
 """
 
-import base64
-import datetime
 import json
 import logging as py_logging
 import os
+import random
+import time
 from collections import namedtuple
+from datetime import datetime, timezone
+from typing import Dict, Optional, Tuple
 
 import requests
-from Crypto.Hash import SHA256
-from Crypto.PublicKey import RSA
-from Crypto.Signature import pkcs1_15
-from flask import Flask, Response, request
+from flask import Flask, Request, Response, request
 
-from .logging import get_logger, print_and_log
-py_logging.basicConfig(filename='redirector_skypilot_forward.log', level=py_logging.INFO)
-pylogger = py_logging.getLogger(__name__)
+from skydentity.utils.log_util import build_time_logging_string
+
+from .signature import get_headers_with_signature
+
+LOGGER = py_logging.getLogger(__name__)
+
+## code to debug full request information
+#######
+# import http.client
+# from http.client import HTTPConnection
+#
+# HTTPConnection.debuglevel = 1
+# requests_log = py_logging.getLogger("requests.packages.urllib3")
+# requests_log.setLevel(py_logging.DEBUG)
+# fh = py_logging.FileHandler("python-requests.log")
+# fh.setFormatter(
+#     py_logging.Formatter(
+#         fmt="%(asctime)s %(levelname)s %(filename)s:%(lineno)d - %(message)s"
+#     )
+# )
+# requests_log.addHandler(fh)
+# requests_log.propagate = True
+# http.client.print = lambda *args: requests_log.debug(" ".join(args))
+######
+
+# reuse the request session across multiple forwarding calls
+# otherwise, there are some issues with connectivity latency
+REQUEST_SESSION = requests.Session()
 
 SkypilotRoute = namedtuple(
     "SkypilotRoute",
@@ -30,121 +54,27 @@ SkypilotRoute = namedtuple(
     defaults=[None, None],  # defaults for "fields" and "view_func"
 )
 
-# global constants
-PRIVATE_KEY_PATH = os.environ.get("PRIVATE_KEY_PATH", "proxy_util/private_key.pem")
 
-# list of all routes required; must be defined after `build_generic_forward`
-# TODO: remove routes and instaed use default forward?
+# list of all routes that require special handling;
+# all other routes are forwarded directly to the client proxy.
 ROUTES: list[SkypilotRoute] = [
     SkypilotRoute(
-        methods=["GET"],
-        path="/compute/v1/projects/<project>/global/images/family/<family>",
-        fields=["project", "family"],
-    ),
-    SkypilotRoute(
-        methods=["POST", "GET"],
-        path="/compute/v1/projects/<project>/zones/<region>/instances",
-        fields=["project", "region"],
-    ),
-    SkypilotRoute(
-        methods=["GET"],
-        path="/compute/v1/projects/<project>/regions/<region>",
-        fields=["project", "region"],
-    ),
-    SkypilotRoute(
-        methods=["GET"],
-        path="/compute/v1/projects/<project>/aggregated/reservations",
-        fields=["project"],
-    ),
-    SkypilotRoute(
-        methods=["GET"],
-        path="/compute/v1/projects/<project>",
-        fields=["project"],
-    ),
-    SkypilotRoute(
-        methods=["GET", "POST"],
-        path="/compute/v1/projects/<project>/global/networks",
-        fields=["project"],
-    ),
-    SkypilotRoute(
-        methods=["GET", "POST"],
-        path="/compute/v1/projects/<project>/global/firewalls",
-        fields=["project"],
-    ),
-    SkypilotRoute(
-        methods=["GET"],
-        path="/compute/v1/projects/<project>/global/networks/<network>/getEffectiveFirewalls",
-        fields=["project", "network"],
-    ),
-    SkypilotRoute(
-        methods=["GET"],
-        path="/compute/v1/projects/<project>/regions/<region>/subnetworks",
-        fields=["project", "region"],
-    ),
-    SkypilotRoute(
-        methods=["GET"],
-        path="/compute/v1/projects/<project>/zones/<region>/operations/<operation>",
-        fields=["project", "region", "operation"],
-    ),
-    SkypilotRoute(
         methods=["POST"],
-        path="/compute/v1/projects/<project>/zones/<region>/instances/<instance>/setLabels",
-        fields=["project", "region", "instance"],
+        path="/upload/storage/v1/b/<bucket>/o",
+        fields=["bucket"],
+        # route to specific upload function
+        view_func=lambda bucket: upload_blob(request, bucket),
     ),
     SkypilotRoute(
-        methods=["POST"],
-        path="/compute/v1/projects/<project>/zones/<region>/instances/<instance>/stop",
-        fields=["project", "region", "instance"],
-    ),
-    SkypilotRoute(
-        methods=["DELETE"],
-        path="/compute/v1/projects/<project>/zones/<region>/instances/<instance>",
-        fields=["project", "region", "instance"],
-    ),
-    SkypilotRoute(
-        methods=["POST"],
-        path="/compute/v1/projects/<project>/zones/<region>/instances/<instance>/start",
-        fields=["project", "region", "instance"],
-    ),
-    SkypilotRoute(
-        methods=["POST"],
-        path="/skydentity/cloud/<cloud>/create-authorization",
-        fields=["cloud"],
+        methods=["GET"],
+        path="/download/storage/v1/b/<bucket>/o/<path:file>",
+        fields=["bucket", "file"],
+        # route to specific download function
+        view_func=lambda bucket, file: download_blob(request, bucket, file),
     ),
 ]
 
-
-def get_headers_with_signature(request):
-    new_headers = {k: v for k, v in request.headers}
-
-    with open(PRIVATE_KEY_PATH, "rb") as key_file:
-        contents = key_file.read()
-        private_key = RSA.import_key(contents)
-
-    # assume set, predetermined/agreed upon tolerance on client proxy/receiving end
-    # use utc for consistency if server runs in cloud in different region
-    timestamp = datetime.datetime.now(datetime.timezone.utc).timestamp()
-    public_key_string = private_key.public_key().export_key()
-
-    # message = f"{str(request.method)}-{timestamp}-{public_key_string}"
-    message = f"{str(request.method)}-{timestamp}-{public_key_string}"
-    message_bytes = message.encode("utf-8")
-
-    h = SHA256.new(message_bytes)
-    # TODO should we be using PSS?
-    signature = pkcs1_15.new(private_key).sign(h)
-
-    # base64 encode the signature and public key
-    encoded_signature = base64.b64encode(signature)
-    encoded_public_key_string = base64.b64encode(public_key_string)
-
-    new_headers["X-Signature"] = encoded_signature
-    new_headers["X-Timestamp"] = str(timestamp)
-    new_headers["X-PublicKey"] = encoded_public_key_string
-
-    del new_headers["Host"]
-
-    return new_headers
+STORAGE_ENDPOINT = "https://storage.googleapis.com"
 
 
 def generic_forward_request(request, log_dict=None):
@@ -152,14 +82,12 @@ def generic_forward_request(request, log_dict=None):
     [SkyPilot Integration]
     Forward a generic request to google APIs.
     """
-    logger = get_logger()
-    pylogger.debug(f"{log_dict}")
+    LOGGER.debug(str(log_dict))
     if log_dict is not None:
         log_str = f"PATH: {request.full_path}\n"
         for key, val in log_dict.items():
             log_str += f"\t{key}: {val}\n"
-        pylogger.debug(f"{log_str}")
-        print_and_log(logger, log_str.strip())
+        LOGGER.debug(log_str.strip())
 
     new_url = get_new_url(request)
     new_headers = get_headers_with_signature(request)
@@ -181,15 +109,18 @@ def generic_forward_request(request, log_dict=None):
             with open(capability_path, "r") as f:
                 new_json["serviceAccounts"] = [json.load(f)]
 
-            pylogger.debug(f"JSON with service acct capability: {new_json}")
+            LOGGER.debug(
+                f"JSON with service acct capability: {new_json}",
+                extra={"service_acc_json": new_json},
+            )
 
-    print("Forwarding to client...", flush=True)
+    LOGGER.debug("Forwarding to client...")
 
     gcp_response = forward_to_client(
         request, new_url, new_headers=new_headers, new_json=new_json
     )
 
-    print(f"Received response from client...\n {gcp_response}", flush=True)
+    LOGGER.debug(f"Received response from client...\n {gcp_response}")
     return Response(gcp_response.content, gcp_response.status_code)
 
 
@@ -199,35 +130,7 @@ def build_generic_forward(path: str, fields: list[str]):
 
     The path is only used to create a unique and readable name for the anonymous function.
     """
-    func = None
-    if fields == ["cloud"]:
-        func = lambda cloud: generic_forward_request(request, {"cloud": cloud})
-    elif fields == ["project"]:
-        func = lambda project: generic_forward_request(request, {"project": project})
-    elif fields == ["project", "region"]:
-        func = lambda project, region: generic_forward_request(
-            request, {"project": project, "region": region}
-        )
-    elif fields == ["project", "family"]:
-        func = lambda project, family: generic_forward_request(
-            request, {"project": project, "family": family}
-        )
-    elif fields == ["project", "network"]:
-        func = lambda project, network: generic_forward_request(
-            request, {"project": project, "network": network}
-        )
-    elif fields == ["project", "region", "operation"]:
-        func = lambda project, region, operation: generic_forward_request(
-            request, {"project": project, "region": region, "operation": operation}
-        )
-    elif fields == ["project", "region", "instance"]:
-        func = lambda project, region, instance: generic_forward_request(
-            request, {"project": project, "region": region, "instance": instance}
-        )
-    else:
-        raise ValueError(
-            f"Invalid list of variables to build generic forward for: {fields}"
-        )
+    func = lambda **kwargs: generic_forward_request(request, kwargs)
 
     # Flask expects all view functions to have unique names
     # (otherwise it complains about overriding view functions)
@@ -242,7 +145,9 @@ def setup_routes(app: Flask):
     """
     for route in ROUTES:
         if route.view_func is not None:
-            # use view_func if specified
+            # use view_func if specified; change name to be consistent with generic
+            # (also allows lambda functions to be passed in)
+            route.view_func.__name__ = route.path
             app.add_url_rule(
                 route.path, view_func=route.view_func, methods=route.methods
             )
@@ -261,8 +166,22 @@ def setup_routes(app: Flask):
     # set up default route
     default_view = lambda path: generic_forward_request(request, {"path": path})
     default_view.__name__ = "default_view"
-    app.add_url_rule("/", view_func=default_view, defaults={"path": ""})
-    app.add_url_rule("/<path:path>", view_func=default_view)
+
+    all_methods = [
+        "GET",
+        "HEAD",
+        "POST",
+        "PUT",
+        "DELETE",
+        "CONNECT",
+        "OPTIONS",
+        "TRACE",
+        "PATCH",
+    ]
+    app.add_url_rule(
+        "/", view_func=default_view, defaults={"path": ""}, methods=all_methods
+    )
+    app.add_url_rule("/<path:path>", view_func=default_view, methods=all_methods)
 
 
 def get_client_proxy_endpoint(request):
@@ -281,39 +200,267 @@ def get_new_url(request):
     Redirect the URL (originally to the proxy) to the correct client proxy.
     """
     redirect_endpoint = get_client_proxy_endpoint(request)
-    logger = get_logger()
-    print_and_log(
-        logger,
+    LOGGER.debug(
         f"\tOld URL: {request.host_url} (Redirect endpoint: {redirect_endpoint})",
     )
-    new_url = request.url.replace(request.host_url, redirect_endpoint)
+    new_url = request.url.replace(
+        # normalize to include one slash
+        request.host_url.strip("/") + "/",
+        redirect_endpoint.strip("/") + "/",
+    )
 
-    print_and_log(logger, f"\tNew URL: {new_url}")
+    LOGGER.debug(f"\tNew URL: {new_url}")
     return new_url
 
 
-def forward_to_client(request, new_url: str, new_headers=None, new_json=None):
+def forward_to_client(
+    request, new_url: str, new_headers=None, new_json=None, new_data=None
+):
     """
     Forward the request to the client proxy, with new headers, URL, and request body.
+
+    `new_json` specifies the new JSON body, `new_data` specifies the new arbitrary request body
+    (not necessarily JSON).
+    `new_data` is given precedent if both are specified.
     """
     if new_headers is None:
         # default to the current headers
         new_headers = request.headers
 
+    LOGGER.debug(f"url {repr(request.url)}\n" f"headers {repr(request.headers)}\n")
+    LOGGER.debug("NEW\n" f"url {new_url}\n" f"headers {new_headers}\n")
+
     # If no JSON body, don't include a json body in proxied request
     if len(request.get_data()) == 0:
-        return requests.request(
+        return REQUEST_SESSION.request(
             method=request.method,
             url=new_url,
             headers=new_headers,
             cookies=request.cookies,
             allow_redirects=False,
         )
-    return requests.request(
-        method=request.method,
-        url=new_url,
-        headers=new_headers,
-        json=new_json,
-        cookies=request.cookies,
-        allow_redirects=False,
+
+    if new_data is not None:
+        return REQUEST_SESSION.request(
+            method=request.method,
+            url=new_url,
+            headers=new_headers,
+            cookies=request.cookies,
+            allow_redirects=False,
+            data=new_data,
+        )
+    elif new_json is not None:
+        return REQUEST_SESSION.request(
+            method=request.method,
+            url=new_url,
+            headers=new_headers,
+            json=new_json,
+            cookies=request.cookies,
+            allow_redirects=False,
+        )
+    else:
+        # keep original body
+        return REQUEST_SESSION.request(
+            method=request.method,
+            url=new_url,
+            headers=new_headers,
+            cookies=request.cookies,
+            allow_redirects=False,
+            data=request.get_data(),
+        )
+
+
+# cache for access tokens
+ACCESS_TOKEN_CACHE: Dict[Tuple[str, str], Tuple[str, str]] = {}
+
+
+def request_storage_access_token(
+    bucket: str, action: str
+) -> Tuple[Optional[str], Optional[str], int]:
+    """
+    Requests an access token for a service account for the given bucket and action.
+
+    Returns a tuple containing:
+    - access token (or None if error)
+    - expiration timestamp in ISO format (or None if error)
+    - response status code (for error handling)
+    """
+    # return token from cache if it exists
+    if (bucket, action) in ACCESS_TOKEN_CACHE:
+        access_token, expiration_timestamp = ACCESS_TOKEN_CACHE[(bucket, action)]
+        if datetime.now(timezone.utc) < datetime.fromisoformat(
+            expiration_timestamp
+        ).astimezone(timezone.utc):
+            # still valid, return it
+            return access_token, expiration_timestamp, 200
+        # expired; delete from cache
+        del ACCESS_TOKEN_CACHE[(bucket, action)]
+
+    LOGGER.debug("Requesting access token")
+    client_url = get_client_proxy_endpoint(request).strip("/") + "/"
+    headers = get_headers_with_signature(requests.Request(method="POST"))
+    response = REQUEST_SESSION.post(
+        client_url + f"skydentity/cloud/gcp/create-storage-authorization",
+        json={
+            "cloud_provider": "GCP",
+            "bucket": bucket,
+            "action": action,
+        },
+        headers=headers,
+    )
+
+    if not response.ok:
+        return None, None, response.status_code
+
+    response_json = response.json()
+    access_token = response_json["access_token"]
+    expiration_timestamp = response_json["expires"]
+    LOGGER.debug(f"Access token: {access_token}")
+
+    if access_token:
+        ACCESS_TOKEN_CACHE[(bucket, action)] = (access_token, expiration_timestamp)
+        return access_token, expiration_timestamp, response.status_code
+
+    # no access token; server error
+    return None, None, 500
+
+
+def invalidate_cache(bucket: str, action: str):
+    """
+    Invalidate the cache for the given bucket/action.
+    """
+    ACCESS_TOKEN_CACHE.pop((bucket, action), None)
+
+
+def upload_blob(request, bucket: str):
+    """
+    POST /upload/storage/v1/b/<bucket>/o
+    """
+    request_name = request.method.upper() + str(random.randint(0, 1000)) + request.path
+    upload_start = time.perf_counter()
+
+    access_token, expiration_timestamp, req_status = request_storage_access_token(
+        bucket, "OVERWRITE_FALLBACK_UPLOAD"
+    )
+    if access_token is None or expiration_timestamp is None:
+        if 400 <= req_status < 500:
+            # auth error
+            return Response("Unauthorized", 401)
+        return Response("Error creating authorization", 500)
+
+    # check expiration timestamp
+    expiration_datetime = datetime.fromisoformat(expiration_timestamp).astimezone(
+        timezone.utc
+    )
+    if datetime.now(timezone.utc) > expiration_datetime:
+        return Response("Expired credentials", 401)
+
+    # attach access token
+    new_headers = {k: v for k, v in request.headers}
+    new_headers["Authorization"] = f"Bearer {access_token}"
+    new_headers.pop("Host", None)
+
+    # get new url directly to the storage endpoint
+    storage_url = request.url.replace(
+        # normalize to include one slash
+        request.host_url.strip("/") + "/",
+        STORAGE_ENDPOINT.strip("/") + "/",
+    )
+
+    # forward directly to the GCP endpoint; no need to go through client proxy
+    forward_start = time.perf_counter()
+    gcp_response = forward_to_client(request, storage_url, new_headers=new_headers)
+    LOGGER.info(
+        build_time_logging_string(
+            request_name,
+            "skypilot_forward:upload_blob",
+            "forward_request",
+            forward_start,
+            time.perf_counter(),
+        )
+    )
+
+    if gcp_response.status_code in (401, 403):
+        # invalidate access token if auth error
+        invalidate_cache(bucket, "OVERWRITE_FALLBACK_UPLOAD")
+
+    LOGGER.info(
+        build_time_logging_string(
+            request_name,
+            "skypilot_forward:upload_blob",
+            "upload_blob",
+            upload_start,
+            time.perf_counter(),
+        )
+    )
+    return Response(
+        gcp_response.content,
+        gcp_response.status_code,
+    )
+
+
+def download_blob(request, bucket: str, file: str):
+    """
+    GET /download/storage/v1/b/<bucket>/o/<file:path>
+    """
+    request_name = request.method.upper() + str(random.randint(0, 1000)) + request.path
+    download_start = time.perf_counter()
+
+    access_token, expiration_timestamp, req_status = request_storage_access_token(
+        bucket, "READ"
+    )
+    if access_token is None or expiration_timestamp is None:
+        if 400 <= req_status < 500:
+            # auth error
+            return Response("Unauthorized", 401)
+        return Response("Error creating authorization", 500)
+
+    # check expiration timestamp
+    expiration_datetime = datetime.fromisoformat(expiration_timestamp).astimezone(
+        timezone.utc
+    )
+    if datetime.now(timezone.utc) > expiration_datetime:
+        return Response("Expired credentials", 401)
+
+    # attach access token
+    new_headers = {k: v for k, v in request.headers}
+    new_headers["Authorization"] = f"Bearer {access_token}"
+    new_headers.pop("Host", None)
+
+    # get new url directly to the storage endpoint
+    storage_url = request.url.replace(
+        # normalize to include one slash
+        request.host_url.strip("/") + "/",
+        STORAGE_ENDPOINT.strip("/") + "/",
+    )
+
+    # forward directly to the GCP endpoint; no need to go through client proxy
+    forward_start = time.perf_counter()
+    gcp_response = forward_to_client(request, storage_url, new_headers=new_headers)
+    LOGGER.info(
+        build_time_logging_string(
+            request_name,
+            "skypilot_forward:download_blob",
+            "forward_request",
+            forward_start,
+            time.perf_counter(),
+        )
+    )
+
+    if gcp_response.status_code in (401, 403):
+        # invalidate access token if auth error
+        invalidate_cache(bucket, "READ")
+
+    LOGGER.info(
+        build_time_logging_string(
+            request_name,
+            "skypilot_forward:download_blob",
+            "download_blob",
+            download_start,
+            time.perf_counter(),
+        )
+    )
+    return Response(
+        gcp_response.content,
+        gcp_response.status_code,
     )

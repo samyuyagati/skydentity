@@ -7,10 +7,7 @@ import random
 import base64
 import json
 import os
-<<<<<<< HEAD
 import re
-=======
->>>>>>> 692e67e (Azure Default Deny (#25))
 from collections import namedtuple
 from urllib.parse import urlparse
 
