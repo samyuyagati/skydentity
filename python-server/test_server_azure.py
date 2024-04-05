@@ -14,6 +14,7 @@ import base64
 credential = DefaultAzureCredential()
 subscription_client = SubscriptionClient(credential)
 subscription_id = next(subscription_client.subscriptions.list()).subscription_id
+# Dummy credentials 
 USERNAME = "skydentity"
 PASSWORD = "$kyD3ntity1sAwesome"
 NUM_VMS_TO_CREATE = 1
