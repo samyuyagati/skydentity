@@ -32,7 +32,7 @@ log_level_map = {
     LogLevel.EMERGENCY: "EMERGENCY"
 }
 
-LOG_LEVEL = LogLevel.WARNING
+LOG_LEVEL = LogLevel.INFO
 
 @cache
 def get_logger():

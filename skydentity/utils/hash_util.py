@@ -1,9 +1,7 @@
-import logging as py_logging
+#import logging as py_logging
 
 from Crypto.Hash import SHA256
 from Crypto.PublicKey import RSA
-
-LOGGER = py_logging.getLogger()
 
 def hash_public_key(public_key) -> str:
     """
