@@ -221,7 +221,7 @@ def process_rt_logs(logs: str):
     plt.savefig(f"{args.plots_dir}/round_trip_get_image.png")
     plt.clf()
 
-        # Plot create vm times
+    # Plot create vm times
     plt.hist(create_vm_times, bins=10, edgecolor='black')
     title = f"Create VM times: Round trip from laptop"
     wrapped_title = textwrap.fill(title, 60)  # Wrap after 60 characters
@@ -229,6 +229,9 @@ def process_rt_logs(logs: str):
 
     # Use the formatter for the x-axis labels
     ax = plt.gca()
+
+    # Disable offset on x-axis
+    ax.get_xaxis().get_major_formatter().set_useOffset(False)
 
     # Set the maximum number of x-axis labels to 10
     ax.xaxis.set_major_locator(MaxNLocator(nbins=10))

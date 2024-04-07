@@ -199,7 +199,7 @@ def generic_forward_request(request, log_dict=None):
     """
     start = time.time()
 
-    request_name = request.method.upper() + str(random.randint(0, 1000)) + request.path
+    request_name = request.method.upper() + str(random.randint(0, 1000)) + " " + request.path
     caller = "skypilot_forward:generic_forward_request"
 
     if log_dict is not None:

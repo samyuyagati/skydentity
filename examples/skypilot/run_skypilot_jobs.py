@@ -21,6 +21,9 @@ parser.add_argument(
 parser.add_argument(
     "--cloud", type=str, default="gcp", help="Cloud to use"
 )
+parser.add_argument(
+    "--ca-bundle", type=str, default=None, help="Path to CA bundle"
+)
 args = parser.parse_args()
 
 job = """\
@@ -67,6 +70,8 @@ if args.cloud == "azure":
 if args.with_skydentity:
     api_endpoint = "http://127.0.0.1:5000/"
 
+print("API endpoint:", api_endpoint)
+
 start_time = time.perf_counter()
 
 jobs_per_batch = args.batch_size
@@ -91,28 +96,51 @@ for batch in range(num_batches):
         fds.append(err_fd)
 
         # Paper used subprocess.Run (fully sequential, waits for completion)
-        cur_subprocess = subprocess.Popen(
-            [
-                "time",
-                "sky",
-                "launch",
-                "--retry-until-up",
-                "-y",
-                "-d",
-                "-n",
-                f"{prefix}-{i}",
-                "job.yaml",
-                "-c",
-                "skydentity"
-            ],
-            stdout=out_fd,
-            stderr=err_fd,
-            env={
-                **os.environ,
-                "CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE": f"{api_endpoint}",
-                "REQUESTS_CA_BUNDLE": "/home/kdharmarajan/skydentity/local_tokens/cert.pem"
-            },
-        )
+        if args.ca_bundle is not None:
+            cur_subprocess = subprocess.Popen(
+                [
+                    "time",
+                    "sky",
+                    "launch",
+                    "--retry-until-up",
+                    "-y",
+                    "-d",
+                    "-n",
+                    f"{prefix}-{i}",
+                    "job.yaml",
+                    "-c",
+                    "skydentity"
+                ],
+                stdout=out_fd,
+                stderr=err_fd,
+                env={
+                    **os.environ,
+                    "CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE": f"{api_endpoint}",
+                    "REQUESTS_CA_BUNDLE": f"{args.ca_bundle}"
+                },
+            )
+        else:
+            cur_subprocess = subprocess.Popen(
+                [
+                    "time",
+                    "sky",
+                    "launch",
+                    "--retry-until-up",
+                    "-y",
+                    "-d",
+                    "-n",
+                    f"{prefix}-{i}",
+                    "job.yaml",
+                    "-c",
+                    "skydentity"
+                ],
+                stdout=out_fd,
+                stderr=err_fd,
+                env={
+                    **os.environ,
+                    "CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE": f"{api_endpoint}"
+                },
+            )
         subprocesses.append(cur_subprocess)
         i += 1
 

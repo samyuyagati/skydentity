@@ -105,7 +105,8 @@ echo "Sending auth request..."
 time python send_auth_request.py --resource_yaml_input="$YAML_DIR/skypilot.yaml" \
     --resource_yaml_output="$YAML_DIR/skypilot_eval_with_auth.yaml"\
     --auth_request_yaml="$YAML_DIR/auth_request_example.yaml" \
-    --capability_enc_key="$ROOT/gcp-client-proxy/local_tokens/capability_enc.key"
+    --capability_enc_key="$ROOT/gcp-client-proxy/local_tokens/capability_enc.key" \
+    --cloud="gcp"
 
 # 2. Upload skypilot_eval_with_auth.yaml to Firestore using upload_policy.py
 echo "Uploading skypilot_eval_with_auth.yaml to Firestore..."

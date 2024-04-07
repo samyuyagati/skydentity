@@ -1,0 +1,92 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: skyidproxy-service
+  namespace: '488643085394'
+  selfLink: /apis/serving.knative.dev/v1/namespaces/488643085394/services/skyidproxy-service
+  uid: 1e51a1aa-96e2-4d5d-82dc-cba602250eae
+  resourceVersion: AAYVS8bOvAw
+  generation: 1
+  creationTimestamp: '2024-04-04T21:10:06.390652Z'
+  labels:
+    cloud.googleapis.com/location: us-west1
+  annotations:
+    run.googleapis.com/client-name: gcloud
+    serving.knative.dev/creator: terraform@sky-identity.iam.gserviceaccount.com
+    serving.knative.dev/lastModifier: terraform@sky-identity.iam.gserviceaccount.com
+    run.googleapis.com/client-version: 470.0.0
+    run.googleapis.com/operation-id: 8d2a0e00-b232-4277-a30d-c126148fc11e
+    run.googleapis.com/ingress: all
+    run.googleapis.com/ingress-status: all
+spec:
+  template:
+    metadata:
+      labels:
+        client.knative.dev/nonce: udecyakwgv
+        run.googleapis.com/startupProbeType: Default
+      annotations:
+        run.googleapis.com/client-name: gcloud
+        run.googleapis.com/client-version: 470.0.0
+        autoscaling.knative.dev/maxScale: '100'
+        run.googleapis.com/startup-cpu-boost: 'true'
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      serviceAccountName: gcr-skyidproxy@sky-identity.iam.gserviceaccount.com
+      containers:
+      - image: gcr.io/sky-identity/skyidproxy
+        ports:
+        - name: http1
+          containerPort: 8080
+        resources:
+          limits:
+            memory: 512Mi
+            cpu: 1000m
+        volumeMounts:
+        - name: sa-key-gul-qig-xav
+          mountPath: /cloud_creds/gcp
+        - name: enc-key-qap-fac-fem
+          mountPath: /cloud_creds/enc
+        startupProbe:
+          timeoutSeconds: 240
+          periodSeconds: 240
+          failureThreshold: 1
+          tcpSocket:
+            port: 8080
+      volumes:
+      - name: sa-key-gul-qig-xav
+        secret:
+          secretName: sa-key
+          items:
+          - key: latest
+            path: proxy_service_account_key.json
+      - name: enc-key-qap-fac-fem
+        secret:
+          secretName: enc-key
+          items:
+          - key: latest
+            path: capability_enc.key
+  traffic:
+  - percent: 100
+    latestRevision: true
+status:
+  observedGeneration: 1
+  conditions:
+  - type: Ready
+    status: 'True'
+    lastTransitionTime: '2024-04-04T21:11:02.431756Z'
+  - type: ConfigurationsReady
+    status: 'True'
+    lastTransitionTime: '2024-04-04T21:10:06.507774Z'
+  - type: RoutesReady
+    status: 'True'
+    lastTransitionTime: '2024-04-04T21:11:02.385206Z'
+  latestReadyRevisionName: skyidproxy-service-00001-czb
+  latestCreatedRevisionName: skyidproxy-service-00001-czb
+  traffic:
+  - revisionName: skyidproxy-service-00001-czb
+    percent: 100
+    latestRevision: true
+  url: https://skyidproxy-service-ozttcth4mq-uw.a.run.app
+  address:
+    url: https://skyidproxy-service-ozttcth4mq-uw.a.run.app

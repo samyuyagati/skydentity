@@ -1,5 +1,5 @@
 import hashlib
-#import logging as py_logging
+import logging as py_logging
 import re
 import sys
 from typing import Dict, List, Optional, Tuple, TypedDict, Union
@@ -62,29 +62,33 @@ class GCPVMPolicy(VMPolicy):
         # also check hard-coded values in the request
 
         request_contents = request.get_json(cache=True)
-        print("GCP VM Policy request contents: ", request_contents)
+        LOGGER.debug("GCP VM Policy request contents: ", request_contents)
 
         # check disks
         if "disks" in request_contents:
             disks = request_contents["disks"]
             for disk in disks:
                 if (
+                    # Requires disk is deleted when VM is deleted
                     disk.get("autoDelete", None) != True
+                    # Limits to a single (boot) disk
                     or disk.get("boot", None) != True
-                    or disk.get("type", None) != "PERSISTENT"
                 ):
-                    LOGGER.debug(f"disk denied (plain) {disk}")
-                    return False
+                    # This hard-coded value is SkyPilot specific
+                    if (disk.get("type", None) != "PERSISTENT" and disk.get("type", None) != None):
+                        LOGGER.debug(f"disk denied (plain) {disk}")
+                        return False
 
                 initialize_params = disk.get("initializeParams", None)
                 if initialize_params is not None:
                     disk_size = initialize_params.get("diskSizeGb", None)
-                    if disk_size is None or disk_size > 256:
+                    # Disk size can be an int-type or string-type depending on how the request was generated
+                    if disk_size is None or float(disk_size) > 256:
                         LOGGER.debug(f"disk denied (disk size) {disk}")
                         return False
                     disk_type = initialize_params.get("diskType", None)
                     if disk_type is None:
-                        LOGGER.debug(f"disk denied (disk type) {disk}")
+                        LOGGER.debug(f"disk denied (disk type is not specified) {disk}")
                         return False
 
                     disk_match = re.search(GCPVMPolicy.DISK_TYPE_REGEX, disk_type)
@@ -93,7 +97,7 @@ class GCPVMPolicy(VMPolicy):
                         or disk_match.group("zone")
                         not in standardized_vm_policy["regions"]
                     ):
-                        LOGGER.debug(f"disk denied (disk type) {disk}")
+                        LOGGER.debug(f"disk denied (disk type mismatch) {disk}")
                         return False
 
                     source_image = initialize_params.get("sourceImage", None)
@@ -118,7 +122,8 @@ class GCPVMPolicy(VMPolicy):
             LOGGER.debug(f"Metadata found in request contents: {metadata}")
             if "items"  in metadata:
                 for item in metadata["items"]:
-                    if item["key"] == "user-data":
+                    # Slightly hacky; should SkyPilot also be using startup-script as the key?
+                    if item["key"] == "user-data" or item["key"] == "startup-script":
                         LOGGER.debug(f"Potential startup script found in metadata: {item['value']}")
                         startup_script_hash = hashlib.sha256(
                             item["value"].encode()
@@ -141,10 +146,17 @@ class GCPVMPolicy(VMPolicy):
         if "networkInterfaces" in request_contents:
             interfaces = request_contents["networkInterfaces"]
             for interface in interfaces:
+                # Basic network config
+                if "network" in interface:
+                    if interface.get("network", None) != "global/networks/default":
+                        LOGGER.debug(f"network interface denied (network mismatch) {interface}")
+                        return False
+                    continue
+                # SkyPilot-specific network config
                 access_configs = interface.get("accessConfigs", None)
                 if access_configs is None:
                     LOGGER.debug(
-                        f"network interface denied (access_configs) {interface}"
+                        f"network interface denied (access_configs not set) {interface}"
                     )
                     return False
 
@@ -159,13 +171,13 @@ class GCPVMPolicy(VMPolicy):
                         or access_config_type != "ONE_TO_ONE_NAT"
                     ):
                         LOGGER.debug(
-                            f"network interface denied (access_configs) {access_config}"
+                            f"network interface denied (access_configs mismatch) {access_config}"
                         )
                         return False
 
                 subnetwork = interface.get("subnetwork")
                 if subnetwork is None:
-                    LOGGER.debug(f"network interface denied (subnetwork) {interface}")
+                    LOGGER.debug(f"network interface denied (subnetwork not specified) {interface}")
                     return False
 
                 subnetwork_match = re.search(GCPVMPolicy.SUBNETWORK_REGEX, subnetwork)
@@ -179,7 +191,7 @@ class GCPVMPolicy(VMPolicy):
                     )
                     or subnetwork_match.group("subnetwork") != "skypilot-vpc"
                 ):
-                    LOGGER.debug(f"network interface denied (subnetwork) {interface}")
+                    LOGGER.debug(f"network interface denied (subnetwork mismatch) {interface}")
                     return False
 
         if "scheduling" in request_contents:
@@ -226,6 +238,7 @@ class GCPVMPolicy(VMPolicy):
             out_dict["actions"] = PolicyAction.READ
 
         request_contents = request.get_json(cache=True)
+        LOGGER.debug(f"Request contents: {request_contents}")
         if "machineType" in request_contents:
             full_machine_type = request_contents["machineType"]
 
@@ -257,7 +270,8 @@ class GCPVMPolicy(VMPolicy):
         if "metadata" in request_contents:
             if "items" in request_contents["metadata"]:
                 for item in request_contents["metadata"]["items"]:
-                    if item["key"] == "user-data":
+                    # Slightly hacky; should SkyPilot also be using startup-script as the key?
+                    if item["key"] == "user-data" or item["key"] == "startup-script":
                         out_dict["startup_script"] = hashlib.sha256(
                             item["value"].encode()
                         ).hexdigest()
@@ -306,7 +320,7 @@ class GCPVMPolicy(VMPolicy):
         try:
             # TODO(kdharmarajan): Generalize this policy actioni
             # TODO what happens if multiple actions are permitted?
-            LOGGER.debug(f"{policy_dict_cloud_level["actions"]}")
+            LOGGER.debug(f"{policy_dict_cloud_level['actions']}")
             if isinstance(policy_dict_cloud_level["actions"], list):
                 action = PolicyAction[policy_dict_cloud_level["actions"][0]]
             else:
@@ -457,7 +471,7 @@ class GCPAttachedAuthorizationPolicy(ResourcePolicy):
         :param policy_dict: The dictionary representation of the policy.
         :return: The policy representation of the dict.
         """
-        LOGGER.debug("GCPAttachedAuthorization")")
+        LOGGER.debug("GCPAttachedAuthorization")
         cloud_specific_policy = {}
         can_cloud_run = False
         LOGGER.debug(f"Policy dict: {policy_dict_cloud_level}")
