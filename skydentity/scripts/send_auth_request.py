@@ -72,7 +72,11 @@ def main():
     with open(args.auth_request_yaml, 'r') as f:
         auth_request_dict = yaml.load(f, Loader=yaml.SafeLoader)
         print(auth_request_dict)
-    response = send_auth_creation_request(f"https://127.0.0.1:5000/skydentity/cloud/{args.cloud}/", json=auth_request_dict)
+    if args.cloud == "gcp":
+        protocol = "http"
+    elif args.cloud == "azure":
+        protocol = "https"
+    response = send_auth_creation_request(f"{protocol}://127.0.0.1:5000/skydentity/cloud/{args.cloud}/", json=auth_request_dict)
     print("RESPONSE JSON", response.json())
     out_path = os.path.join(os.path.dirname(os.getcwd()), "tokens/")
     service_acct_id, valid_capability = check_capability(response.json(), args.capability_enc_key)
@@ -82,7 +86,10 @@ def main():
     with open(args.resource_yaml_input, 'r') as f:
         resource_dict = yaml.load(f, Loader=yaml.SafeLoader)
         print(resource_dict)
-        resource_dict["virtual_machine"]["attached_authorizations"][0][args.cloud][0]["authorization"] = [service_acct_id]
+        if args.cloud == "gcp":
+            resource_dict["attached_authorizations"][0]["gcp"][0]["authorization"] = service_acct_id
+        elif args.cloud == "azure":
+            resource_dict["virtual_machine"]["attached_authorizations"][0][args.cloud][0]["authorization"] = [service_acct_id]
         with open(args.resource_yaml_output, 'w') as f:
             yaml.dump(resource_dict, f)
     with open(os.path.join(out_path, "capability.json"), "w") as f:
