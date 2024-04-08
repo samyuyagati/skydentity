@@ -1,0 +1,16 @@
+storage:
+  cloud_provider:
+    - GCP
+
+  project:
+    - sky-identity
+
+  actions:
+    - READ
+    - UPLOAD
+    - OVERWRITE
+
+  buckets:
+    - skydentity-test-storage
+    - skydentity-test-storage-2
+    - skydentity-test-storage-3

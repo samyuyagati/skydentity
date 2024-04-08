@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Dict, Optional, Tuple
 
 import requests
-from flask import Flask, Request, Response, request
+from flask import Flask, Response, request
 
 from skydentity.utils.log_util import build_time_logging_string
 

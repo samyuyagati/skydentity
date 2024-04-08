@@ -4,7 +4,6 @@ import os
 from flask import Flask
 from google.cloud import logging as gcp_logging
 
-from skydentity.proxy_util.gcp.logging import get_logger, print_and_log
 from skydentity.proxy_util.gcp.skypilot_forward import setup_routes
 from skydentity.utils.log_util import build_file_handler
 
@@ -12,7 +11,7 @@ app = Flask(__name__)
 
 # set gcp logging for root logger; also sets default log level
 GCP_LOGGING_CLIENT = gcp_logging.Client()
-GCP_LOGGING_CLIENT.setup_logging(log_level=py_logging.INFO)
+GCP_LOGGING_CLIENT.setup_logging(log_level=py_logging.DEBUG)
 
 # add file handler for local logging
 LOGGER = py_logging.getLogger()

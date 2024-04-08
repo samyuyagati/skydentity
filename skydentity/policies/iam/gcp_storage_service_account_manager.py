@@ -3,17 +3,23 @@ import re
 import secrets
 import string
 import subprocess
-from datetime import datetime, timedelta, timezone, tzinfo
+from datetime import datetime, timedelta, timezone
 from functools import cached_property
-from typing import TYPE_CHECKING, Callable, List, Optional, Tuple, cast
+from typing import TYPE_CHECKING, List, Optional, Tuple, cast
 
-from Crypto.Hash import HMAC
+import backoff
 from google.oauth2 import service_account
 from googleapiclient import discovery
 from googleapiclient.errors import HttpError
+from googleapiclient.http import ssl
 
 from skydentity.policies.checker.gcp_storage_policy import StoragePolicyAction
 from skydentity.utils.log_util import build_file_handler
+from skydentity.utils.request_util import (
+    DEFAULT_BACKOFF_STRATEGY,
+    DEFAULT_MAX_BACKOFF_TRIES,
+    request_builder_factory,
+)
 
 LOGGER = py_logging.getLogger("policies.iam.GCPStorageServiceAccountManager")
 LOGGER.addHandler(build_file_handler("gcp_storage_service_account_manager.log"))
@@ -64,17 +70,29 @@ class GCPStorageServiceAccountManager:
             scopes=["https://www.googleapis.com/auth/cloud-platform"],
         )
 
+        # Create a new Http object for every request
+        build_request, authorized_http = request_builder_factory(self._credentials)
+
         self._iam_service = discovery.build(
-            "iam", "v1", credentials=self._credentials, cache_discovery=False
+            "iam",
+            "v1",
+            cache_discovery=False,
+            requestBuilder=build_request,
+            http=authorized_http,
         )
         self._cloudresourcemanager_service = discovery.build(
             "cloudresourcemanager",
             "v3",
-            credentials=self._credentials,
             cache_discovery=False,
+            requestBuilder=build_request,
+            http=authorized_http,
         )
         self._storage_service = discovery.build(
-            "storage", "v1", credentials=self._credentials, cache_discovery=False
+            "storage",
+            "v1",
+            cache_discovery=False,
+            requestBuilder=build_request,
+            http=authorized_http,
         )
 
     def generate_service_account_name(self):
@@ -123,6 +141,47 @@ class GCPStorageServiceAccountManager:
 
         match = re.search(pattern, description)
         return match
+
+    @cached_property
+    def all_service_accounts(self) -> List[dict]:
+        """
+        Retrieves all service accounts for a project.
+
+        Cached property; only computed once for the life of the instance.
+        """
+        LOGGER.debug("Listing all service accounts")
+        all_service_accounts = []
+
+        list_request = (
+            self._iam_service.projects()
+            .serviceAccounts()
+            .list(name=f"projects/{self.project_id}")
+        )
+
+        while list_request:
+            list_response = list_request.execute()
+
+            all_service_accounts.extend(list_response.get("accounts", []))
+
+            list_request = (
+                self._iam_service.projects()
+                .serviceAccounts()
+                .list_next(
+                    previous_request=list_request, previous_response=list_response
+                )
+            )
+        LOGGER.debug(
+            f"Done listing all service accounts; {len(all_service_accounts)} total"
+        )
+
+        return all_service_accounts
+
+    def invalidate_cached_service_accounts(self):
+        """
+        Invalidate the current instance's cache of service accounts.
+        """
+        if "all_service_accounts" in self.__dict__:
+            del self.all_service_accounts
 
     def init_service_accounts(
         self, buckets: List[str], actions: List[StoragePolicyAction]
@@ -195,7 +254,7 @@ class GCPStorageServiceAccountManager:
                 .execute()
             )
 
-        # add roles to the service account
+        # add roles to the service account, retrying with exponential backoff
         add_timed = not backup
         expiration_timestamp = self.add_roles_to_service_account(
             service_account["email"], bucket, action, timed=add_timed
@@ -206,41 +265,11 @@ class GCPStorageServiceAccountManager:
             f" Created service account {service_account['email']};"
             f" expires {expiration_timestamp}",
         )
+
+        # invalidate cache of service accounts, since we've added a new one
+        self.invalidate_cached_service_accounts()
+
         return service_account, expiration_timestamp
-
-    @cached_property
-    def all_service_accounts(self) -> List[dict]:
-        """
-        Retrieves all service accounts for a project.
-
-        Cached property; only computed once for the life of the instance.
-        """
-        LOGGER.debug("Listing all service accounts")
-        all_service_accounts = []
-
-        list_request = (
-            self._iam_service.projects()
-            .serviceAccounts()
-            .list(name=f"projects/{self.project_id}")
-        )
-
-        while list_request:
-            list_response = list_request.execute()
-
-            all_service_accounts.extend(list_response.get("accounts", []))
-
-            list_request = (
-                self._iam_service.projects()
-                .serviceAccounts()
-                .list_next(
-                    previous_request=list_request, previous_response=list_response
-                )
-            )
-        LOGGER.debug(
-            f"Done listing all service accounts; {len(all_service_accounts)} total"
-        )
-
-        return all_service_accounts
 
     def get_service_accounts_for_resource(
         self, bucket: str, action: StoragePolicyAction
@@ -294,26 +323,6 @@ class GCPStorageServiceAccountManager:
         Adds a bucket-level access permission, as well as a project-level usage consumer permission.
         """
 
-        # get the current bucket policy
-        iam_policy = (
-            self._storage_service.buckets()
-            .getIamPolicy(
-                bucket=bucket,
-                optionsRequestedPolicyVersion=3,
-                userProject=self.project_id,
-            )
-            .execute()
-        )
-        # get the current project policy
-        project_iam_policy = (
-            self._cloudresourcemanager_service.projects()
-            .getIamPolicy(
-                resource=f"projects/{self.project_id}",
-                body={"options": {"requestedPolicyVersion": 3}},
-            )
-            .execute()
-        )
-
         if action == StoragePolicyAction.OVERWRITE:
             # read and write roles
             role = self._ACTION_ROLES[StoragePolicyAction.OVERWRITE]
@@ -335,73 +344,118 @@ class GCPStorageServiceAccountManager:
         # with microseconds=0, the fractional part is omitted in ISO format
         expiration_timestamp = expiration_datetime.isoformat()
 
-        # update bucket policy
-        if timed:
-            iam_policy["bindings"].append(
-                {
-                    "role": role,
-                    "members": [f"serviceAccount:{service_account_email}"],
-                    "condition": {
-                        "title": self._ROLE_TITLES["timed"],
-                        "description": self._ROLE_DESCRIPTIONS["timed"],
-                        "expression": f'request.time < timestamp("{expiration_timestamp}")',
-                    },
-                }
-            )
-        else:
-            iam_policy["bindings"].append(
-                {
-                    "role": role,
-                    "members": [f"serviceAccount:{service_account_email}"],
-                    "condition": {
-                        "title": self._ROLE_TITLES["untimed"],
-                        "description": self._ROLE_DESCRIPTIONS["untimed"],
-                        # no condition
-                        "expression": "true",
-                    },
-                }
+        @backoff.on_exception(
+            DEFAULT_BACKOFF_STRATEGY,
+            (HttpError, ssl.SSLError),
+            max_tries=DEFAULT_MAX_BACKOFF_TRIES,
+        )
+        def update_bucket_policy():
+            """
+            Update the IAM policy for the given bucket.
+
+            Retries with backoff in case of failure (usually due to concurrency).
+            """
+            # get the current bucket policy
+            iam_policy = (
+                self._storage_service.buckets()
+                .getIamPolicy(
+                    bucket=bucket,
+                    optionsRequestedPolicyVersion=3,
+                    userProject=self.project_id,
+                )
+                .execute()
             )
 
-        # update project policy
-        # add service usage consumer role; always needed to access resources
-        if timed:
-            project_iam_policy["bindings"].append(
-                {
-                    "role": self._SERVICE_USAGE_CONSUMER_ROLE,
-                    "members": [f"serviceAccount:{service_account_email}"],
-                    "condition": {
-                        "title": self._ROLE_TITLES["timed"],
-                        "description": self._ROLE_DESCRIPTIONS["timed"],
-                        "expression": f'request.time < timestamp("{expiration_timestamp}")',
-                    },
-                }
-            )
-        else:
-            project_iam_policy["bindings"].append(
-                {
-                    "role": self._SERVICE_USAGE_CONSUMER_ROLE,
-                    "members": [f"serviceAccount:{service_account_email}"],
-                    "condition": {
-                        "title": self._ROLE_TITLES["untimed"],
-                        "description": self._ROLE_DESCRIPTIONS["untimed"],
-                        "expression": "true",
-                    },
-                }
-            )
+            # update bucket policy
+            if timed:
+                iam_policy["bindings"].append(
+                    {
+                        "role": role,
+                        "members": [f"serviceAccount:{service_account_email}"],
+                        "condition": {
+                            "title": self._ROLE_TITLES["timed"],
+                            "description": self._ROLE_DESCRIPTIONS["timed"],
+                            "expression": f'request.time < timestamp("{expiration_timestamp}")',
+                        },
+                    }
+                )
+            else:
+                iam_policy["bindings"].append(
+                    {
+                        "role": role,
+                        "members": [f"serviceAccount:{service_account_email}"],
+                        "condition": {
+                            "title": self._ROLE_TITLES["untimed"],
+                            "description": self._ROLE_DESCRIPTIONS["untimed"],
+                            # no condition
+                            "expression": "true",
+                        },
+                    }
+                )
+            iam_policy["version"] = 3
+            # save storage policy
+            self._storage_service.buckets().setIamPolicy(
+                bucket=bucket,
+                body=iam_policy,
+                userProject=self.project_id,
+            ).execute()
 
-        iam_policy["version"] = 3
-        project_iam_policy["version"] = 3
+        @backoff.on_exception(
+            DEFAULT_BACKOFF_STRATEGY,
+            (HttpError, ssl.SSLError),
+            max_tries=DEFAULT_MAX_BACKOFF_TRIES,
+        )
+        def update_project_policy():
+            """
+            Update the IAM policy for the given project.
 
-        # save storage policy
-        self._storage_service.buckets().setIamPolicy(
-            bucket=bucket,
-            body=iam_policy,
-            userProject=self.project_id,
-        ).execute()
-        # save project policy
-        self._cloudresourcemanager_service.projects().setIamPolicy(
-            resource=f"projects/{self.project_id}", body={"policy": project_iam_policy}
-        ).execute()
+            Retries with backoff in case of failure (usually due to concurrency).
+            """
+            # get the current project policy
+            project_iam_policy = (
+                self._cloudresourcemanager_service.projects()
+                .getIamPolicy(
+                    resource=f"projects/{self.project_id}",
+                    body={"options": {"requestedPolicyVersion": 3}},
+                )
+                .execute()
+            )
+            # update project policy
+            # add service usage consumer role; always needed to access resources
+            if timed:
+                project_iam_policy["bindings"].append(
+                    {
+                        "role": self._SERVICE_USAGE_CONSUMER_ROLE,
+                        "members": [f"serviceAccount:{service_account_email}"],
+                        "condition": {
+                            "title": self._ROLE_TITLES["timed"],
+                            "description": self._ROLE_DESCRIPTIONS["timed"],
+                            "expression": f'request.time < timestamp("{expiration_timestamp}")',
+                        },
+                    }
+                )
+            else:
+                project_iam_policy["bindings"].append(
+                    {
+                        "role": self._SERVICE_USAGE_CONSUMER_ROLE,
+                        "members": [f"serviceAccount:{service_account_email}"],
+                        "condition": {
+                            "title": self._ROLE_TITLES["untimed"],
+                            "description": self._ROLE_DESCRIPTIONS["untimed"],
+                            "expression": "true",
+                        },
+                    }
+                )
+            project_iam_policy["version"] = 3
+            # save project policy
+            self._cloudresourcemanager_service.projects().setIamPolicy(
+                resource=f"projects/{self.project_id}",
+                body={"policy": project_iam_policy},
+            ).execute()
+
+        # update each policy with exponential backoff
+        update_bucket_policy()
+        update_project_policy()
 
         if timed:
             return expiration_timestamp
@@ -416,25 +470,6 @@ class GCPStorageServiceAccountManager:
 
         Modifies the bucket-level access permission, as well as the project-level usage consumer permission.
         """
-        # get the current bucket policy
-        iam_policy = (
-            self._storage_service.buckets()
-            .getIamPolicy(
-                bucket=bucket,
-                optionsRequestedPolicyVersion=3,
-                userProject=self.project_id,
-            )
-            .execute()
-        )
-        # get the current project policy
-        project_iam_policy = (
-            self._cloudresourcemanager_service.projects()
-            .getIamPolicy(
-                resource=f"projects/{self.project_id}",
-                body={"options": {"requestedPolicyVersion": 3}},
-            )
-            .execute()
-        )
 
         expiration_datetime = datetime.now(timezone.utc)
         # add 15 minutes, remove microseconds
@@ -445,59 +480,125 @@ class GCPStorageServiceAccountManager:
         # with microseconds=0, the fractional part is omitted in ISO format
         expiration_timestamp = expiration_datetime.isoformat()
 
-        # update policies for the bucket
-        for binding in iam_policy["bindings"]:
-            if (
-                # filter for desired service account
-                f"serviceAccount:{service_account_email}" in binding["members"]
-                # filter for untimed role
-                and binding["condition"]["title"] == self._ROLE_TITLES["untimed"]
-            ):
-                # add expiration to the role
-                binding["condition"][
-                    "expression"
-                ] = f'request.time < timestamp("{expiration_timestamp}")'
-                # update title
-                binding["condition"]["title"] = self._ROLE_TITLES["timed"]
+        @backoff.on_exception(
+            DEFAULT_BACKOFF_STRATEGY,
+            (HttpError, ssl.SSLError),
+            max_tries=DEFAULT_MAX_BACKOFF_TRIES,
+        )
+        def update_bucket_policy():
+            """
+            Update the IAM policy for the given bucket.
 
-        # update policies for the project
-        for binding in project_iam_policy["bindings"]:
-            if (
-                # filter for desired service account
-                f"serviceAccount:{service_account_email}" in binding["members"]
-                # filter for untimed role
-                and binding["condition"]["title"] == self._ROLE_TITLES["untimed"]
-            ):
-                # add expiration to the role
-                binding["condition"][
-                    "expression"
-                ] = f'request.time < timestamp("{expiration_timestamp}")'
-                # update title
-                binding["condition"]["title"] = self._ROLE_TITLES["timed"]
+            Retries with backoff in case of failure (usually due to concurrency).
+            """
+            # get the current bucket policy
+            iam_policy = (
+                self._storage_service.buckets()
+                .getIamPolicy(
+                    bucket=bucket,
+                    optionsRequestedPolicyVersion=3,
+                    userProject=self.project_id,
+                )
+                .execute()
+            )
 
-        # save policy
-        self._storage_service.buckets().setIamPolicy(
-            bucket=bucket,
-            body=iam_policy,
-            userProject=self.project_id,
-        ).execute()
-        # save project policy
-        self._cloudresourcemanager_service.projects().setIamPolicy(
-            resource=f"projects/{self.project_id}", body={"policy": project_iam_policy}
-        ).execute()
+            # update policies for the bucket
+            changed = False
+            for binding in iam_policy["bindings"]:
+                if (
+                    # filter for desired service account
+                    f"serviceAccount:{service_account_email}" in binding["members"]
+                    # filter for untimed role
+                    and binding["condition"]["title"] == self._ROLE_TITLES["untimed"]
+                ):
+                    changed = True
+                    # add expiration to the role
+                    binding["condition"][
+                        "expression"
+                    ] = f'request.time < timestamp("{expiration_timestamp}")'
+                    # update title
+                    binding["condition"]["title"] = self._ROLE_TITLES["timed"]
+                    binding["condition"]["description"] = self._ROLE_DESCRIPTIONS[
+                        "timed"
+                    ]
 
-        # update the service account description; should no longer be labeled as backup
-        self._iam_service.projects().serviceAccounts().patch(
-            name=f"projects/{self.project_id}/serviceAccounts/{service_account_email}",
-            body={
-                "serviceAccount": {
-                    "description": self._service_account_description(
-                        bucket, action, backup=False
-                    ),
+            if changed:
+                # save policy
+                self._storage_service.buckets().setIamPolicy(
+                    bucket=bucket,
+                    body=iam_policy,
+                    userProject=self.project_id,
+                ).execute()
+
+            return changed
+
+        @backoff.on_exception(
+            DEFAULT_BACKOFF_STRATEGY,
+            (HttpError, ssl.SSLError),
+            max_tries=DEFAULT_MAX_BACKOFF_TRIES,
+        )
+        def update_project_policy():
+            """
+            Update the IAM policy for the given project.
+
+            Retries with backoff in case of failure (usually due to concurrency).
+            """
+            # get the current project policy
+            project_iam_policy = (
+                self._cloudresourcemanager_service.projects()
+                .getIamPolicy(
+                    resource=f"projects/{self.project_id}",
+                    body={"options": {"requestedPolicyVersion": 3}},
+                )
+                .execute()
+            )
+
+            # update policies for the project
+            changed = False
+            for binding in project_iam_policy["bindings"]:
+                if (
+                    # filter for desired service account
+                    f"serviceAccount:{service_account_email}" in binding["members"]
+                    # filter for untimed role
+                    and binding["condition"]["title"] == self._ROLE_TITLES["untimed"]
+                ):
+                    changed = True
+                    # add expiration to the role
+                    binding["condition"][
+                        "expression"
+                    ] = f'request.time < timestamp("{expiration_timestamp}")'
+                    # update title
+                    binding["condition"]["title"] = self._ROLE_TITLES["timed"]
+
+            if changed:
+                # save project policy
+                self._cloudresourcemanager_service.projects().setIamPolicy(
+                    resource=f"projects/{self.project_id}",
+                    body={"policy": project_iam_policy},
+                ).execute()
+
+            return changed
+
+        # update each policy with exponential backoff
+        bucket_iam_changed = update_bucket_policy()
+        project_iam_changed = True  # update_project_policy()
+
+        # only update the service account if anything was changed
+        if bucket_iam_changed or project_iam_changed:
+            # update the service account description; should no longer be labeled as backup
+            self._iam_service.projects().serviceAccounts().patch(
+                name=f"projects/{self.project_id}/serviceAccounts/{service_account_email}",
+                body={
+                    "serviceAccount": {
+                        "description": self._service_account_description(
+                            bucket, action, backup=False
+                        ),
+                    },
+                    "updateMask": "description",
                 },
-                "updateMask": "description",
-            },
-        ).execute()
+            ).execute()
+            # invalidate cache of service accounts, since it's been modified
+            self.invalidate_cached_service_accounts()
 
         return expiration_timestamp
 
@@ -519,6 +620,9 @@ class GCPStorageServiceAccountManager:
 
         if len(current_list) > 0:
             # delete the current service accounts
+            LOGGER.debug(
+                f"Service accounts to delete: {[acc['email'] for acc in current_list]}"
+            )
             for current in current_list:
                 current_email = current["email"]
                 LOGGER.debug(f"[{bucket}/{action.value}] Deleting {current_email}")
@@ -543,6 +647,9 @@ class GCPStorageServiceAccountManager:
             )
             new_email = backup_email
         else:
+            LOGGER.debug(
+                f"[{bucket}/{action.value}] Directly creating service account with expiration"
+            )
             # no backup exists; directly create an account with an expiration time
             new_service_account, expiration_timestamp = self.create_service_account(
                 bucket, action, backup=False
