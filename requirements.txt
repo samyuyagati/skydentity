@@ -7,6 +7,7 @@ build
 gunicorn
 pyyaml
 pycryptodome
+backoff
 # Azure
 azure-mgmt-resource 
 azure-mgmt-compute

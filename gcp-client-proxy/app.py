@@ -4,7 +4,6 @@ import os
 from flask import Flask
 from google.cloud import logging as gcp_logging
 
-from skydentity.proxy_util.gcp.logging import get_logger, print_and_log
 from skydentity.proxy_util.gcp.skypilot_forward import setup_routes
 from skydentity.utils.log_util import build_file_handler
 
