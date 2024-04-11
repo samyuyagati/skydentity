@@ -4,31 +4,26 @@ from google.cloud import compute_v1
 from google.oauth2 import service_account
 from google.api_core.client_options import ClientOptions
 
-import asyncio
 import argparse
 import time 
 
 DUMMY_CREDS = 'tokens/dummy-service-acct-token.json'
 
 parser = argparse.ArgumentParser(
-                    prog='TestHeavyLoad',
-                    description='Tests large volume of VM creation requests to Skydentity')
+                    prog='CreateVM',
+                    description='Tests VM creation requests to Skydentity')
 
-parser.add_argument('--num-requests', type=int, default=1, help='Number of VM creation requests to send to Skydentity')
 parser.add_argument('--project', type=str, default='sky-identity', help='Project ID of the GCP project you want to use')
 parser.add_argument('--zone', type=str, default='us-west1-b', help='Name of the zone to create the instance in')
 parser.add_argument('--api-endpoint', type=str, default=None, help='API endpoint to send requests to; defaults to compute.googleapis.com')
 parser.add_argument("--credentials", type=str, default=None, help="Path to the service account key file")
-args = parser.parse_args()
-
-if args.credentials:
-    DUMMY_CREDS = args.credentials
+parser.add_argument("--vm-id", type=str, default="", help="ID of the VM to create")
 
 def get_dummy_credentials() -> service_account.Credentials:
     return service_account.Credentials.from_service_account_file(
         DUMMY_CREDS)
 
-def get_image_from_family(project: str, family: str) -> compute_v1.Image:
+def get_image_from_family(project: str, family: str, api_endpoint=None) -> compute_v1.Image:
     """
     Retrieve the newest image that is part of a given family in a project.
 
@@ -39,8 +34,8 @@ def get_image_from_family(project: str, family: str) -> compute_v1.Image:
     Returns:
         An Image object.
     """
-    if args.api_endpoint != None:
-        options = ClientOptions(api_endpoint=args.api_endpoint)
+    if api_endpoint != None:
+        options = ClientOptions(api_endpoint=api_endpoint)
         image_client = compute_v1.ImagesClient(credentials=get_dummy_credentials(),
             client_options=options)
     else:
@@ -106,13 +101,14 @@ def disk_from_image(
     boot_disk.boot = boot
     return boot_disk
 
-async def create_instance(
+def create_instance(
     project_id: str,
     zone: str,
     instance_name: str,
     disks: List[compute_v1.AttachedDisk],
     machine_type: str = "e2-micro",
     network_link: str = "global/networks/default",
+    api_endpoint=None,
 ) -> compute_v1.Instance:
     """
     Send an instance creation request to the Compute Engine API and wait for it to complete.
@@ -130,8 +126,8 @@ async def create_instance(
     Returns:
         Instance object.
     """
-    if args.api_endpoint != None:
-        options = ClientOptions(api_endpoint=args.api_endpoint)
+    if api_endpoint != None:
+        options = ClientOptions(api_endpoint=api_endpoint)
         instance_client = compute_v1.InstancesClient(credentials=get_dummy_credentials(),
             client_options=options)
     else:
@@ -147,7 +143,7 @@ async def create_instance(
     instance.name = instance_name
     instance.machine_type = f"zones/{zone}/machineTypes/{machine_type}"
     instance.disks = disks
-    if args.api_endpoint != None:
+    if api_endpoint != None:
         instance.service_accounts = [compute_v1.ServiceAccount(email="dummy_account")]
 
     # Cloud init script    
@@ -172,7 +168,7 @@ async def create_instance(
 
     return operation
 
-async def delete_instance(project_id: str, zone: str, machine_name: str) -> None:
+def delete_instance(project_id: str, zone: str, machine_name: str) -> None:
     """
     Send an instance deletion request to the Compute Engine API and wait for it to complete.
 
@@ -184,55 +180,28 @@ async def delete_instance(project_id: str, zone: str, machine_name: str) -> None
     instance_client = compute_v1.InstancesClient()
 
     print(f"Deleting {machine_name} from {zone}...")
-    operation = instance_client.delete(
+    instance_client.delete(
         project=project_id, zone=zone, instance=machine_name
     )
-    task = asyncio.create_task(operation)
 
-def get_end_time(task):
-    print(f"End time of {task.get_name()} from callback: {time.time()}")
-
-async def future_create_instance(i):
-    print(f"Sending request {i+1} of {args.num_requests} to Sky Identity... (start time: {time.time()})")
-    # Configure disk
+def get_image(api_endpoint=None):
+    disks = []
     start = time.time()
-    newest_debian = get_image_from_family(project="debian-cloud", family="debian-10")
-    disk_type = f"zones/{args.zone}/diskTypes/pd-standard"
-    disks = [
-        disk_from_image(disk_type, 10, True, newest_debian.self_link, True)
-    ]
-    print(f"Time to get image {i}: ", time.time() - start)
-
-    # Creating instance
-    operation = create_instance(args.project, args.zone, f"gcp-clilib-{i}", disks)
-    task = asyncio.create_task(operation)
-    task.add_done_callback(get_end_time)
-    
-    print(f"{task.get_name()} corresponds to index {i+1}")
-
-async def send_create_instance_requests_concurrently():
-    print(f"Sending {args.num_requests} requests to Sky Identity concurrently... (start time: {time.time()})")
-    task_futures = [asyncio.ensure_future(future_create_instance(i)) for i in range(args.num_requests)]
-    
-    # Wait for all tasks to complete
-    for f in asyncio.as_completed(task_futures):
-        await f
-
-async def delete_instances():
-    task_futures = [asyncio.ensure_future(delete_instance(args.project, args.zone, f"gcp-clilib-{i}")) for i in range(args.num_requests)]
-    for f in asyncio.as_completed(task_futures):
-        await f
+    newest_debian = get_image_from_family(project="debian-cloud", family="debian-10", api_endpoint=api_endpoint)
+    print(f"Time to get image: ", time.time() - start)
+    disk_type = f"zones/{args.zone}/diskTypes/pd-balanced"
+    disks.append(disk_from_image(disk_type, 10, True, newest_debian.self_link, True))
+    return disks
 
 def main():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    asyncio.run(send_create_instance_requests_concurrently())   
-
-    # Clean up (delete all instances, not via skydentity)
-    print("Cleaning up...")
-    time.sleep(10)
-    asyncio.run(delete_instances())
-    loop.close()
+    disks = get_image(api_endpoint=args.api_endpoint)
+    start = time.perf_counter()
+    create_instance(args.project, args.zone, f"gcp-clilib-{args.vm_id}", disks, api_endpoint=args.api_endpoint)
+    print(f"Time for instance creation req: ", time.perf_counter() - start)
 
 if __name__ == "__main__":
+    args = parser.parse_args()
+
+    if args.credentials:
+        DUMMY_CREDS = args.credentials
     main()

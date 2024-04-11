@@ -18,6 +18,7 @@ virtual_machine:
 
   allowed_images:
     - gcp:
+        - debian-10-buster-v20240312 
         - debian-10-buster-v20240213
         - debian-10-buster-v20240110
         - ubuntu-1604-xenial-v20181029

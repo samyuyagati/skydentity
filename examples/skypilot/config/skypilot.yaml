@@ -7,6 +7,7 @@ virtual_machine:
 
   regions:
     - gcp:
+        - us-west1
         - us-west1-b
 
   # Can specify max hardware spec or a list of allowed machines
@@ -21,19 +22,20 @@ virtual_machine:
         - debian-10-buster-v20240110
         - ubuntu-1604-xenial-v20181029
         - ubuntu-1804-bionic-v20181029
+        - ubuntu-2204-jammy-v20240223
 
 # vpcs as a diff fresource type
-      
+
   startup_scripts:
       - gcp:
-        # Hash of "#! /bin/bash\nsudo echo \"success\" > startup_script.out\n"
-        - efb793ed84458eee9d4098a17c6f1cd5ed14b858ff35f8f3c51448a252eeee32
+        # Output of hash_cloud_init_gcp.py
+        - 2cc8351d05e4f5877b8c97ac73fd220b50c07729da55b089f4653aebac4efab6
 
 attached_authorizations:
   - gcp:
       - authorization:
           - placeholder
-  
+
 # auxiliary read requests made during setup
 # TODO: if reads is included then check the reads; otherwise disallow all reads
 reads:

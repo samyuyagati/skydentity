@@ -14,13 +14,13 @@ ROOT=$(dirname $(dirname $(dirname $(pwd))))
 echo "Root: $ROOT"
 # Setup authorizations and start servers
 echo "Setting up authorizations..."
-./setup_authorization.sh -l -r $ROOT \
+./setup_authorization.sh -r $ROOT \
                          -k $ROOT/skydentity/examples/heavy_load/keys/public.pem \
-                         -s $ROOT/skydentity/examples/heavy_load/keys/private.pem \
+                         -s $ROOT/skydentity/examples/heavy_load/keys/private.pem -p "sky-identity" \
                          -c $FIREBASE_CREDS -y $ROOT/skydentity/examples/heavy_load/config 
 
 # Run test_server.py
-python test_server.py --num-requests $NUM_REQUESTS --api-endpoint "http://127.0.0.1:5000/"
+python run_experiment.py --num-requests $NUM_REQUESTS --api-endpoint "http://127.0.0.1:5000/" --concurrent
 
 # Clean up
 echo "Cleaning up..."
