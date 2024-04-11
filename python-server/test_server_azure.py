@@ -14,6 +14,7 @@ import base64
 credential = DefaultAzureCredential()
 subscription_client = SubscriptionClient(credential)
 subscription_id = next(subscription_client.subscriptions.list()).subscription_id
+# Dummy credentials 
 USERNAME = "skydentity"
 PASSWORD = "$kyD3ntity1sAwesome"
 NUM_VMS_TO_CREATE = 1
@@ -48,7 +49,30 @@ def create_resource_group(resource_group_name, subscription_id, location="westus
         vnet_name,
         {
             "location": location,
-            "address_space": {"address_prefixes": ["10.0.0.0/16"]},
+            "address_space": {"address_prefixes": ["10.143.0.0/16"]},
+        },
+    ).result()
+
+    # Create network security group to allow ssh
+    nsg_name = resource_group_name + "-nsg"
+    nsg = network_client.network_security_groups.begin_create_or_update(
+        resource_group_name,
+        nsg_name,
+        {
+            "location": location,
+            "security_rules": [
+                {
+                    "name": "ssh",
+                    "protocol": "Tcp",
+                    "source_port_range": "*",
+                    "destination_port_range": "22",
+                    "source_address_prefix": "*",
+                    "destination_address_prefix": "*",
+                    "access": "Allow",
+                    "priority": 100,
+                    "direction": "Inbound",
+                }
+            ],
         },
     ).result()
 
@@ -82,7 +106,7 @@ def create_resource_group(resource_group_name, subscription_id, location="westus
         vnet_name,
         subnet_name,
         {
-            "address_prefix": "10.0.0.0/24",
+            "address_prefix": "10.143.0.0/16",
             "network_security_group": {"id": nsg.id},
          },
     ).result()

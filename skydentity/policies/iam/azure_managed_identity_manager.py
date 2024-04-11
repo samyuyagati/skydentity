@@ -120,7 +120,6 @@ class AzureManagedIdentityManager:
             azure_role = azure_role_objects[i]
 
             possible_condition = self.get_object_condition(new_binding)
-
             # Assign role to service account
             role_assignment = self._authorization_client.role_assignments.create(
                 scope=f"/subscriptions/{self._subscription_id}/resourceGroups/{auth.resource_group}",

@@ -9,8 +9,9 @@ from functools import cache
 from typing import Tuple
 
 # Global file variables; underscore to prevent external imports
-_SERVICE_ACCT_INFO_FILE = os.environ.get("SERVICE_ACCOUNT_INFO_FILE", None)
-_CAPABILITY_ENC_KEY_FILE = os.environ.get("CAPABILITY_ENC_KEY_FILE", None)
+# Must provide these environment variables if running locally
+_SERVICE_ACCT_INFO_FILE = os.environ.get("SERVICE_ACCOUNT_INFO_FILE", "/cloud_creds/gcp/proxy_service_account_key.json")
+_CAPABILITY_ENC_KEY_FILE = os.environ.get("CAPABILITY_ENC_KEY_FILE", "/cloud_creds/enc/capability_enc.key")
 
 # validate global constants from environment variables
 assert _SERVICE_ACCT_INFO_FILE is not None and os.path.isfile(_SERVICE_ACCT_INFO_FILE)

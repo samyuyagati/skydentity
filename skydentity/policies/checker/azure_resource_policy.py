@@ -4,6 +4,7 @@ import sys
 import re
 import hashlib
 import base64
+import logging as py_logging
 
 from skydentity.policies.checker.resource_policy import (
     CloudPolicy, 
@@ -33,6 +34,8 @@ class AzureVMPolicy(VMPolicy):
         :param policy: The dict of the policy to enforce.
         """
         self._policy = policy
+        py_logging.basicConfig(filename='azure_resource_policy.log', level=py_logging.INFO)
+        self._pylogger = py_logging.getLogger("AzureResourcePolicy")
 
     def check_request(self, request: Request) -> bool:
         """
@@ -76,17 +79,17 @@ class AzureVMPolicy(VMPolicy):
                         return False
                     
                     if "diskSizeGB" in os_disk and os_disk["diskSizeGB"] != AzureVMPolicy.DEFAULT_VM_GB:
-                        print("Disk size is not default")
+                        self._pylogger.debug("Disk size is not default")
                         return False
 
-            print("VM Past networkProfile")
+            self._pylogger.debug("VM Past networkProfile")
             # Default deny on network properties in VM
             if "networkProfile" in request_contents["properties"]:
                 for key in request_contents["properties"]["networkProfile"]:
                     if key not in AzureVMPolicy.NETWORK_PROFILE_ALLOWED_KEYS:
                         return False
 
-            print("VM Past networkProfile")
+            self._pylogger.debug("VM Past networkProfile")
             # Default deny on OS Profile
             if "osProfile" in request_contents["properties"]:
                 for key in request_contents["properties"]["osProfile"]:
@@ -99,6 +102,12 @@ class AzureVMPolicy(VMPolicy):
                         return False
 
                     if not request_contents["properties"]["osProfile"]["linuxConfiguration"]["disablePasswordAuthentication"]:
+                        return False
+
+                    # Check for the existence of a given public key attached, even though this will be overriden later
+                    if not "ssh" in request_contents["properties"]["osProfile"]["linuxConfiguration"] or \
+                        not "publicKeys" in request_contents["properties"]["osProfile"]["linuxConfiguration"]["ssh"] or \
+                        len(request_contents["properties"]["osProfile"]["linuxConfiguration"]["ssh"]["publicKeys"]) == 0:
                         return False
         return True
 
@@ -193,6 +202,8 @@ class AzureVMPolicy(VMPolicy):
         :throws: Error if the policy is not valid.
         :return: The policy representation of the dict.
         """
+        # self._pylogger.debug(str(policy_dict_cloud_level))
+
         cloud_specific_policy = {}
         cloud_specific_policy["can_cloud_run"] = AzurePolicy.Azure_CLOUD_NAME \
                             in policy_dict_cloud_level["cloud_provider"]
@@ -200,6 +211,7 @@ class AzureVMPolicy(VMPolicy):
             raise PolicyContentException("Policy does not accept Azure")
 
         try:
+            # self._pylogger.debug(policy_dict_cloud_level["actions"])
             action = PolicyAction[policy_dict_cloud_level["actions"][0]]
             cloud_specific_policy["actions"] = action
         except KeyError:
@@ -207,7 +219,7 @@ class AzureVMPolicy(VMPolicy):
 
         Azure_cloud_regions = []
         for region_group in policy_dict_cloud_level["regions"]:
-            print("REGION GROUP", region_group)
+            # self._pylogger.debug("REGION GROUP", region_group)
             if AzurePolicy.Azure_CLOUD_NAME in region_group:
                 if isinstance(policy_dict_cloud_level["regions"], list):
                   Azure_cloud_regions = region_group[AzurePolicy.Azure_CLOUD_NAME] 
@@ -257,18 +269,21 @@ class AzureAttachedAuthorizationPolicy(ResourcePolicy):
         :param policy: The dict of the policy to enforce.
         """
         self._policy = policy
-    
+        py_logging.basicConfig(filename='azure_resource_policy.log', level=py_logging.INFO)
+        self._pylogger = py_logging.getLogger("AzureResourcePolicy")
+        self._resource_group_extractor = re.compile(r"/resource[gG]roups/(?P<resourceGroupName>[^/]+)")
+
     def check_request(self, request: Request, auth_policy_manager: AzureAuthorizationPolicyManager, logger=None) -> Tuple[Union[str, None], bool]:
         """
         Enforces the policy on a request.
         :param request: The request to enforce the policy on.
         :return: True if the request is allowed, False otherwise.
         """
-        print("check_request", flush=True)
+        self._pylogger.debug("check_request", flush=True)
         sys.stdout.flush()
         
         request_contents = request.get_json(cache=True)
-        print(">>>request:", request_contents)
+        self._pylogger.debug(">>>request:", request_contents)
 
         # Handle attached managed identity capability
         if "managedIdentities" not in request_contents:
@@ -277,37 +292,50 @@ class AzureAttachedAuthorizationPolicy(ResourcePolicy):
         # Expect a single attached managed identity
         if len(request_contents["managedIdentities"]) != 1:
             if logger:
-                logger.log_text("Only one managed identity may be attached", severity="WARNING")
+                logger.log_text("Only one managed identity may be attached")
             else:
-                print("Only one managed identity may be attached")
+                self._pylogger.debug("Only one managed identity may be attached")
             return (None, False)
 
         # Expect a capability of the form:
         #   { 'nonce': XX, 'header': XX, 'ciphertext': XX, 'tag': XX }
         managed_identity_capability = request_contents["managedIdentities"][0]
-        print(">>>managed_identity_capability:", managed_identity_capability)
+        self._pylogger.debug(">>>managed_identity_capability:", managed_identity_capability)
         if (managed_identity_capability["nonce"] is None or \
             managed_identity_capability["header"] is None or \
             managed_identity_capability["ciphertext"] is None or \
             managed_identity_capability["tag"] is None):
             if logger:
-                logger.log_text("Invalid capability format", severity="WARNING")
+                logger.log_text("Invalid capability format")
             else:
-                print("Invalid capability format")
+                self._pylogger.debug("Invalid capability format")
             return (None, False)
         
         managed_identity_id, success = auth_policy_manager.check_capability(managed_identity_capability)
         if not success:
-            print("Unsuccessful in checking capability")
+            self._pylogger.debug("Unsuccessful in checking capability")
             return (None, False)
 
         # Double-check that the managed identity is allowed (e.g., if policy changed since
         # the capability was issued)
-        print(self._policy[AzurePolicy.Azure_CLOUD_NAME][0]["authorization"])
+        self._pylogger.debug(self._policy[AzurePolicy.Azure_CLOUD_NAME][0]["authorization"])
         if managed_identity_id not in self._policy[AzurePolicy.Azure_CLOUD_NAME][0]["authorization"]:
-            print("managed identity id", managed_identity_id, "not in", self._policy[AzurePolicy.Azure_CLOUD_NAME])
+            self._pylogger.debug("managed identity id", managed_identity_id, "not in", self._policy[AzurePolicy.Azure_CLOUD_NAME])
             return (None, False)
         
+        # Now, change the resource group of the managed_identity_id to be the one in the new resource group
+        # If the resource groups are the same
+        request_resource_group_match = self._resource_group_extractor.search(request.path)
+        if request_resource_group_match:
+            request_resource_group = request_resource_group_match.group("resourceGroupName")
+            source_managed_identity_resource_group = self._resource_group_extractor.search(managed_identity_id).group("resourceGroupName")
+
+            if request_resource_group != source_managed_identity_resource_group:
+                auth_policy_manager.duplicate_managed_identity(managed_identity_id, request_resource_group)
+
+            managed_identity_id = managed_identity_id.replace(source_managed_identity_resource_group, request_resource_group)
+        
+
         # If permitted, add the managed identity to the request
         return (managed_identity_id, True)
 
@@ -317,6 +345,7 @@ class AzureAttachedAuthorizationPolicy(ResourcePolicy):
         :return: The dictionary representation of the policy.
         """
         out_dict = {}
+        self._pylogger.debug(self._policy)
         if AzurePolicy.Azure_CLOUD_NAME in self._policy:
             out_dict[AzurePolicy.Azure_CLOUD_NAME] = self._policy[AzurePolicy.Azure_CLOUD_NAME]
         return out_dict
@@ -331,11 +360,11 @@ class AzureAttachedAuthorizationPolicy(ResourcePolicy):
         """
         if logger:
             logger.log_text("AzureAttachedAuthorization", severity="WARNING")
-        else:
-            print("AzureAttachedAuthorization")
+        # else:
+        #     print("AzureAttachedAuthorization")
         cloud_specific_policy = {}
         can_cloud_run = False
-        print("Policy dict:", policy_dict_cloud_level)
+        # print("Policy dict:", policy_dict_cloud_level)
         if isinstance(policy_dict_cloud_level, list):
             for cloud_auth in policy_dict_cloud_level:
                 if AzurePolicy.Azure_CLOUD_NAME \
@@ -353,7 +382,7 @@ class AzureAttachedAuthorizationPolicy(ResourcePolicy):
                 cloud_specific_policy[AzurePolicy.Azure_CLOUD_NAME] = managed_identities
                 break
         cloud_specific_policy['can_cloud_run'] = can_cloud_run
-        print("Cloud-specific attached authorization policy:", cloud_specific_policy)
+        # print("Cloud-specific attached authorization policy:", cloud_specific_policy)
         return AzureAttachedAuthorizationPolicy(cloud_specific_policy)
 
 class AzureReadPolicy(ResourcePolicy):
@@ -374,7 +403,7 @@ class AzureReadPolicy(ResourcePolicy):
     }
 
     class _PolicyDict(TypedDict):
-        resource_group: Union[str, None]
+        resource_group: Union[List[str], None]
         regions: Union[List[str], None]
         virtualMachines: bool
         virtualMachineInstanceView: bool
@@ -518,7 +547,9 @@ class AzureDefaultDenyPolicy(CloudPolicy):
         "networkInterfaces": re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/resourceGroups/(?P<resourceGroupName>[^/]+)/providers/Microsoft.Network/networkInterfaces/(?P<nicName>[^/]+)")
     }
 
-    def __init__(self, allowed_regions: List[str], allowed_resource_group_names: List[str]):
+    def __init__(self, 
+                 allowed_regions: List[str], 
+                 allowed_resource_group_names: List[str]):
         """
         :param allowed_regions: The list of allowed regions.
         :param allowed_resource_group_names: The list of allowed resource group names.
@@ -526,12 +557,14 @@ class AzureDefaultDenyPolicy(CloudPolicy):
         self.allowed_regions = allowed_regions
         self.allowed_resource_group_names = allowed_resource_group_names
         self._resource_group_extractor = re.compile(r"/resourcegroups/(?P<resourceGroupName>[^/]+)")
+        py_logging.basicConfig(filename='azure_resource_policy.log', level=py_logging.INFO)
+        self._pylogger = py_logging.getLogger("AzureResourcePolicy")
 
     def check_request(self, request: Request) ->  bool:
         raise NotImplemented("Use `check_default_deny_request` instead.")
     
     def check_default_deny_request(self, request: Request, *aux_info: str) -> bool:
-        print("Called check_default_deny_request with aux_info:", aux_info)
+        self._pylogger.debug("Called check_default_deny_request with aux_info:", aux_info)
         default_deny_type = aux_info[0]
         request_contents = request.get_json(cache=True)
         if "location" in request_contents and request_contents["location"] not in self.allowed_regions:
@@ -548,12 +581,12 @@ class AzureDefaultDenyPolicy(CloudPolicy):
                 'location': 'westus', 
                 'properties': {
                     'addressSpace': {
-                        'addressPrefixes': ['10.143.0.0/16']
+                        'addressPrefixes': ['10.146.0.0/16']
                     },
                     'subnets': [
                         {
                             'properties': {
-                                'addressPrefix': '10.143.0.0/16'
+                                'addressPrefix': '10.146.0.0/16'
                             }
                         }
                     ]
@@ -564,14 +597,16 @@ class AzureDefaultDenyPolicy(CloudPolicy):
                 if "addressSpace" in request_contents["properties"]:
                     address_space = request_contents["properties"]["addressSpace"]
                     if "addressPrefixes" in address_space:
-                        if address_space["addressPrefixes"] != ["10.143.0.0/16"]:
+                        if len(address_space["addressPrefixes"]) != 1:
+                            return False
+                        if not re.search(r'^10\.\d+\.0\.0\/16$', address_space["addressPrefixes"][0]):
                             return False
                 
                 if "subnets" in request_contents["properties"]:
                     subnets = request_contents["properties"]["subnets"]
                     for subnet in subnets:
                         if "properties" in subnet and "addressPrefix" in subnet["properties"]:
-                            if subnet["properties"]["addressPrefix"] != "10.143.0.0/16":
+                            if not re.search(r'^10\.\d+\.0\.0\/16$', subnet["properties"]["addressPrefix"]):
                                 return False
 
         elif default_deny_type == "networkSecurityGroups":
@@ -665,9 +700,10 @@ class AzureDeploymentPolicy(ResourcePolicy):
         """
         Internal class used to mock Azure requests on resource creation.
         """
-        def __init__(self, json_contents: Dict, method: str):
+        def __init__(self, json_contents: Dict, method: str, path: str = ''):
             self.json_contents = json_contents
             self.method = method
+            self.path = path
 
         def get_json(self, cache=False):
             return self.json_contents
@@ -688,7 +724,9 @@ class AzureDeploymentPolicy(ResourcePolicy):
 
         self._param_extractor = re.compile(r"^\[parameters\('(?P<param_name>[^']+)'\)\]$")
         self._resource_group_extractor = re.compile(r"/resourcegroups/(?P<resourceGroupName>[^/]+)")
-    
+        py_logging.basicConfig(filename='azure_resource_policy.log', level=py_logging.INFO)
+        self._pylogger = py_logging.getLogger("AzureResourcePolicy")
+
     def check_request(self, request: Request, auth_policy_manager: AzureAuthorizationPolicyManager) -> Tuple[Union[str, None], bool]:
         """
         Enforces the policy on a request.
@@ -704,7 +742,6 @@ class AzureDeploymentPolicy(ResourcePolicy):
             return (None, False)
         
         returned_managed_identity = None
-
         if "properties" in request_contents:
             # Load up all of the parameters
             parameters = {}
@@ -723,18 +760,18 @@ class AzureDeploymentPolicy(ResourcePolicy):
 
                 if "resources" in template:
                     for resource in template["resources"]:
-                        print("Resource: ", resource)
+                        self._pylogger.debug("Resource: ", resource)
                         if "type" in resource:
                             resource_type = resource["type"]
                             if resource_type == "Microsoft.Compute/virtualMachines":
                                 # Check the VM policy
-                                vm_request = self.convert_vm_source_to_vm_request(resource, parameters)
+                                vm_request = self.convert_vm_source_to_vm_request(resource, parameters, request.path)
                                 if "location" in vm_request.get_json():
                                     if vm_request.get_json()["location"] != "[variables('location')]":
                                         return (None, False)
                                     del vm_request.get_json()["location"]
 
-                                attached_auth_mock_request = AzureDeploymentPolicy.MockAzureRequest(request_contents, "PUT")
+                                attached_auth_mock_request = AzureDeploymentPolicy.MockAzureRequest(request_contents, "PUT", request.path)
                                 returned_managed_identity, should_succeed = \
                                     self._attached_authorization_policy.check_request(attached_auth_mock_request, auth_policy_manager)
 
@@ -743,9 +780,9 @@ class AzureDeploymentPolicy(ResourcePolicy):
 
                             else:
                                 # Check the default deny policy
-                                converted_request = self.convert_generic_source_to_mock_request(resource, parameters)
+                                converted_request = self.convert_generic_source_to_mock_request(resource, parameters, request.path)
                                 if resource_type not in AzureDeploymentPolicy.RESOURCE_NAME_TO_DEFAULT_DENY_KEY:
-                                    print(f"Resource type {resource_type} not in allowed part of default deny policy")
+                                    self._pylogger.debug(f"Resource type {resource_type} not in allowed part of default deny policy")
                                     return (None, False)
                                 
                                 if "location" in converted_request.get_json():
@@ -755,17 +792,18 @@ class AzureDeploymentPolicy(ResourcePolicy):
 
                                 default_deny_key = AzureDeploymentPolicy.RESOURCE_NAME_TO_DEFAULT_DENY_KEY[resource_type]
                                 if not self._default_deny_policy.check_default_deny_request(converted_request, default_deny_key):
-                                    print("Default deny policy failed check")
+                                    self._pylogger.debug("Default deny policy failed check")
                                     return (None, False)
-                                print("Passed defaultdeny on other objects")
-        print("Successful request check")
+                                self._pylogger.debug("Passed defaultdeny on other objects")
+        self._pylogger.debug("Successful request check")
         return returned_managed_identity, True
     
-    def convert_vm_source_to_vm_request(self, vm_source_dict, parameters_dict) -> 'AzureDeploymentPolicy.MockAzureRequest':
+    def convert_vm_source_to_vm_request(self, vm_source_dict, parameters_dict, path) -> 'AzureDeploymentPolicy.MockAzureRequest':
         """
         Converts a the VM template resource into a mock request that can be checked by the vm policy.
         :param vm_source_dict: The VM template resource.
         :param parameters_dict: The parameters for the template.
+        :param path: The path of the request.
         """
         request_body = {
             "properties": {
@@ -790,13 +828,14 @@ class AzureDeploymentPolicy(ResourcePolicy):
         if "location" in vm_source_dict:
             request_body["location"] = vm_source_dict["location"]
 
-        return AzureDeploymentPolicy.MockAzureRequest(request_body, "PUT")
+        return AzureDeploymentPolicy.MockAzureRequest(request_body, "PUT", path)
     
-    def convert_generic_source_to_mock_request(self, generic_source_dict, parameters_dict) -> 'AzureDeploymentPolicy.MockAzureRequest':
+    def convert_generic_source_to_mock_request(self, generic_source_dict, parameters_dict, path) -> 'AzureDeploymentPolicy.MockAzureRequest':
         """
         Converts a generic resource template into a mock request that can be checked by the default deny policy.
         :param generic_source_dict: The generic resource template.
         :param parameters_dict: The parameters for the template.
+        :param path: The path of the request.
         """
         request_body = {
             "properties": {
@@ -806,7 +845,7 @@ class AzureDeploymentPolicy(ResourcePolicy):
             request_body["properties"] = self.recursively_resolve_parameters(generic_source_dict["properties"], parameters_dict)
         if "location" in generic_source_dict:
             request_body["location"] = generic_source_dict["location"]
-        return AzureDeploymentPolicy.MockAzureRequest(request_body, "PUT")
+        return AzureDeploymentPolicy.MockAzureRequest(request_body, "PUT", path)
 
     def recursively_resolve_parameters(self, template: Dict, parameters: Dict) -> Dict:
         """
@@ -864,7 +903,10 @@ class AzurePolicy(CloudPolicy):
         :param attached_authorization_policy: The Attached Policy Policy to enforce.
         """
         # Regions and resource group for default deny is specified here, but note that this may have to be refactored later
-        default_deny_policy = AzureDefaultDenyPolicy(read_policy.policy["regions"], [read_policy.policy["resource_group"]])
+        default_deny_policy = AzureDefaultDenyPolicy(
+            read_policy.policy["regions"], 
+            read_policy.policy["resource_group"]
+            )
 
         self._resource_policies = {
             "virtual_machine": vm_policy,
@@ -877,7 +919,8 @@ class AzurePolicy(CloudPolicy):
                                                  default_deny_policy),
         }
         self.valid_authorization: Union[str, None] = None
-        print("AzureAuthorizationPolicy init:", self._resource_policies["attached_authorizations"]._policy)
+        py_logging.basicConfig(filename='azure_resource_policy.log', level=py_logging.INFO)
+        self._pylogger = py_logging.getLogger("AzureResourcePolicy")
 
     def get_request_resource_types(self, request: Request) -> List[str]:
         """
@@ -888,7 +931,7 @@ class AzurePolicy(CloudPolicy):
         resource_types = set([])
         # TODO(later): Refactoring the logic to reuse better
         if request.method == 'GET':
-            print("NOT JSON")
+            self._pylogger.debug("NOT JSON")
             has_match = False
             for read_type, read_path_regex in AzureReadPolicy.READ_TYPE_URL_PATTERNS.items():
                 match = read_path_regex.search(request.path)
@@ -923,12 +966,13 @@ class AzurePolicy(CloudPolicy):
                     resource_types.add(("default_deny", default_deny_type))
 
             for key in request.get_json(cache=True).keys():
+                self._pylogger.debug(key)
                 if key in AzurePolicy.ATTACHED_AUTHORIZATION_KEYS:
                     resource_types.add(("attached_authorizations",))
         if len(resource_types) == 0:
             resource_types.add(("unrecognized",))
-            print(">>>>> UNRECOGNIZED RESOURCE TYPE <<<<<")
-        print("All resource types:", list(resource_types))
+            self._pylogger.debug(">>>>> ALL UNRECOGNIZED RESOURCE TYPES <<<<<")
+        self._pylogger.debug("All resource types:", list(resource_types))
         return list(resource_types)
     
     def check_resource_type(self, resource_type: Tuple[str], request: Request) -> bool:
@@ -940,6 +984,8 @@ class AzurePolicy(CloudPolicy):
         """
         resource_type_key, *resource_type_aux = resource_type
         assert resource_type_key in self._resource_policies
+        self._pylogger.debug("AzurePolicy check_resource_type:", resource_type_key)
+
         if resource_type_key == "attached_authorizations":
             # Authorization policies
             result = self._resource_policies[resource_type_key].check_request(request, self._authorization_manager)
@@ -968,9 +1014,12 @@ class AzurePolicy(CloudPolicy):
         """
         out_dict = {}
         for resource_type, policy in self._resource_policies.items():
+            self._pylogger.debug("AzurePolicy resource type:", resource_type)
+            self._pylogger.debug("AzurePolicy policy:", policy)
             if resource_type == "unrecognized" or resource_type == "deployments" or resource_type == "default_deny":
                 continue
             out_dict[resource_type] = policy.to_dict()
+        self._pylogger.debug(out_dict)
         return out_dict
 
     @staticmethod
@@ -983,17 +1032,20 @@ class AzurePolicy(CloudPolicy):
         vm_dict = {}
         if "virtual_machine" in policy_dict:
             vm_dict = policy_dict["virtual_machine"]
+            # print("VM_DICT in AzurePolicy:from_dict", vm_dict)
         vm_policy = AzureVMPolicy.from_dict(vm_dict)
+
         attached_policy_dict = {}
         if "attached_authorizations" in policy_dict:
             attached_policy_dict = policy_dict["attached_authorizations"]
         if "attached_authorizations" in vm_dict:
             attached_policy_dict = vm_dict["attached_authorizations"]
+        # print("AzurePolicy attached authorizations dict:", attached_policy_dict)
         attached_authorization_policy = AzureAttachedAuthorizationPolicy.from_dict(attached_policy_dict)
         if PolicyAction.READ.is_allowed_be_performed(vm_policy.get_policy_standard_form()["actions"]):
             if "reads" in policy_dict:
                 read_dict = policy_dict["reads"]
-                print("READS_DICT in AzurePolicy:from_dict", read_dict)
+                # print("READS_DICT in AzurePolicy:from_dict", read_dict)
                 read_policy = AzureReadPolicy.from_dict(read_dict)
             else:
                 # if reads are allowed, and there is no granular specification, then allow all

@@ -1,5 +1,9 @@
+import logging as py_logging
+
 from Crypto.Hash import SHA256
 from Crypto.PublicKey import RSA
+
+LOGGER = py_logging.getLogger()
 
 def hash_public_key(public_key) -> str:
     """
@@ -18,6 +22,7 @@ def hash_public_key_from_file(public_key_file: str) -> str:
     with open(public_key_file, "rb") as f:
         data = f.read()
         public_key = RSA.import_key(data)
-        print("Public key from file:", public_key.export_key())
+        LOGGER.debug(f"Public key from file: {public_key.export_key()}")
         public_key_bytes = public_key.export_key()
-        return SHA256.new(data=public_key_bytes).hexdigest()
+        return hash_public_key(public_key_bytes)
+        #return SHA256.new(data=public_key_bytes).hexdigest()

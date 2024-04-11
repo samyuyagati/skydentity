@@ -4,6 +4,7 @@ import subprocess
 from flask import Flask
 from proxy_util.logging import get_logger, print_and_log
 from proxy_util.skypilot_forward import setup_routes
+from proxy_util.credentials import get_tenant_id, get_app_secret, get_app_id
 
 app = Flask(__name__)
 
@@ -43,6 +44,15 @@ def setup_app():
         subprocess.Popen(
             ["az", "login", "--identity"],
             env = {"APPSETTING_WEBSITE_SITE_NAME": "DUMMY"},
+            stdout=subprocess.PIPE,
+        ).communicate()
+    tenant_id = get_tenant_id()
+    app_id = get_app_id()
+    app_secret = get_app_secret()
+    if tenant_id is not None and app_id is not None and app_secret is not None:
+        print_and_log(logger, "Setting up Azure AD")
+        subprocess.Popen(
+            ["az", "login", "--service-principal", "--tenant", tenant_id, "-u", app_id, "-p", app_secret],
             stdout=subprocess.PIPE,
         ).communicate()
 

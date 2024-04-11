@@ -6,11 +6,22 @@ serverless-gcp-skydentity/skyid/*
 serverless-gcp-skydentity/gcloud/*
 serverless-gcp-skydentity/__pycache__/*
 serverless-gcp-skydentity/skyid/lib/**__pycache__**
+examples/skypilot/logs/*
+examples/skypilot/plots/*
+examples/heavy_load/logs/*
+examples/heavy_load/plots/*
 .python_packages
 gcp-env
+skyid
 **.vscode
 **.egg-info
+*.tar.gz
+*.whl
 __pycache__
+.DS_Store
 
 tokens
 local_tokens
+
+# log files
+*.log

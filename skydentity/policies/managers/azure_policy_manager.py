@@ -1,8 +1,9 @@
 import json
-from typing import Union, Dict
+from typing import Type, Union, Dict
 
 from azure.cosmos import CosmosClient
 from azure.cosmos.partition_key import PartitionKey
+from azure.identity import DefaultAzureCredential
 
 from skydentity.policies.managers.policy_manager import PolicyManager
 from skydentity.policies.checker.azure_resource_policy import AzurePolicy
@@ -17,7 +18,7 @@ class AzurePolicyManager(PolicyManager):
                  db_endpoint: str = None,
                  db_key: str = None,
                  db_info_file: str = None,
-                 policy_type = AzurePolicy,
+                 policy_type: Union[Type[AzurePolicy], Type[AzureAuthorizationPolicy]] = AzurePolicy,
                  db_name = 'skydentity',
                  db_container_name = 'policies'):
         """
@@ -47,18 +48,10 @@ class AzurePolicyManager(PolicyManager):
         :param public_key_hash: The public key of the policy.
         :param policy: The policy to upload.
         """
-        self.upload_policy_dict(public_key_hash, policy.to_dict())
-
-    def upload_policy_dict(self, public_key_hash: str, policy_dict: Dict):
-        """
-        Uploads a policy to Azure.
-        :param public_key_hash: The public key of the policy.
-        :param policy: The policy to upload.
-        """
         self._container.upsert_item(
             body = {
                 'id': public_key_hash,
-                'policy': policy_dict
+                'policy': policy.to_dict()
             },
         )
 
