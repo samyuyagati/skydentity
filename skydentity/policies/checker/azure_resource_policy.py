@@ -164,7 +164,6 @@ class AzureVMPolicy(VMPolicy):
             if "osProfile" in request_contents["properties"]:
                 if "customData" in request_contents["properties"]["osProfile"]:
                         # The cloud-init script in Azure is base64 encoded, so decode before hashing
-                        import pdb; pdb.set_trace()
                         decoded_script = base64.b64decode(request_contents["properties"]["osProfile"]["customData"])
                         out_dict["startup_script"] = hashlib.sha256(decoded_script).hexdigest()
 
@@ -272,6 +271,7 @@ class AzureAttachedAuthorizationPolicy(ResourcePolicy):
         self._policy = policy
         py_logging.basicConfig(filename='azure_resource_policy.log', level=py_logging.INFO)
         self._pylogger = py_logging.getLogger("AzureResourcePolicy")
+        self._resource_group_extractor = re.compile(r"/resource[gG]roups/(?P<resourceGroupName>[^/]+)")
 
     def check_request(self, request: Request, auth_policy_manager: AzureAuthorizationPolicyManager, logger=None) -> Tuple[Union[str, None], bool]:
         """
@@ -323,6 +323,19 @@ class AzureAttachedAuthorizationPolicy(ResourcePolicy):
             self._pylogger.debug("managed identity id", managed_identity_id, "not in", self._policy[AzurePolicy.Azure_CLOUD_NAME])
             return (None, False)
         
+        # Now, change the resource group of the managed_identity_id to be the one in the new resource group
+        # If the resource groups are the same
+        request_resource_group_match = self._resource_group_extractor.search(request.path)
+        if request_resource_group_match:
+            request_resource_group = request_resource_group_match.group("resourceGroupName")
+            source_managed_identity_resource_group = self._resource_group_extractor.search(managed_identity_id).group("resourceGroupName")
+
+            if request_resource_group != source_managed_identity_resource_group:
+                auth_policy_manager.duplicate_managed_identity(managed_identity_id, request_resource_group)
+
+            managed_identity_id = managed_identity_id.replace(source_managed_identity_resource_group, request_resource_group)
+        
+
         # If permitted, add the managed identity to the request
         return (managed_identity_id, True)
 
@@ -390,7 +403,7 @@ class AzureReadPolicy(ResourcePolicy):
     }
 
     class _PolicyDict(TypedDict):
-        resource_group: Union[str, None]
+        resource_group: Union[List[str], None]
         regions: Union[List[str], None]
         virtualMachines: bool
         virtualMachineInstanceView: bool
@@ -534,7 +547,9 @@ class AzureDefaultDenyPolicy(CloudPolicy):
         "networkInterfaces": re.compile(r"subscriptions/(?P<subscriptionId>[^/]+)/resourceGroups/(?P<resourceGroupName>[^/]+)/providers/Microsoft.Network/networkInterfaces/(?P<nicName>[^/]+)")
     }
 
-    def __init__(self, allowed_regions: List[str], allowed_resource_group_names: List[str]):
+    def __init__(self, 
+                 allowed_regions: List[str], 
+                 allowed_resource_group_names: List[str]):
         """
         :param allowed_regions: The list of allowed regions.
         :param allowed_resource_group_names: The list of allowed resource group names.
@@ -582,14 +597,16 @@ class AzureDefaultDenyPolicy(CloudPolicy):
                 if "addressSpace" in request_contents["properties"]:
                     address_space = request_contents["properties"]["addressSpace"]
                     if "addressPrefixes" in address_space:
-                        if address_space["addressPrefixes"] != ["10.146.0.0/16"]:
+                        if len(address_space["addressPrefixes"]) != 1:
+                            return False
+                        if not re.search(r'^10\.\d+\.0\.0\/16$', address_space["addressPrefixes"][0]):
                             return False
                 
                 if "subnets" in request_contents["properties"]:
                     subnets = request_contents["properties"]["subnets"]
                     for subnet in subnets:
                         if "properties" in subnet and "addressPrefix" in subnet["properties"]:
-                            if subnet["properties"]["addressPrefix"] != "10.146.0.0/16":
+                            if not re.search(r'^10\.\d+\.0\.0\/16$', subnet["properties"]["addressPrefix"]):
                                 return False
 
         elif default_deny_type == "networkSecurityGroups":
@@ -683,9 +700,10 @@ class AzureDeploymentPolicy(ResourcePolicy):
         """
         Internal class used to mock Azure requests on resource creation.
         """
-        def __init__(self, json_contents: Dict, method: str):
+        def __init__(self, json_contents: Dict, method: str, path: str = ''):
             self.json_contents = json_contents
             self.method = method
+            self.path = path
 
         def get_json(self, cache=False):
             return self.json_contents
@@ -747,13 +765,13 @@ class AzureDeploymentPolicy(ResourcePolicy):
                             resource_type = resource["type"]
                             if resource_type == "Microsoft.Compute/virtualMachines":
                                 # Check the VM policy
-                                vm_request = self.convert_vm_source_to_vm_request(resource, parameters)
+                                vm_request = self.convert_vm_source_to_vm_request(resource, parameters, request.path)
                                 if "location" in vm_request.get_json():
                                     if vm_request.get_json()["location"] != "[variables('location')]":
                                         return (None, False)
                                     del vm_request.get_json()["location"]
 
-                                attached_auth_mock_request = AzureDeploymentPolicy.MockAzureRequest(request_contents, "PUT")
+                                attached_auth_mock_request = AzureDeploymentPolicy.MockAzureRequest(request_contents, "PUT", request.path)
                                 returned_managed_identity, should_succeed = \
                                     self._attached_authorization_policy.check_request(attached_auth_mock_request, auth_policy_manager)
 
@@ -762,7 +780,7 @@ class AzureDeploymentPolicy(ResourcePolicy):
 
                             else:
                                 # Check the default deny policy
-                                converted_request = self.convert_generic_source_to_mock_request(resource, parameters)
+                                converted_request = self.convert_generic_source_to_mock_request(resource, parameters, request.path)
                                 if resource_type not in AzureDeploymentPolicy.RESOURCE_NAME_TO_DEFAULT_DENY_KEY:
                                     self._pylogger.debug(f"Resource type {resource_type} not in allowed part of default deny policy")
                                     return (None, False)
@@ -780,11 +798,12 @@ class AzureDeploymentPolicy(ResourcePolicy):
         self._pylogger.debug("Successful request check")
         return returned_managed_identity, True
     
-    def convert_vm_source_to_vm_request(self, vm_source_dict, parameters_dict) -> 'AzureDeploymentPolicy.MockAzureRequest':
+    def convert_vm_source_to_vm_request(self, vm_source_dict, parameters_dict, path) -> 'AzureDeploymentPolicy.MockAzureRequest':
         """
         Converts a the VM template resource into a mock request that can be checked by the vm policy.
         :param vm_source_dict: The VM template resource.
         :param parameters_dict: The parameters for the template.
+        :param path: The path of the request.
         """
         request_body = {
             "properties": {
@@ -809,13 +828,14 @@ class AzureDeploymentPolicy(ResourcePolicy):
         if "location" in vm_source_dict:
             request_body["location"] = vm_source_dict["location"]
 
-        return AzureDeploymentPolicy.MockAzureRequest(request_body, "PUT")
+        return AzureDeploymentPolicy.MockAzureRequest(request_body, "PUT", path)
     
-    def convert_generic_source_to_mock_request(self, generic_source_dict, parameters_dict) -> 'AzureDeploymentPolicy.MockAzureRequest':
+    def convert_generic_source_to_mock_request(self, generic_source_dict, parameters_dict, path) -> 'AzureDeploymentPolicy.MockAzureRequest':
         """
         Converts a generic resource template into a mock request that can be checked by the default deny policy.
         :param generic_source_dict: The generic resource template.
         :param parameters_dict: The parameters for the template.
+        :param path: The path of the request.
         """
         request_body = {
             "properties": {
@@ -825,7 +845,7 @@ class AzureDeploymentPolicy(ResourcePolicy):
             request_body["properties"] = self.recursively_resolve_parameters(generic_source_dict["properties"], parameters_dict)
         if "location" in generic_source_dict:
             request_body["location"] = generic_source_dict["location"]
-        return AzureDeploymentPolicy.MockAzureRequest(request_body, "PUT")
+        return AzureDeploymentPolicy.MockAzureRequest(request_body, "PUT", path)
 
     def recursively_resolve_parameters(self, template: Dict, parameters: Dict) -> Dict:
         """
@@ -883,7 +903,10 @@ class AzurePolicy(CloudPolicy):
         :param attached_authorization_policy: The Attached Policy Policy to enforce.
         """
         # Regions and resource group for default deny is specified here, but note that this may have to be refactored later
-        default_deny_policy = AzureDefaultDenyPolicy(read_policy.policy["regions"], [read_policy.policy["resource_group"]])
+        default_deny_policy = AzureDefaultDenyPolicy(
+            read_policy.policy["regions"], 
+            read_policy.policy["resource_group"]
+            )
 
         self._resource_policies = {
             "virtual_machine": vm_policy,

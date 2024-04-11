@@ -7,6 +7,7 @@ import random
 import base64
 import json
 import os
+import re
 from collections import namedtuple
 from urllib.parse import urlparse
 
@@ -126,11 +127,11 @@ def generic_forward_request(request, log_dict=None):
         request_name = request.method.upper() + str(random.randint(0, 1000))
         caller = "skypilot_forward:generic_forward_request"
 
-        if log_dict is not None:
-            log_str = f"PATH: {request.full_path}\n"
-            for key, val in log_dict.items():
-                log_str += f"\t{key}: {val}\n"
-            print_and_log(logger, log_str.strip())
+        # if log_dict is not None:
+        #     log_str = f"PATH: {request.full_path}\n"
+        #     for key, val in log_dict.items():
+        #         log_str += f"\t{key}: {val}\n"
+        #     print_and_log(logger, log_str.strip())
 
         print_and_log(logger, build_time_logging_string(request_name, caller, "setup_logs", start, time.time()))
 
@@ -145,6 +146,7 @@ def generic_forward_request(request, log_dict=None):
         start_check_request_from_policy = time.time()
         public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
         authorized, managed_identity_id = check_request_from_policy(public_key_bytes, request, request_id=request_name, caller_name=caller)
+
         print_and_log(logger, build_time_logging_string(request_name, caller, "check_request_from_policy", start_check_request_from_policy, time.time()))
         if not authorized:
             print_and_log(logger, "Request is unauthorized (policy check failed)")
@@ -169,12 +171,13 @@ def generic_forward_request(request, log_dict=None):
                 # print_and_log(logger, f"Json with service account: {new_json}")
             print_and_log(logger, build_time_logging_string(request_name, caller, "get_json_with_service_account", start_get_json_with_sa, time.time()))
 
-        # Inject random public ssh keys if applicable
-        inject_random_public_key(new_json)
+            # Inject random public ssh keys if applicable
+            inject_random_public_key(new_json, new_url)
 
         # Send the request to Azure
         start_send_azure_request = time.time()
         azure_response = send_azure_request(request, new_headers, new_url, new_json=new_json)
+        
         print_and_log(logger, build_time_logging_string(request_name, caller, "send_azure_request", start_send_azure_request, time.time()))
         print_and_log(logger, build_time_logging_string(request_name, caller, "total", start, time.time()))
         return Response(azure_response.content, azure_response.status_code, headers=new_headers, content_type=azure_response.headers["Content-Type"])
@@ -189,50 +192,6 @@ def build_generic_forward(path: str, fields: list[str]):
     The path is only used to create a unique and readable name for the anonymous function.
     """
     func = lambda **kwargs: generic_forward_request(request, kwargs)
-    # if fields == ["cloud"]:
-    #     func = lambda cloud: generic_forward_request(request, {"cloud": cloud})
-    # elif fields == ["subscriptionId"]:
-    #     func = lambda subscriptionId: generic_forward_request(request, {"subscriptionId": subscriptionId})
-    # elif fields == ["subscriptionId", "resourceGroupName"]:
-    #     func = lambda subscriptionId, resourceGroupName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName}
-    #     )
-    # elif fields == ["subscriptionId", "resourceGroupName", "nicName"]:
-    #     func = lambda subscriptionId, resourceGroupName, nicName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "nicName": nicName}
-    #     )
-    # elif fields == ["subscriptionId", "resourceGroupName", "ipName"]:
-    #     func = lambda subscriptionId, resourceGroupName, ipName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "ipName": ipName}
-    #     )
-    # elif fields == ["subscriptionId", "region", "operationId"]:
-    #     func = lambda subscriptionId, region, operationId: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "region": region, "operationId": operationId}
-    #     )
-    # elif fields == ["subscriptionId", "resourceGroupName", "virtualNetworkName"]:
-    #     func = lambda subscriptionId, resourceGroupName, virtualNetworkName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "virtualNetworkName": virtualNetworkName}
-    #     )
-    # elif fields == ["subscriptionId", "resourceGroupName", "virtualNetworkName", "subnetName"]:
-    #     func = lambda subscriptionId, resourceGroupName, virtualNetworkName, subnetName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "virtualNetworkName": virtualNetworkName, "subnetName": subnetName}
-    #     )
-    # elif fields == ["subscriptionId", "resourceGroupName", "vmName"]:
-    #     func = lambda subscriptionId, resourceGroupName, vmName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "vmName": vmName}
-    #     )
-    # elif fields == ["subscriptionId", "resourceGroupName", "nsgName"]:
-    #     func = lambda subscriptionId, resourceGroupName, nsgName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "nsgName": nsgName}
-    #     )
-    # elif fields == ["subscriptionId", "resourceGroupName", "deploymentName"]:
-    #     func = lambda subscriptionId, resourceGroupName, deploymentName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "deploymentName": deploymentName}
-    #     )
-    # else:
-    #     raise ValueError(
-    #         f"Invalid list of variables to build generic forward for: {fields}"
-    #     )
 
     # Flask expects all view functions to have unique names
     # (otherwise it complains about overriding view functions)
@@ -316,7 +275,7 @@ def inject_random_public_key(request_body, request_url):
     """
     vm_body = request_body
     if "deployments" in request.url:
-        resources = new_dict["properties"]["template"]["resources"]
+        resources = vm_body["properties"]["template"]["resources"]
         for resource in resources:
             if resource["type"] == "Microsoft.Compute/virtualMachines":
                 vm_body = resource
@@ -328,8 +287,8 @@ def inject_random_public_key(request_body, request_url):
                 if "ssh" in vm_body["properties"]["osProfile"]["linuxConfiguration"]:
                     if "publicKeys" in vm_body["properties"]["osProfile"]["linuxConfiguration"]["ssh"]:
                         new_public_key = _generate_rsa_key_pair()
-                        request_dict["properties"]["osProfile"]["linuxConfiguration"]["ssh"]["publicKeys"] = [{
-                            "path": request_dict["properties"]["osProfile"]["linuxConfiguration"]["ssh"]["publicKeys"][0]["path"],
+                        vm_body["properties"]["osProfile"]["linuxConfiguration"]["ssh"]["publicKeys"] = [{
+                            "path": vm_body["properties"]["osProfile"]["linuxConfiguration"]["ssh"]["publicKeys"][0]["path"],
                             "keyData": new_public_key[0]
                         }]
 
@@ -362,8 +321,8 @@ def get_new_url(request):
     Redirect the URL (originally to the proxy) to the correct Azure endpoint.
     """
     new_url = request.url.replace(request.host_url, f"{COMPUTE_API_ENDPOINT}")
-    logger = get_logger()
-    print_and_log(logger, f"\tNew URL: {new_url}")
+    # logger = get_logger()
+    # print_and_log(logger, f"\tNew URL: {new_url}")
     return new_url
 
 

@@ -62,7 +62,7 @@ def check_request_from_policy(public_key_bytes, request, request_id=None, caller
 
     # Compute the hash of the public key
     public_key_hash = hash_public_key(public_key_bytes)
-    print_and_log(logger, f"Public key hash: {public_key_hash}")
+    # print_and_log(logger, f"Public key hash: {public_key_hash}")
 
     # Retrieve policy from CosmosDB
     start_get_policy = time.time()
@@ -70,7 +70,7 @@ def check_request_from_policy(public_key_bytes, request, request_id=None, caller
     if not policy:
         print_and_log(logger, build_time_logging_string(request_id, caller, "total (no policy found)", start, time.time()))
         return (False, None)
-    print_and_log(logger, f"Got policy {policy}")
+    # print_and_log(logger, f"Got policy {policy}")
     print_and_log(logger, build_time_logging_string(request_id, caller, "get_policy", start_get_policy, time.time()))
     start_set_authorization_manager = time.time()
     policy.set_authorization_manager(authorization_policy_manager)

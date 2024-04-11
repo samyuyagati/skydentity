@@ -100,7 +100,7 @@ for batch in range(num_batches):
                 f"{prefix}-{i}",
                 "job.yaml",
                 "-c",
-                "skydentity"
+                f"skydentity-{i}"
             ],
             stdout=out_fd,
             stderr=err_fd,
