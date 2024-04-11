@@ -19,6 +19,9 @@ import requests
 # Aether ports start from this value, and increment by 1 for every new server started.
 AETHER_START_PORT = 9990
 
+# number of pings to serverless proxy
+NUM_PINGS = 3
+
 LOGGER = logging.getLogger()
 LOGGER.setLevel(logging.INFO)
 FORMATTER = logging.Formatter(
@@ -60,6 +63,28 @@ def start_aether(aether_path: str, port: int, proxy_url: str, bucket: str):
     )
 
     return process
+
+
+def ping_proxy(serverless_proxy_url: Optional[str]):
+    """
+    Ping the serverless proxy to ensure that it is alive.
+
+    Weird things happen if concurrent requests are sent on the container startup.
+
+    If the proxy URL is not specified, this is a no-op.
+    """
+    if serverless_proxy_url is not None:
+        # wait some time to allow for container to automatically stop
+        LOGGER.info("Waiting 15 seconds between batches of requests")
+        time.sleep(15)
+        # send any request and ignore any response
+        LOGGER.info("Sending pings to serverless proxy")
+        for _ in range(NUM_PINGS):
+            requests.get(serverless_proxy_url)
+            time.sleep(3)
+
+        LOGGER.info("Waiting 15 seconds for serverless proxy to start")
+        time.sleep(15)
 
 
 def send_request(
@@ -134,6 +159,7 @@ def send_requests(
     buckets: List[str],
     file: tempfile._TemporaryFileWrapper,
     file_content: bytes,
+    serverless_proxy_url: Optional[str],
 ) -> List[Tuple[str, str, float]]:
     def send_write_requests():
         # send writes
@@ -181,6 +207,7 @@ def send_requests(
     # tuple of (type, bucket, time)
     request_times = []
 
+    ping_proxy(serverless_proxy_url)
     LOGGER.info("===== SENDING WRITES =====")
 
     write_processes = send_write_requests()
@@ -194,6 +221,7 @@ def send_requests(
 
         request_times.append((f"UPLOAD-{req_num}", buckets[req_num], write_time))
 
+    ping_proxy(serverless_proxy_url)
     LOGGER.info("===== SENDING READS =====")
 
     read_processes = send_read_requests(write_results)
@@ -203,6 +231,7 @@ def send_requests(
         read_time, _ = req_process.get()
         request_times.append((f"READ-{req_num}", buckets[req_num], read_time))
 
+    ping_proxy(serverless_proxy_url)
     LOGGER.info("===== SENDING WRITES =====")
 
     write_processes = send_write_requests()
@@ -216,6 +245,7 @@ def send_requests(
 
         request_times.append((f"UPLOAD-{req_num}", buckets[req_num], write_time))
 
+    ping_proxy(serverless_proxy_url)
     LOGGER.info("===== SENDING READS =====")
 
     read_processes = send_read_requests(write_results)
@@ -225,6 +255,7 @@ def send_requests(
         read_time, _ = req_process.get()
         request_times.append((f"READ-{req_num}", buckets[req_num], read_time))
 
+    ping_proxy(serverless_proxy_url)
     LOGGER.info("===== SENDING READ/WRITES =====")
 
     # wave of reads
@@ -243,14 +274,77 @@ def send_requests(
     return request_times
 
 
+def upload_policy(
+    policy_upload_script: str,
+    policy_path: str,
+    public_key_path: str,
+    upload_credentials_path: str,
+):
+    """
+    Run the upload policy script to upload the given policy
+    and run checks to ensure that corresponding service accounts
+    have been pre-created.
+    """
+
+    # convert everything to absolute paths to be safe
+    abs_script_path = os.path.abspath(policy_upload_script)
+    abs_policy_path = os.path.abspath(policy_path)
+    abs_key_path = os.path.abspath(public_key_path)
+    abs_creds_path = os.path.abspath(upload_credentials_path)
+
+    LOGGER.info("Sending policy upload request")
+
+    response = subprocess.run(
+        [
+            "python3",
+            abs_script_path,
+            "--storage",
+            "--policy",
+            abs_policy_path,
+            "--cloud",
+            "gcp",
+            "--public-key-path",
+            abs_key_path,
+            "--credentials",
+            abs_creds_path,
+        ],
+        capture_output=True,
+    )
+    LOGGER.debug(response.stdout)
+    if response.stderr:
+        LOGGER.warning(response.stderr)
+
+    # make sure command ran fine
+    response.check_returncode()
+
+    LOGGER.info("Waiting 15 seconds for service account changes to propagate")
+    time.sleep(15)
+
+
 def main(
+    # main options
     file_size: int,
     num_requests: int,
+    bucket_prefix: str,
+    proxy_url: str,
+    serverless_proxy_url: Optional[str],
+    # aether options
     aether_host: str,
     aether_path: str,
-    proxy_url: str,
-    bucket_prefix: str,
+    # policy upload options
+    policy_upload_script: str,
+    policy_path: str,
+    public_key_path: str,
+    upload_credentials_path: str,
 ):
+    # first upload policy
+    upload_policy(
+        policy_upload_script=policy_upload_script,
+        policy_path=policy_path,
+        public_key_path=public_key_path,
+        upload_credentials_path=upload_credentials_path,
+    )
+
     # create temporary file of random bytes
     file = tempfile.NamedTemporaryFile()
     # hex doubles size; don't use binary file for ease of testing
@@ -259,6 +353,7 @@ def main(
     file.write(file_content)
 
     # start servers
+    LOGGER.info("Starting aether processes")
     aether_processes: List[subprocess.Popen] = []
     aether_urls: List[str] = []
     buckets: List[str] = []
@@ -268,7 +363,7 @@ def main(
         aether_processes.append(start_aether(aether_path, port, proxy_url, bucket))
         aether_urls.append(f"{aether_host}:{port}")
         buckets.append(bucket)
-    LOGGER.info("Waiting for aether processes to start")
+    LOGGER.info("Waiting 5 seconds for aether processes to start")
     time.sleep(5)
 
     # one process for each request;
@@ -283,25 +378,26 @@ def main(
             buckets=buckets,
             file=file,
             file_content=file_content,
+            serverless_proxy_url=serverless_proxy_url,
         )
 
-        # save data
-        with open("concurrent-buckets-data.csv", "w") as f:
-            csv_writer = csv.DictWriter(f, ["type", "bucket", "time"])
-            csv_writer.writeheader()
-            for request_type, bucket, request_time in request_times:
-                csv_writer.writerow(
-                    {"type": request_type, "bucket": bucket, "time": request_time}
-                )
+        if len(request_times) > 0:
+            # save data
+            with open("concurrent-buckets-data.csv", "w") as f:
+                csv_writer = csv.DictWriter(f, ["type", "bucket", "time"])
+                csv_writer.writeheader()
+                for request_type, bucket, request_time in request_times:
+                    csv_writer.writerow(
+                        {"type": request_type, "bucket": bucket, "time": request_time}
+                    )
     finally:
         LOGGER.info("CLEANUP")
-        # cleanup
-        file.close()
 
+        # close temporary file descriptor
+        file.close()
         # kill aether processes
         for process in aether_processes:
             process.kill()
-
         # kill subprocesses
         process_pool.terminate()
 
@@ -310,6 +406,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
+
     parser.add_argument(
         "-s",
         "--file-size",
@@ -321,20 +418,8 @@ if __name__ == "__main__":
         "-n",
         "--num-requests",
         type=int,
-        default=20,
+        default=16,
         help=("Number of concurrent read/upload requests to make"),
-    )
-    parser.add_argument(
-        "--aether-path",
-        type=str,
-        default="./gcp-aether-server.py",
-        help="Path to the Aether server python executable",
-    )
-    parser.add_argument(
-        "--aether-host",
-        type=str,
-        default="http://127.0.0.1",
-        help="Host of the Aether server",
     )
     parser.add_argument(
         "--proxy-url",
@@ -343,10 +428,56 @@ if __name__ == "__main__":
         help="URL of the proxy to use",
     )
     parser.add_argument(
+        "--serverless-proxy-url",
+        type=str,
+        default=None,
+        help="Serverless proxy url; used to ping the serverless proxy to ensure that it is alive prior to sending concurrent requests",
+    )
+    parser.add_argument(
         "--bucket-prefix",
         type=str,
         default="skydentity-test-storage",
         help="Bucket prefix for concurrent requests; format of bucket will be '{prefix}-{idx}'",
+    )
+
+    aether_group = parser.add_argument_group("Aether settings")
+    aether_group.add_argument(
+        "--aether-path",
+        type=str,
+        default="./gcp-aether-server.py",
+        help="Path to the Aether server python executable",
+    )
+    aether_group.add_argument(
+        "--aether-host",
+        type=str,
+        default="http://127.0.0.1",
+        help="Host of the Aether server",
+    )
+
+    policy_upload_group = parser.add_argument_group("Policy upload settings")
+    policy_upload_group.add_argument(
+        "--policy-upload-script",
+        type=str,
+        default="../../skydentity/scripts/upload_policy.py",
+        help="Path to the policy upload script to use",
+    )
+    policy_upload_group.add_argument(
+        "--policy-path",
+        type=str,
+        default="./config/storage_policy_concurrent.yaml",
+        help="Path to the policy to upload",
+    )
+    policy_upload_group.add_argument(
+        "--public-key-path",
+        type=str,
+        default="./keys/public.pem",
+        help="Path to the public key for uploading the policy",
+    )
+    policy_upload_group.add_argument(
+        "--upload-credentials-path",
+        type=str,
+        required=True,
+        help="Path to credentials file for uploading the policy",
     )
 
     args = parser.parse_args()
@@ -358,4 +489,9 @@ if __name__ == "__main__":
         aether_path=args.aether_path,
         proxy_url=args.proxy_url,
         bucket_prefix=args.bucket_prefix,
+        policy_upload_script=args.policy_upload_script,
+        policy_path=args.policy_path,
+        public_key_path=args.public_key_path,
+        upload_credentials_path=args.upload_credentials_path,
+        serverless_proxy_url=args.serverless_proxy_url,
     )
