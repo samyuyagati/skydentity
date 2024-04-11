@@ -11,6 +11,6 @@ storage:
     - OVERWRITE
 
   buckets:
-    - skydentity-test-storage
+    - skydentity-test-storage-1
     - skydentity-test-storage-2
     - skydentity-test-storage-3

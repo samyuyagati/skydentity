@@ -192,12 +192,16 @@ class GCPStorageServiceAccountManager:
         # make a service account for each bucket and action pair
         for bucket in buckets:
             for action in actions:
-                # no need for the current; just ensure that we have backups ready
-                _, backup = self.get_service_accounts_for_resource(bucket, action)
+                current, backup = self.get_service_accounts_for_resource(bucket, action)
 
-                # only create if it doesn't exist already
+                # only create backups if it doesn't exist already
                 if len(backup) == 0:
                     self.create_service_account(bucket, action, backup=True)
+
+                # delete all timed accounts
+                if len(current) > 0:
+                    for account in current:
+                        self.delete_service_account(account["email"], bucket, action)
 
     def create_service_account(
         self, bucket: str, action: StoragePolicyAction, backup: bool = False
@@ -270,6 +274,18 @@ class GCPStorageServiceAccountManager:
         self.invalidate_cached_service_accounts()
 
         return service_account, expiration_timestamp
+
+    def delete_service_account(
+        self, service_account_email: str, bucket: str, action: StoragePolicyAction
+    ):
+        """
+        Delete a service account.
+        """
+        LOGGER.debug(f"[{bucket}/{action.value}] Deleting {service_account_email}")
+        self._iam_service.projects().serviceAccounts().delete(
+            name=f"projects/{self.project_id}/serviceAccounts/{service_account_email}"
+        ).execute()
+        LOGGER.info(f"[{bucket}/{action.value}] Deleted {service_account_email}")
 
     def get_service_accounts_for_resource(
         self, bucket: str, action: StoragePolicyAction
@@ -368,25 +384,27 @@ class GCPStorageServiceAccountManager:
 
             # update bucket policy
             if timed:
+                LOGGER.debug(f"[{bucket}/{action}] Adding timed policy to bucket")
                 iam_policy["bindings"].append(
                     {
                         "role": role,
                         "members": [f"serviceAccount:{service_account_email}"],
                         "condition": {
                             "title": self._ROLE_TITLES["timed"],
-                            "description": self._ROLE_DESCRIPTIONS["timed"],
+                            "description": f"[{service_account_email}] {self._ROLE_DESCRIPTIONS['timed']}",
                             "expression": f'request.time < timestamp("{expiration_timestamp}")',
                         },
                     }
                 )
             else:
+                LOGGER.debug(f"[{bucket}/{action}] Adding untimed policy to bucket")
                 iam_policy["bindings"].append(
                     {
                         "role": role,
                         "members": [f"serviceAccount:{service_account_email}"],
                         "condition": {
                             "title": self._ROLE_TITLES["untimed"],
-                            "description": self._ROLE_DESCRIPTIONS["untimed"],
+                            "description": f"[{service_account_email}] {self._ROLE_DESCRIPTIONS['untimed']}",
                             # no condition
                             "expression": "true",
                         },
@@ -423,25 +441,27 @@ class GCPStorageServiceAccountManager:
             # update project policy
             # add service usage consumer role; always needed to access resources
             if timed:
+                LOGGER.debug(f"[{bucket}/{action}] Adding timed policy to project")
                 project_iam_policy["bindings"].append(
                     {
                         "role": self._SERVICE_USAGE_CONSUMER_ROLE,
                         "members": [f"serviceAccount:{service_account_email}"],
                         "condition": {
                             "title": self._ROLE_TITLES["timed"],
-                            "description": self._ROLE_DESCRIPTIONS["timed"],
+                            "description": f"[{service_account_email}] {self._ROLE_DESCRIPTIONS['timed']}",
                             "expression": f'request.time < timestamp("{expiration_timestamp}")',
                         },
                     }
                 )
             else:
+                LOGGER.debug(f"[{bucket}/{action}] Adding untimed policy to project")
                 project_iam_policy["bindings"].append(
                     {
                         "role": self._SERVICE_USAGE_CONSUMER_ROLE,
                         "members": [f"serviceAccount:{service_account_email}"],
                         "condition": {
                             "title": self._ROLE_TITLES["untimed"],
-                            "description": self._ROLE_DESCRIPTIONS["untimed"],
+                            "description": f"[{service_account_email}] {self._ROLE_DESCRIPTIONS['untimed']}",
                             "expression": "true",
                         },
                     }
@@ -511,6 +531,12 @@ class GCPStorageServiceAccountManager:
                     # filter for untimed role
                     and binding["condition"]["title"] == self._ROLE_TITLES["untimed"]
                 ):
+                    if len(binding["members"]) > 1:
+                        LOGGER.warning(
+                            f"Multiple members in binding: {binding['members']}"
+                        )
+                        continue
+
                     changed = True
                     # add expiration to the role
                     binding["condition"][
@@ -518,9 +544,9 @@ class GCPStorageServiceAccountManager:
                     ] = f'request.time < timestamp("{expiration_timestamp}")'
                     # update title
                     binding["condition"]["title"] = self._ROLE_TITLES["timed"]
-                    binding["condition"]["description"] = self._ROLE_DESCRIPTIONS[
-                        "timed"
-                    ]
+                    binding["condition"][
+                        "description"
+                    ] = f"[{service_account_email}] {self._ROLE_DESCRIPTIONS['timed']}"
 
             if changed:
                 # save policy
@@ -562,6 +588,12 @@ class GCPStorageServiceAccountManager:
                     # filter for untimed role
                     and binding["condition"]["title"] == self._ROLE_TITLES["untimed"]
                 ):
+                    if len(binding["members"]) > 1:
+                        LOGGER.warning(
+                            f"Multiple members in binding: {binding['members']}"
+                        )
+                        continue
+
                     changed = True
                     # add expiration to the role
                     binding["condition"][
@@ -569,6 +601,9 @@ class GCPStorageServiceAccountManager:
                     ] = f'request.time < timestamp("{expiration_timestamp}")'
                     # update title
                     binding["condition"]["title"] = self._ROLE_TITLES["timed"]
+                    binding["condition"][
+                        "description"
+                    ] = f"[{service_account_email}] {self._ROLE_DESCRIPTIONS['timed']}"
 
             if changed:
                 # save project policy
@@ -581,7 +616,7 @@ class GCPStorageServiceAccountManager:
 
         # update each policy with exponential backoff
         bucket_iam_changed = update_bucket_policy()
-        project_iam_changed = True  # update_project_policy()
+        project_iam_changed = update_project_policy()
 
         # only update the service account if anything was changed
         if bucket_iam_changed or project_iam_changed:
@@ -618,19 +653,6 @@ class GCPStorageServiceAccountManager:
             bucket, action
         )
 
-        if len(current_list) > 0:
-            # delete the current service accounts
-            LOGGER.debug(
-                f"Service accounts to delete: {[acc['email'] for acc in current_list]}"
-            )
-            for current in current_list:
-                current_email = current["email"]
-                LOGGER.debug(f"[{bucket}/{action.value}] Deleting {current_email}")
-                self._iam_service.projects().serviceAccounts().delete(
-                    name=f"projects/{self.project_id}/serviceAccounts/{current_email}"
-                ).execute()
-                LOGGER.info(f"[{bucket}/{action.value}] Deleted {current_email}")
-
         if len(backup_list) > 0:
             # if more than one exists, arbitrarliy choose the first
             backup = backup_list[0]
@@ -660,8 +682,20 @@ class GCPStorageServiceAccountManager:
             if TYPE_CHECKING:
                 expiration_timestamp = cast(str, expiration_timestamp)
 
+        # preparation for next calls
+        # delete the current service accounts
+        # if len(current_list) > 0:
+        #     LOGGER.debug(
+        #         f"Service accounts to delete: {[acc['email'] for acc in current_list]}"
+        #     )
+        #     for current in current_list:
+        #         current_email = current["email"]
+        #         self.delete_service_account(
+        #             service_account_email=current_email, bucket=bucket, action=action
+        #         )
+
         # re-create the backup account
-        self.create_service_account(bucket, action, backup=True)
+        # self.create_service_account(bucket, action, backup=True)
 
         return new_email, expiration_timestamp
 

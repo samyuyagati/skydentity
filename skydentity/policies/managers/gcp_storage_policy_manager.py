@@ -76,19 +76,20 @@ class GCPStoragePolicyManager(PolicyManager):
             http=authorized_http,
         )
 
-    def get_policy_dict(self, public_key_hash) -> dict:
+    def get_policy_dict(self, public_key_hash: str) -> dict:
         """
         Gets a policy from the cloud vendor.
         :param public_key_hash: The hash of the public key tied to the policy.
         :return: The policy.
         """
-        LOGGER.debug(f"public key hash {public_key_hash}")
-        return (
+        LOGGER.debug("Fetching storage policy from GCP")
+        policy = (
             self._db.collection(self._firestore_policy_collection)
             .document(public_key_hash)
-            .get()
+            .get(timeout=10)
             .to_dict()
         )
+        return policy
 
     def upload_policy(self, hashed_public_key: str, policy: Authorization):
         """
