@@ -99,9 +99,11 @@ class AzureStoragePolicyManager(PolicyManager):
         if StoragePolicyAction.READ in actions:
             permissions = "r"
         if StoragePolicyAction.UPLOAD in actions:
-            permissions = "rc"
+            permissions += "c"
         if StoragePolicyAction.OVERWRITE in actions:
-            permissions = "rcw"
+            if "c" not in permissions:
+                permissions += "c"
+            permissions += "w"
 
         # Generate the SAS token for the container
         sas_token = generate_container_sas(
