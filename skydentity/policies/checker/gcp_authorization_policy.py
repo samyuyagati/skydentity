@@ -58,6 +58,8 @@ class GCPAuthorizationPolicy(AuthorizationPolicy):
     """
 
     def __init__(self, policy_dict=None, policy_file=None):
+        py_logging.basicConfig(filename='gcp_authorization_policy.log', level=py_logging.INFO)
+        self._pylogger = py_logging.getLogger("GCPAuthorizationPolicy")
         if policy_dict:
             policy_dict = policy_dict["authorization"]
             self._policy = self.authorization_from_dict(policy_dict)

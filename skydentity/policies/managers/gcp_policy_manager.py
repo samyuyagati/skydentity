@@ -23,11 +23,13 @@ class GCPPolicyManager(PolicyManager):
         Initializes the GCP policy manager.
         :param credentials_path: The path to the credentials file.
         """
+        py_logging.basicConfig(filename='gcp_policy_manager.log', level=py_logging.INFO)
+        self._pylogger = py_logging.getLogger("GCPPolicyManager")
         self._cred = credentials.Certificate(credentials_path)
         try:
-            self._app = firebase_admin.initialize_app(self._cred, name="policy_manager")
+            self._app = firebase_admin.initialize_app(self._cred, name='policy_manager')
         except ValueError:
-            self._app = firebase_admin.get_app("policy_manager")
+            self._app = firebase_admin.get_app('policy_manager')
         self._db = firestore.client(self._app)
         self._firestore_policy_collection = firestore_policy_collection
 
@@ -37,10 +39,11 @@ class GCPPolicyManager(PolicyManager):
         :param public_key_hash: The public key of the policy.
         :param policy: The policy to upload.
         """
-        LOGGER.debug(f"Uploading policy:\n {policy.to_dict()}")
-        self._db.collection(self._firestore_policy_collection).document(
-            public_key_hash
-        ).set(policy.to_dict())
+        self._pylogger.debug(f"Uploading policy:\n {policy.to_dict()}")
+        self._db \
+            .collection(self._firestore_policy_collection) \
+            .document(public_key_hash) \
+            .set(policy.to_dict())
 
     def get_policy(self, public_key_hash: str) -> GCPPolicy:
         """

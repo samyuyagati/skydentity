@@ -13,7 +13,9 @@ from functools import cache
 from http import HTTPStatus
 from urllib.parse import urlparse
 
+import random
 import requests
+import time
 from flask import Flask, Response, request
 
 from skydentity.policies.checker.gcp_storage_policy import (
@@ -253,6 +255,9 @@ def generic_forward_request(request, log_dict=None):
             time.time(),
         ),
     )
+    print_and_log(logger,
+                  build_time_logging_string(request_name, caller, "check_request_from_policy", start_check_request_from_policy, time.time()),
+                  severity=LogLevel.INFO)
     if not authorized:
         LOGGER.debug("Request is unauthorized (policy check failed)")
         LOGGER.info(

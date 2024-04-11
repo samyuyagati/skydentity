@@ -150,14 +150,14 @@ def generic_forward_request(request, log_dict=None):
     [SkyPilot Integration]
     Forward a generic request to google APIs.
     """
-    logger = get_logger()
-    print(log_dict, flush=True)
-    if log_dict is not None:
-        log_str = f"PATH: {request.full_path}\n"
-        for key, val in log_dict.items():
-            log_str += f"\t{key}: {val}\n"
-        print(log_str, flush=True)
-        print_and_log(logger, log_str.strip())
+    # logger = get_logger()
+    # print(log_dict, flush=True)
+    # if log_dict is not None:
+    #     log_str = f"PATH: {request.full_path}\n"
+    #     for key, val in log_dict.items():
+    #         log_str += f"\t{key}: {val}\n"
+    #     print(log_str, flush=True)
+    #     print_and_log(logger, log_str.strip())
 
     new_url = get_new_url(request)
     new_headers = get_headers_with_signature(request)
@@ -166,8 +166,9 @@ def generic_forward_request(request, log_dict=None):
     new_json = None
     if len(request.get_data()) > 0:
         old_json = request.json
-        print("Old JSON:", old_json, flush=True)
+        # print("Old JSON:", old_json, flush=True)
         if "identity" not in old_json and "deployments" not in request.url:
+        # if "identity" not in old_json and "deployments" not in request.url and "resourcegroups" not in request.url:
             new_json = request.json
         else:
             new_json = old_json
@@ -183,7 +184,7 @@ def generic_forward_request(request, log_dict=None):
                                 if "type" in resource:
                                     if resource["type"] == "Microsoft.Compute/virtualMachines":
                                         if "identity" in resource:
-                                            print("Found identity field in the template", flush=True)
+                                            # print("Found identity field in the template", flush=True)
                                             contains_identity_field = True
                                     elif resource["type"] == "Microsoft.ManagedIdentity/userAssignedIdentities":
                                         managed_identity_ids.append(i)
@@ -192,6 +193,9 @@ def generic_forward_request(request, log_dict=None):
                             
                             for i in range(len(managed_identity_ids) - 1, -1, -1):
                                 new_json["properties"]["template"]["resources"].pop(managed_identity_ids[i])
+
+            # if "resourcegroups" in request.url:
+            #     contains_identity_field = True
 
             if not ("deployments" in request.url and not contains_identity_field):
                 # TODO don't hardcode the path to the capability
@@ -202,7 +206,7 @@ def generic_forward_request(request, log_dict=None):
                 with open(capability_path, "r") as f:
                     new_json["managedIdentities"] = [json.load(f)]
 
-            print("JSON with service acct capability:", new_json, flush=True)
+            # print("JSON with service acct capability:", new_json, flush=True)
 
     azure_response = forward_to_client(
         request, new_url, new_headers=new_headers, new_json=new_json
@@ -314,11 +318,11 @@ def get_new_url(request):
     Redirect the URL (originally to the proxy) to the correct client proxy.
     """
     redirect_endpoint = get_client_proxy_endpoint(request)
-    logger = get_logger()
-    print_and_log(logger, f"\tOld URL: {request.host_url} (Redirect endpoint: {redirect_endpoint})")
+    # logger = get_logger()
+    # print_and_log(logger, f"\tOld URL: {request.host_url} (Redirect endpoint: {redirect_endpoint})")
     new_url = request.url.replace(request.host_url, redirect_endpoint)
     
-    print_and_log(logger, f"\tNew URL: {new_url}")
+    # print_and_log(logger, f"\tNew URL: {new_url}")
     return new_url
 
 

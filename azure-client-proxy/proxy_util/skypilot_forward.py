@@ -7,6 +7,7 @@ import random
 import base64
 import json
 import os
+import re
 from collections import namedtuple
 from urllib.parse import urlparse
 
@@ -138,11 +139,11 @@ def generic_forward_request(request, log_dict=None):
         request_name = request.method.upper() + str(random.randint(0, 1000))
         caller = "skypilot_forward:generic_forward_request"
 
-        if log_dict is not None:
-            log_str = f"PATH: {request.full_path}\n"
-            for key, val in log_dict.items():
-                log_str += f"\t{key}: {val}\n"
-            print_and_log(logger, log_str.strip())
+        # if log_dict is not None:
+        #     log_str = f"PATH: {request.full_path}\n"
+        #     for key, val in log_dict.items():
+        #         log_str += f"\t{key}: {val}\n"
+        #     print_and_log(logger, log_str.strip())
 
         print_and_log(logger, build_time_logging_string(request_name, caller, "setup_logs", start, time.time()))
 
@@ -181,12 +182,13 @@ def generic_forward_request(request, log_dict=None):
                 # print_and_log(logger, f"Json with service account: {new_json}")
             print_and_log(logger, build_time_logging_string(request_name, caller, "get_json_with_service_account", start_get_json_with_sa, time.time()))
 
-        # Inject random public ssh keys if applicable
-        inject_random_public_key(new_json)
+            # Inject random public ssh keys if applicable
+            inject_random_public_key(new_json, new_url)
 
         # Send the request to Azure
         start_send_azure_request = time.time()
         azure_response = send_azure_request(request, new_headers, new_url, new_json=new_json)
+        
         print_and_log(logger, build_time_logging_string(request_name, caller, "send_azure_request", start_send_azure_request, time.time()))
         print_and_log(logger, build_time_logging_string(request_name, caller, "total", start, time.time()))
         return Response(azure_response.content, azure_response.status_code, headers=new_headers, content_type=azure_response.headers["Content-Type"])
@@ -201,50 +203,6 @@ def build_generic_forward(path: str, fields: list[str]):
     The path is only used to create a unique and readable name for the anonymous function.
     """
     func = lambda **kwargs: generic_forward_request(request, kwargs)
-    # if fields == ["cloud"]:
-    #     func = lambda cloud: generic_forward_request(request, {"cloud": cloud})
-    # elif fields == ["subscriptionId"]:
-    #     func = lambda subscriptionId: generic_forward_request(request, {"subscriptionId": subscriptionId})
-    # elif fields == ["subscriptionId", "resourceGroupName"]:
-    #     func = lambda subscriptionId, resourceGroupName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName}
-    #     )
-    # elif fields == ["subscriptionId", "resourceGroupName", "nicName"]:
-    #     func = lambda subscriptionId, resourceGroupName, nicName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "nicName": nicName}
-    #     )
-    # elif fields == ["subscriptionId", "resourceGroupName", "ipName"]:
-    #     func = lambda subscriptionId, resourceGroupName, ipName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "ipName": ipName}
-    #     )
-    # elif fields == ["subscriptionId", "region", "operationId"]:
-    #     func = lambda subscriptionId, region, operationId: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "region": region, "operationId": operationId}
-    #     )
-    # elif fields == ["subscriptionId", "resourceGroupName", "virtualNetworkName"]:
-    #     func = lambda subscriptionId, resourceGroupName, virtualNetworkName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "virtualNetworkName": virtualNetworkName}
-    #     )
-    # elif fields == ["subscriptionId", "resourceGroupName", "virtualNetworkName", "subnetName"]:
-    #     func = lambda subscriptionId, resourceGroupName, virtualNetworkName, subnetName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "virtualNetworkName": virtualNetworkName, "subnetName": subnetName}
-    #     )
-    # elif fields == ["subscriptionId", "resourceGroupName", "vmName"]:
-    #     func = lambda subscriptionId, resourceGroupName, vmName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "vmName": vmName}
-    #     )
-    # elif fields == ["subscriptionId", "resourceGroupName", "nsgName"]:
-    #     func = lambda subscriptionId, resourceGroupName, nsgName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "nsgName": nsgName}
-    #     )
-    # elif fields == ["subscriptionId", "resourceGroupName", "deploymentName"]:
-    #     func = lambda subscriptionId, resourceGroupName, deploymentName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "deploymentName": deploymentName}
-    #     )
-    # else:
-    #     raise ValueError(
-    #         f"Invalid list of variables to build generic forward for: {fields}"
-    #     )
 
     # Flask expects all view functions to have unique names
     # (otherwise it complains about overriding view functions)
@@ -306,6 +264,7 @@ def get_json_with_managed_identity(request, managed_identity_id):
     new_dict = json_dict.copy()
 
     # TODO(kdharmarajan): Clean this up later
+    ssh_settings_dict = []
     if "deployments" in request.url:
         vm_resource = {}
         resources = new_dict["properties"]["template"]["resources"]
@@ -373,8 +332,8 @@ def get_new_url(request):
     Redirect the URL (originally to the proxy) to the correct Azure endpoint.
     """
     new_url = request.url.replace(request.host_url, f"{COMPUTE_API_ENDPOINT}")
-    logger = get_logger()
-    print_and_log(logger, f"\tNew URL: {new_url}")
+    # logger = get_logger()
+    # print_and_log(logger, f"\tNew URL: {new_url}")
     return new_url
 
 
@@ -429,36 +388,3 @@ def create_authorization_route(cloud):
     except Exception as e:
         print_and_log(logger, f"Error in create_authorization_route: {e}")
         return Response("Error", 500)
-
-def create_storage_authorization_route(cloud):
-    print("Create storage authorization handler")
-    logger = get_logger()
-
-    storage_policy_manager = get_storage_policy_manager()
-    print_and_log(logger, f"Creating authorization (json: {request.json})")
-
-    # Get hash of public key
-    public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
-    # Compute hash of public key
-    public_key_hash = hash_public_key(public_key_bytes)
-    print_and_log(logger, f"Public key hash: {public_key_hash}")
-
-    # Retrieve storage policy from CosmosDB with public key hash
-    storage_policy_dict = storage_policy_manager.get_policy_dict(public_key_hash)
-    print("Storage policy dict:", storage_policy_dict)
-
-    # Check request against storage policy
-    storage_policy = AzureStoragePolicy(policy_dict=storage_policy_dict)
-    request_auth, success = storage_policy.check_request(request)
-
-    if success and request_auth is not None:
-        access_token, expiration_timestamp = (
-            storage_policy_manager.generate_sas_token(
-                request_auth.container, request_auth.actions
-            )
-        )
-        return Response(
-            json.dumps({"access_token": access_token, "expires": expiration_timestamp}),
-            200,
-        )
-    return Response("Unauthorized", 401)

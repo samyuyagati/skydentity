@@ -50,6 +50,7 @@ def create_resource_group(resource_group_name, subscription_id, location="westus
         {
             "location": location,
             "address_space": {"address_prefixes": ["10.143.0.0/16"]},
+<<<<<<< HEAD
         },
     ).result()
 
@@ -73,6 +74,8 @@ def create_resource_group(resource_group_name, subscription_id, location="westus
                     "direction": "Inbound",
                 }
             ],
+=======
+>>>>>>> azure-default-deny
         },
     ).result()
 

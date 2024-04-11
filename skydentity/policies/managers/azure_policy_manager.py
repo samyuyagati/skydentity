@@ -1,5 +1,6 @@
 import json
-from typing import Type, Union, Dict
+from typing import Union
+from functools import cache
 
 from azure.cosmos import CosmosClient
 from azure.cosmos.partition_key import PartitionKey
@@ -55,6 +56,8 @@ class AzurePolicyManager(PolicyManager):
             },
         )
 
+    # Cache the policies to avoid unnecessary calls to the database
+    @cache
     def get_policy(self, public_key_hash: str) -> Union[AzurePolicy, AzureAuthorizationPolicy]:
         """
         Gets a policy from the cloud vendor.

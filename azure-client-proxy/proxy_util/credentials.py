@@ -92,6 +92,7 @@ def get_storage_connection_string() -> str:
     Retrieve the connection string for the Azure Storage Account.
     """
     return _CONNECTION_STRING
+
 def get_tenant_id() -> str:
     """
     Retrieve the tenant id for the Azure AD.

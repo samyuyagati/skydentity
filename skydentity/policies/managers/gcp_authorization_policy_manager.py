@@ -30,6 +30,8 @@ class GCPAuthorizationPolicyManager(PolicyManager):
         Initializes the GCP policy manager.
         :param credentials_path: The path to the credentials file.
         """
+        py_logging.basicConfig(filename='gcp_authorization_policy_manager.log', level=py_logging.INFO)
+        self._pylogger = py_logging.getLogger("GCPAuthorizationPolicyManager")
         self._credentials_path = credentials_path
         try:
             self._app = firebase_admin.initialize_app(

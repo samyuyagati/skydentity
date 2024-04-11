@@ -784,6 +784,8 @@ class GCPPolicy(CloudPolicy):
             "read": read_policy,
             "unrecognized": UnrecognizedResourcePolicy(),
         }
+        py_logging.basicConfig(filename='gcp_resource_policy.log', level=py_logging.INFO)
+        self._pylogger = py_logging.getLogger("GCPResourcePolicy")
         self.valid_authorization: Union[str, None] = None
         LOGGER.debug(
             "GCPAuthorizationPolicy init: "
