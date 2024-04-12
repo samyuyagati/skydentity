@@ -13,12 +13,15 @@ from typing import Dict, Optional, Tuple
 
 import requests
 from flask import Flask, Request, Response, request
+from Crypto.PublicKey import RSA
 
 from skydentity.utils.log_util import build_time_logging_string
 
 from .signature import get_headers_with_signature
 
 LOGGER = py_logging.getLogger(__name__)
+PRIVATE_KEY_PATH = os.environ.get("PRIVATE_KEY_PATH", "proxy_util/private_key.pem")
+PRIVATE_KEY = RSA.import_key(open(PRIVATE_KEY_PATH).read())
 
 ## code to debug full request information
 #######
@@ -42,6 +45,9 @@ LOGGER = py_logging.getLogger(__name__)
 # reuse the request session across multiple forwarding calls
 # otherwise, there are some issues with connectivity latency
 REQUEST_SESSION = requests.Session()
+adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20)
+REQUEST_SESSION.mount('http://', adapter)
+REQUEST_SESSION.mount('https://', adapter)
 
 SkypilotRoute = namedtuple(
     "SkypilotRoute",
@@ -82,6 +88,8 @@ def generic_forward_request(request, log_dict=None):
     [SkyPilot Integration]
     Forward a generic request to google APIs.
     """
+    start = time.perf_counter()
+    LOGGER.info(f"Redirector received request {request.method} {request.path}: {datetime.now()}")
     LOGGER.debug(str(log_dict))
     if log_dict is not None:
         log_str = f"PATH: {request.full_path}\n"
@@ -90,7 +98,10 @@ def generic_forward_request(request, log_dict=None):
         LOGGER.debug(log_str.strip())
 
     new_url = get_new_url(request)
-    new_headers = get_headers_with_signature(request)
+    LOGGER.info(f"Redirector handler for {request.method} {request.path} (through get_new_url) took {time.perf_counter() - start:.2f}s")
+    new_headers = get_headers_with_signature(request, PRIVATE_KEY)
+    LOGGER.info(f"Redirector handler for {request.method} {request.path} (through get_headers_with_signature) took {time.perf_counter() - start:.2f}s")
+
     # pylogger.debug(f"{new_headers}")
 
     # Only modifies the body to attach the service account capability
@@ -114,6 +125,7 @@ def generic_forward_request(request, log_dict=None):
                 extra={"service_acc_json": new_json},
             )
 
+    LOGGER.info(f"Redirector handler for {request.method} {request.path} (through modify_json) took {time.perf_counter() - start:.2f}s")
     LOGGER.debug("Forwarding to client...")
 
     gcp_response = forward_to_client(
@@ -121,6 +133,7 @@ def generic_forward_request(request, log_dict=None):
     )
 
     LOGGER.debug(f"Received response from client...\n {gcp_response}")
+    LOGGER.info(f"Redirector handler for {request.method} {request.path} took {time.perf_counter() - start:.2f}s")
     return Response(gcp_response.content, gcp_response.status_code)
 
 
