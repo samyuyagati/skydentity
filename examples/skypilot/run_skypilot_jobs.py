@@ -55,7 +55,10 @@ run: |
   sleep $secs
   echo Job done.
 """
-
+if args.with_skydentity:
+    LOGS_DIR = f"logs/with_skydentity_{args.batch_size}"
+else:
+    LOGS_DIR = f"logs/baseline_{args.batch_size}"
 
 # NOTE: if concurrent experiments - change name!
 prefix = "skydentity-test"
@@ -90,8 +93,8 @@ for batch in range(num_batches):
 
         print(f"Launching job {i}")
 
-        out_fd = open(f"skypilot_benchmark_stdout_{i}.txt", "wb")
-        err_fd = open(f"skypilot_benchmark_stderr_{i}.txt", "wb")
+        out_fd = open(f"{LOGS_DIR}/skypilot_benchmark_stdout_{i}.txt", "wb")
+        err_fd = open(f"{LOGS_DIR}/skypilot_benchmark_stderr_{i}.txt", "wb")
         fds.append(out_fd)
         fds.append(err_fd)
 
@@ -130,9 +133,7 @@ for batch in range(num_batches):
                     "-d",
                     "-n",
                     f"{prefix}-{i}",
-                    "job.yaml",
-                    "-c",
-                    "skydentity"
+                    "job.yaml"
                 ],
                 stdout=out_fd,
                 stderr=err_fd,
