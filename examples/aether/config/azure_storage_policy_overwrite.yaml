@@ -1,0 +1,14 @@
+storage:
+  cloud_provider:
+    - azure
+
+  resource_group:
+    - skydentity
+
+  actions:
+    - READ
+    - UPLOAD
+    - OVERWRITE
+
+  buckets:
+    - skydentity-test-storage

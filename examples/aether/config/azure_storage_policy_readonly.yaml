@@ -1,0 +1,12 @@
+storage:
+  cloud_provider:
+    - azure
+
+  project:
+    - skydentity
+
+  actions:
+    - READ
+
+  buckets:
+    - skydentity-test-storage

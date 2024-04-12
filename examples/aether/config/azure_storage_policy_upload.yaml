@@ -1,0 +1,13 @@
+storage:
+  cloud_provider:
+    - azure
+
+  resource_group:
+    - skydentity
+
+  actions:
+    - READ
+    - UPLOAD
+
+  containers:
+    - skydentity-test-storage
