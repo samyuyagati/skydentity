@@ -11,6 +11,7 @@ from collections import namedtuple
 from datetime import datetime, timezone
 from typing import Dict, Optional, Tuple
 
+import backoff
 import requests
 from flask import Flask, Request, Response, request
 
@@ -213,9 +214,22 @@ def get_new_url(request):
     return new_url
 
 
+def forward_retry_predicate(response):
+    if response.status_code in (403,):
+        LOGGER.debug(response.content)
+        return True
+    return False
+
+
+@backoff.on_predicate(
+    backoff.fibo,
+    predicate=forward_retry_predicate,
+    max_tries=10,
+    jitter=backoff.random_jitter,
+)
 def forward_to_client(
     request, new_url: str, new_headers=None, new_json=None, new_data=None
-):
+) -> requests.Response:
     """
     Forward the request to the client proxy, with new headers, URL, and request body.
 

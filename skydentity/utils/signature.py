@@ -78,7 +78,7 @@ def verify_request_signature(
         )
     except ValueError:
         # invalid timestamp
-        LOGGER.warning(
+        LOGGER.info(
             build_time_logging_string(
                 request_name,
                 caller,
@@ -96,7 +96,7 @@ def verify_request_signature(
     now = datetime.datetime.now(datetime.timezone.utc)
     if now - datetime.timedelta(seconds=60) > timestamp_datetime:
         # if timestamp when request was sent is > 60 seconds old, deny the request
-        LOGGER.warning(
+        LOGGER.info(
             build_time_logging_string(
                 request_name,
                 caller,
@@ -116,7 +116,7 @@ def verify_request_signature(
     try:
         pkcs1_15.new(public_key).verify(h, signature)
     except (ValueError, TypeError):
-        LOGGER.warning(
+        LOGGER.info(
             build_time_logging_string(
                 request_name,
                 caller,

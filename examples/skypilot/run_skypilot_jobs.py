@@ -66,7 +66,6 @@ if args.cloud == "azure":
     api_endpoint = "https://management.azure.com/"
     if args.with_skydentity:
         api_endpoint = "https://127.0.0.1:5000/"
-        
 # GCP with skydentity
 if args.with_skydentity:
     api_endpoint = "http://127.0.0.1:5000/"
@@ -97,34 +96,6 @@ for batch in range(num_batches):
         fds.append(err_fd)
 
         # Paper used subprocess.Run (fully sequential, waits for completion)
-<<<<<<< HEAD
-        cur_subprocess = subprocess.Popen(
-            [
-                "time",
-                "sky",
-                "launch",
-                "--retry-until-up",
-                "-y",
-                "-d",
-                "-n",
-                f"{prefix}-{i}",
-                "job.yaml",
-                "-c",
-<<<<<<< HEAD
-                f"skydentity-{i}"
-=======
-                "skydentity"
->>>>>>> 692e67e (Azure Default Deny (#25))
-            ],
-            stdout=out_fd,
-            stderr=err_fd,
-            env={
-                **os.environ,
-                "CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE": f"{api_endpoint}",
-                "REQUESTS_CA_BUNDLE": "/home/kdharmarajan/skydentity/local_tokens/cert.pem"
-            },
-        )
-=======
         if args.ca_bundle is not None:
             cur_subprocess = subprocess.Popen(
                 [
@@ -161,7 +132,7 @@ for batch in range(num_batches):
                     f"{prefix}-{i}",
                     "job.yaml",
                     "-c",
-                    "skydentity"
+                    f"skydentity-{i}"
                 ],
                 stdout=out_fd,
                 stderr=err_fd,
@@ -170,7 +141,6 @@ for batch in range(num_batches):
                     "CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE": f"{api_endpoint}"
                 },
             )
->>>>>>> 59fb772 ((hacky) Fixed default deny so that manually constructed requests can be permitted in addition to skypilot requests. Fixed experiment script bugs for skypilot scripts and upload policy. Fixed heavy load benchmark to submit requests in concurrent batches)
         subprocesses.append(cur_subprocess)
         i += 1
 

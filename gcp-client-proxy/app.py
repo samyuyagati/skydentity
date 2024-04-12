@@ -19,6 +19,19 @@ LOGGER = py_logging.getLogger()
 LOGGER.addHandler(build_file_handler("authorizer.log"))
 
 
+## code to debug full request information
+#######
+# import http.client
+# from http.client import HTTPConnection
+#
+# HTTPConnection.debuglevel = 1
+# requests_log = py_logging.getLogger("requests.packages.urllib3")
+# requests_log.setLevel(py_logging.DEBUG)
+# requests_log.propagate = True
+# http.client.print = lambda *args: requests_log.debug(" ".join(args))
+######
+
+
 @app.route("/hello", methods=["GET"])
 def handle_hello():
     """
