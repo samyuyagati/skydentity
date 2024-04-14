@@ -523,6 +523,7 @@ def create_storage_authorization_route(cloud):
                 request_auth.bucket, request_auth.action
             )
         )
+        LOGGER.debug(f"Returning access token {access_token}, expires {expiration_timestamp}")
         return Response(
             json.dumps({"access_token": access_token, "expires": expiration_timestamp}),
             200,

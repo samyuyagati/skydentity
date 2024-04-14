@@ -302,7 +302,7 @@ ACCESS_TOKEN_CACHE: Dict[Tuple[str, str], Tuple[str, str]] = {}
 
 
 def request_storage_access_token(
-    bucket: str, action: str
+    bucket: str, action: str, request_name=None
 ) -> Tuple[Optional[str], Optional[str], int]:
     """
     Requests an access token for a service account for the given bucket and action.
@@ -325,7 +325,9 @@ def request_storage_access_token(
 
     LOGGER.debug("Requesting access token")
     client_url = get_client_proxy_endpoint(request).strip("/") + "/"
-    headers = get_headers_with_signature(requests.Request(method="POST"))
+    headers = get_headers_with_signature(requests.Request(method="POST"), PRIVATE_KEY)
+
+    access_token_start = time.perf_counter()
     response = REQUEST_SESSION.post(
         client_url + f"skydentity/cloud/gcp/create-storage-authorization",
         json={
@@ -334,6 +336,15 @@ def request_storage_access_token(
             "action": action,
         },
         headers=headers,
+    )
+    LOGGER.info(
+        build_time_logging_string(
+            request_name,
+            "skypilot_forward:request_storage_access_token",
+            "get_access_token",
+            access_token_start,
+            time.perf_counter(),
+        )
     )
 
     if not response.ok:
@@ -367,7 +378,7 @@ def upload_blob(request, bucket: str):
     upload_start = time.perf_counter()
 
     access_token, expiration_timestamp, req_status = request_storage_access_token(
-        bucket, "OVERWRITE_FALLBACK_UPLOAD"
+        bucket, "OVERWRITE_FALLBACK_UPLOAD", request_name=request_name
     )
     if access_token is None or expiration_timestamp is None:
         if 400 <= req_status < 500:
@@ -434,7 +445,7 @@ def download_blob(request, bucket: str, file: str):
     download_start = time.perf_counter()
 
     access_token, expiration_timestamp, req_status = request_storage_access_token(
-        bucket, "READ"
+        bucket, "READ", request_name=request_name
     )
     if access_token is None or expiration_timestamp is None:
         if 400 <= req_status < 500:

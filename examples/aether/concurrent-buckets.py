@@ -79,8 +79,9 @@ def ping_proxy(serverless_proxy_url: Optional[str]):
         time.sleep(15)
         # send any request and ignore any response
         LOGGER.info("Sending pings to serverless proxy")
+        normalized_url = serverless_proxy_url.strip("/")
         for _ in range(NUM_PINGS):
-            requests.get(serverless_proxy_url)
+            requests.get(f"{normalized_url}/ping")
             time.sleep(3)
 
         LOGGER.info("Waiting 15 seconds for serverless proxy to start")
@@ -336,14 +337,17 @@ def main(
     policy_path: str,
     public_key_path: str,
     upload_credentials_path: str,
+    # script options
+    with_policy_upload: bool = True,
 ):
-    # first upload policy
-    upload_policy(
-        policy_upload_script=policy_upload_script,
-        policy_path=policy_path,
-        public_key_path=public_key_path,
-        upload_credentials_path=upload_credentials_path,
-    )
+    if with_policy_upload:
+        # first upload policy
+        upload_policy(
+            policy_upload_script=policy_upload_script,
+            policy_path=policy_path,
+            public_key_path=public_key_path,
+            upload_credentials_path=upload_credentials_path,
+        )
 
     # create temporary file of random bytes
     file = tempfile.NamedTemporaryFile()
@@ -440,6 +444,13 @@ if __name__ == "__main__":
         help="Bucket prefix for concurrent requests; format of bucket will be '{prefix}-{idx}'",
     )
 
+    parser.add_argument(
+        "--no-policy-upload",
+        action="store_true",
+        dest="with_policy_upload",
+        help="Disable initial policy upload",
+    )
+
     aether_group = parser.add_argument_group("Aether settings")
     aether_group.add_argument(
         "--aether-path",
@@ -494,4 +505,5 @@ if __name__ == "__main__":
         public_key_path=args.public_key_path,
         upload_credentials_path=args.upload_credentials_path,
         serverless_proxy_url=args.serverless_proxy_url,
+        with_policy_upload=args.with_policy_upload,
     )

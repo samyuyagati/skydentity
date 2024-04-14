@@ -177,14 +177,17 @@ def main(
     policy_path: str,
     public_key_path: str,
     upload_credentials_path: str,
+    # script options
+    with_policy_upload: bool = True,
 ):
-    # first upload policy
-    upload_policy(
-        policy_upload_script=policy_upload_script,
-        policy_path=policy_path,
-        public_key_path=public_key_path,
-        upload_credentials_path=upload_credentials_path,
-    )
+    if with_policy_upload:
+        # first upload policy
+        upload_policy(
+            policy_upload_script=policy_upload_script,
+            policy_path=policy_path,
+            public_key_path=public_key_path,
+            upload_credentials_path=upload_credentials_path,
+        )
 
     # create temporary file of random bytes
     file = tempfile.NamedTemporaryFile()
@@ -254,6 +257,13 @@ if __name__ == "__main__":
         help="URL of the proxy to use",
     )
 
+    parser.add_argument(
+        "--no-policy-upload",
+        action="store_false",
+        dest="with_policy_upload",
+        help="Disable initial policy upload",
+    )
+
     aether_group = parser.add_argument_group("Aether settings")
     aether_group.add_argument(
         "--aether-path",
@@ -313,4 +323,5 @@ if __name__ == "__main__":
         policy_path=args.policy_path,
         public_key_path=args.public_key_path,
         upload_credentials_path=args.upload_credentials_path,
+        with_policy_upload=args.with_policy_upload,
     )
