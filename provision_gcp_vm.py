@@ -1,6 +1,7 @@
 # Example taken from https://cloud.google.com/compute/docs/samples/compute-instances-create-with-local-ssd?hl=en
 # Calling create_with_ssd should create a new VM instance with Debian 10 operating system and SSD local disk.
 
+import getopt
 import re
 import sys
 from typing import Any, List
@@ -11,11 +12,16 @@ from google.oauth2 import service_account
 from google.cloud import compute_v1
 
 
-def get_credentials() -> service_account.Credentials:
+def get_credentials(creds_file_path: str) -> service_account.Credentials:
     return service_account.Credentials.from_service_account_file(
-        '/Users/samyu/.cloud_creds/gcp/sky-identity-ac2febc1b9b3.json')
+        creds_file_path)
 
-def get_image_from_family(project: str, family: str) -> compute_v1.Image:
+
+def get_image_from_family(
+    creds_file_path: str,
+    project: str,
+    family: str,
+) -> compute_v1.Image:
     """
     Retrieve the newest image that is part of a given family in a project.
 
@@ -26,7 +32,8 @@ def get_image_from_family(project: str, family: str) -> compute_v1.Image:
     Returns:
         An Image object.
     """
-    image_client = compute_v1.ImagesClient(credentials=get_credentials())
+    image_client = compute_v1.ImagesClient(
+        credentials=get_credentials(creds_file_path))
     # List of public operating system (OS) images: https://cloud.google.com/compute/docs/images/os-details
     newest_image = image_client.get_from_family(project=project, family=family)
     return newest_image
@@ -90,9 +97,9 @@ def local_ssd_disk(zone: str) -> compute_v1.AttachedDisk():
     return disk
 
 
-def wait_for_extended_operation(
-    operation: ExtendedOperation, verbose_name: str = "operation", timeout: int = 300
-) -> Any:
+def wait_for_extended_operation(operation: ExtendedOperation,
+                                verbose_name: str = "operation",
+                                timeout: int = 300) -> Any:
     """
     Waits for the extended (long-running) operation to complete.
 
@@ -131,15 +138,20 @@ def wait_for_extended_operation(
         raise operation.exception() or RuntimeError(operation.error_message)
 
     if operation.warnings:
-        print(f"Warnings during {verbose_name}:\n", file=sys.stderr, flush=True)
+        print(f"Warnings during {verbose_name}:\n",
+              file=sys.stderr,
+              flush=True)
         for warning in operation.warnings:
-            print(f" - {warning.code}: {warning.message}", file=sys.stderr, flush=True)
+            print(f" - {warning.code}: {warning.message}",
+                  file=sys.stderr,
+                  flush=True)
 
     return result
 
 
 def create_instance(
     project_id: str,
+    creds_file_path: str,
     zone: str,
     instance_name: str,
     disks: List[compute_v1.AttachedDisk],
@@ -164,11 +176,12 @@ def create_instance(
     Returns:
         Instance object.
     """
-    instance_client = compute_v1.InstancesClient(credentials=get_credentials())
+    instance_client = compute_v1.InstancesClient(
+        credentials=get_credentials(creds_file_path))
 
     # Use the network interface provided in the network_link argument.
     network_interface = compute_v1.NetworkInterface()
-    network_interface.network = network_link  
+    network_interface.network = network_link
 
     # Collect information into the Instance object.
     instance = compute_v1.Instance()
@@ -188,15 +201,16 @@ def create_instance(
 
     operation = instance_client.insert(request=request)
 
-#    wait_for_extended_operation(operation, "instance creation")
+    #    wait_for_extended_operation(operation, "instance creation")
 
     print(f"Instance {instance_name} created.")
-    return instance_client.get(project=project_id, zone=zone, instance=instance_name)
+    return instance_client.get(project=project_id,
+                               zone=zone,
+                               instance=instance_name)
 
 
-def create_with_ssd(
-    project_id: str, zone: str, instance_name: str
-) -> compute_v1.Instance:
+def create_with_ssd(project_id: str, zone: str, instance_name: str,
+                    creds_file_path: str) -> compute_v1.Instance:
     """
     Create a new VM instance with Debian 10 operating system and SSD local disk.
 
@@ -208,18 +222,25 @@ def create_with_ssd(
     Returns:
         Instance object.
     """
-    newest_debian = get_image_from_family(project="debian-cloud", family="debian-10")
+    newest_debian = get_image_from_family(
+        creds_file_path,
+        project="debian-cloud",
+        family="debian-10",
+    )
     disk_type = f"zones/{zone}/diskTypes/pd-standard"
     disks = [
         disk_from_image(disk_type, 10, True, newest_debian.self_link, True),
         local_ssd_disk(zone),
     ]
-    instance = create_instance(project_id, zone, instance_name, disks)
+    instance = create_instance(project_id, creds_file_path, zone,
+                               instance_name, disks)
     return instance
 
+
 def create_firewall_rule(
-    project_id: str, firewall_rule_name: str, network: str = "global/networks/default"
-) -> compute_v1.Firewall:
+        project_id: str,
+        firewall_rule_name: str,
+        network: str = "global/networks/default") -> compute_v1.Firewall:
     """
     Creates a simple firewall rule allowing for incoming HTTP and HTTPS access from the entire Internet.
 
@@ -258,17 +279,65 @@ def create_firewall_rule(
     # firewall_rule.priority = 0
 
     firewall_client = compute_v1.FirewallsClient()
-    operation = firewall_client.insert(
-        project=project_id, firewall_resource=firewall_rule
-    )
+    operation = firewall_client.insert(project=project_id,
+                                       firewall_resource=firewall_rule)
 
-#    wait_for_extended_operation(operation, "firewall rule creation")
+    #    wait_for_extended_operation(operation, "firewall rule creation")
 
     return firewall_client.get(project=project_id, firewall=firewall_rule_name)
 
-def main():
-    create_with_ssd("sky-identity", "us-west1-b", "gcp-clilib")
-    create_firewall_rule("sky-identity", "allow-http-https")
+
+def get_args(argumentList) -> tuple[str, str]:
+    """
+    Process the command line args.
+
+    Args:
+        argumentList: command line arguments list.
+
+    Returns:
+        creds_file: GCP credentials file.
+        project_id: project ID or project number of the Cloud project you want to use.
+    """
+    # Options
+    options = "hc:p:"
+
+    # Long options
+    long_options = ["help", "creds_file", "project_id"]
+
+    # Default Value
+    creds_file = '/Users/samyu/.cloud_creds/gcp/sky-identity-ac2febc1b9b3.json'
+    project_id = 'sky-identity'
+    try:
+        # Parsing argument
+        arguments, values = getopt.getopt(argumentList, options, long_options)
+
+        # checking each argument
+        for currentArgument, currentValue in arguments:
+
+            if currentArgument in ("-h", "--help"):
+                print(
+                    f"provision_gcp_vm.py --creds_file <full path to GCP credential file>  --project_id <GCP project id>."
+                )
+                sys.exit(0)
+            elif currentArgument in ("-c", "--creds_file"):
+                creds_file = currentValue
+            elif currentArgument in ("-p", "--project_id"):
+                project_id = currentValue
+
+    except getopt.error as err:
+        # output error, and return with an error code
+        print(str(err))
+
+    print(f"Credentials File: {creds_file}, Project ID: {project_id}.")
+
+    return creds_file, project_id
+
+
+def main(argv):
+    creds_file, project_id = get_args(argv)
+    create_with_ssd(project_id, "us-west1-b", "gcp-clilib", creds_file)
+    create_firewall_rule(project_id, "allow-http-https")
+
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])
