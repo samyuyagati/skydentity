@@ -78,7 +78,7 @@ def main():
         protocol = "https"
     response = send_auth_creation_request(f"{protocol}://127.0.0.1:5000/skydentity/cloud/{args.cloud}/", json=auth_request_dict)
     print("RESPONSE JSON", response.json())
-    out_path = os.path.join(os.path.dirname(os.path.dirname(os.getcwd())), "tokens/")
+    out_path = os.path.join(os.path.dirname(os.getcwd()), "tokens/")
     service_acct_id, valid_capability = check_capability(response.json(), args.capability_enc_key)
     if not valid_capability:
         raise RuntimeError("Invalid capability returned")

@@ -1,0 +1,30 @@
+storage:
+  cloud_provider:
+    - azure
+
+  storage_account:
+    - skydentity
+
+  actions:
+    - READ
+    - UPLOAD
+    - OVERWRITE
+
+  containers:
+    - skydentity-test-storage
+    - skydentity-test-storage-1
+    - skydentity-test-storage-2
+    - skydentity-test-storage-3
+    - skydentity-test-storage-4
+    - skydentity-test-storage-5
+    - skydentity-test-storage-6
+    - skydentity-test-storage-7
+    - skydentity-test-storage-8
+    - skydentity-test-storage-9
+    - skydentity-test-storage-10
+    - skydentity-test-storage-11
+    - skydentity-test-storage-12
+    - skydentity-test-storage-13
+    - skydentity-test-storage-14
+    - skydentity-test-storage-15
+    - skydentity-test-storage-16

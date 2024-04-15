@@ -17,6 +17,7 @@ azure-mgmt-authorization
 azure-mgmt-subscription
 azure-identity
 azure-cosmos
+azure-storage-blob
 # GCP
 google-cloud-compute
 google-cloud-logging

@@ -23,3 +23,6 @@ def print_and_log(logger, text, severity="WARNING"):
     else:
         pprint(text)
     logger.warn(text)
+
+def build_time_logging_string(event, caller, called, start, end):
+    return f"{event} {caller} << {called} -- {end-start}"
