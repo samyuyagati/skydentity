@@ -14,12 +14,15 @@ from typing import Dict, Optional, Tuple
 import backoff
 import requests
 from flask import Flask, Request, Response, request
+from Crypto.PublicKey import RSA
 
 from skydentity.utils.log_util import build_time_logging_string
 
 from .signature import get_headers_with_signature
 
 LOGGER = py_logging.getLogger(__name__)
+PRIVATE_KEY_PATH = os.environ.get("PRIVATE_KEY_PATH", "proxy_util/private_key.pem")
+PRIVATE_KEY = RSA.import_key(open(PRIVATE_KEY_PATH).read())
 
 ## code to debug full request information
 #######
@@ -43,6 +46,9 @@ LOGGER = py_logging.getLogger(__name__)
 # reuse the request session across multiple forwarding calls
 # otherwise, there are some issues with connectivity latency
 REQUEST_SESSION = requests.Session()
+adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20)
+REQUEST_SESSION.mount('http://', adapter)
+REQUEST_SESSION.mount('https://', adapter)
 
 SkypilotRoute = namedtuple(
     "SkypilotRoute",
@@ -83,6 +89,8 @@ def generic_forward_request(request, log_dict=None):
     [SkyPilot Integration]
     Forward a generic request to google APIs.
     """
+    start = time.perf_counter()
+    LOGGER.info(f"Redirector received request {request.method} {request.path}: {datetime.now()}")
     LOGGER.debug(str(log_dict))
     if log_dict is not None:
         log_str = f"PATH: {request.full_path}\n"
@@ -91,7 +99,10 @@ def generic_forward_request(request, log_dict=None):
         LOGGER.debug(log_str.strip())
 
     new_url = get_new_url(request)
-    new_headers = get_headers_with_signature(request)
+    LOGGER.info(f"Redirector handler for {request.method} {request.path} (through get_new_url) took {time.perf_counter() - start:.2f}s")
+    new_headers = get_headers_with_signature(request, PRIVATE_KEY)
+    LOGGER.info(f"Redirector handler for {request.method} {request.path} (through get_headers_with_signature) took {time.perf_counter() - start:.2f}s")
+
     # pylogger.debug(f"{new_headers}")
 
     # Only modifies the body to attach the service account capability
@@ -115,6 +126,7 @@ def generic_forward_request(request, log_dict=None):
                 extra={"service_acc_json": new_json},
             )
 
+    LOGGER.info(f"Redirector handler for {request.method} {request.path} (through modify_json) took {time.perf_counter() - start:.2f}s")
     LOGGER.debug("Forwarding to client...")
 
     gcp_response = forward_to_client(
@@ -122,6 +134,7 @@ def generic_forward_request(request, log_dict=None):
     )
 
     LOGGER.debug(f"Received response from client...\n {gcp_response}")
+    LOGGER.info(f"Redirector handler for {request.method} {request.path} took {time.perf_counter() - start:.2f}s")
     return Response(gcp_response.content, gcp_response.status_code)
 
 
@@ -289,7 +302,7 @@ ACCESS_TOKEN_CACHE: Dict[Tuple[str, str], Tuple[str, str]] = {}
 
 
 def request_storage_access_token(
-    bucket: str, action: str
+    bucket: str, action: str, request_name=None
 ) -> Tuple[Optional[str], Optional[str], int]:
     """
     Requests an access token for a service account for the given bucket and action.
@@ -312,7 +325,9 @@ def request_storage_access_token(
 
     LOGGER.debug("Requesting access token")
     client_url = get_client_proxy_endpoint(request).strip("/") + "/"
-    headers = get_headers_with_signature(requests.Request(method="POST"))
+    headers = get_headers_with_signature(requests.Request(method="POST"), PRIVATE_KEY)
+
+    access_token_start = time.perf_counter()
     response = REQUEST_SESSION.post(
         client_url + f"skydentity/cloud/gcp/create-storage-authorization",
         json={
@@ -321,6 +336,15 @@ def request_storage_access_token(
             "action": action,
         },
         headers=headers,
+    )
+    LOGGER.info(
+        build_time_logging_string(
+            request_name,
+            "skypilot_forward:request_storage_access_token",
+            "get_access_token",
+            access_token_start,
+            time.perf_counter(),
+        )
     )
 
     if not response.ok:
@@ -354,7 +378,7 @@ def upload_blob(request, bucket: str):
     upload_start = time.perf_counter()
 
     access_token, expiration_timestamp, req_status = request_storage_access_token(
-        bucket, "OVERWRITE_FALLBACK_UPLOAD"
+        bucket, "OVERWRITE_FALLBACK_UPLOAD", request_name=request_name
     )
     if access_token is None or expiration_timestamp is None:
         if 400 <= req_status < 500:
@@ -421,7 +445,7 @@ def download_blob(request, bucket: str, file: str):
     download_start = time.perf_counter()
 
     access_token, expiration_timestamp, req_status = request_storage_access_token(
-        bucket, "READ"
+        bucket, "READ", request_name=request_name
     )
     if access_token is None or expiration_timestamp is None:
         if 400 <= req_status < 500:

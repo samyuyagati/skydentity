@@ -138,7 +138,7 @@ def upload_policy(
     policy_path: str,
     public_key_path: str,
     upload_credentials_path: str,
-    cloud: str
+    cloud: str,
 ):
     """
     Run the upload policy script to upload the given policy
@@ -187,6 +187,7 @@ def main(
     num_requests: int,
     buckets: List[str],
     proxy_url: str,
+    cloud: str,
     # aether options
     aether_host: str,
     aether_path: str,
@@ -195,16 +196,17 @@ def main(
     policy_path: str,
     public_key_path: str,
     upload_credentials_path: str,
-    cloud: str
+    # script options
+    with_policy_upload: bool = True,
 ):
-    # first upload policy
-    upload_policy(
-        policy_upload_script=policy_upload_script,
-        policy_path=policy_path,
-        public_key_path=public_key_path,
-        upload_credentials_path=upload_credentials_path,
-        cloud=cloud
-    )
+    if with_policy_upload:
+        # first upload policy
+        upload_policy(
+            policy_upload_script=policy_upload_script,
+            policy_path=policy_path,
+            public_key_path=public_key_path,
+            upload_credentials_path=upload_credentials_path,
+        )
 
     # create temporary file of random bytes
     file = tempfile.NamedTemporaryFile()
@@ -276,7 +278,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--proxy-url",
         type=str,
-        default=None,
+        default="http://127.0.0.1:5000",
         help="URL of the proxy to use",
     )
     parser.add_argument(
@@ -289,6 +291,19 @@ if __name__ == "__main__":
             "skydentity-test-storage-3",
         ],
         help="Buckets to alternate between",
+    )
+    parser.add_argument(
+        "--cloud",
+        type=str,
+        default="gcp",
+        help="Cloud used for the benchmark. One of gcp, azure",
+    )
+
+    parser.add_argument(
+        "--no-policy-upload",
+        action="store_false",
+        dest="with_policy_upload",
+        help="Disable initial policy upload",
     )
 
     aether_group = parser.add_argument_group("Aether settings")
@@ -330,12 +345,6 @@ if __name__ == "__main__":
         required=True,
         help="Path to credentials file for uploading the policy",
     )
-    policy_upload_group.add_argument(
-        "--cloud",
-        type=str,
-        default="gcp",
-        help="Cloud used for the benchmark. One of gcp, azure",
-    )
 
     args = parser.parse_args()
     main(
@@ -343,11 +352,12 @@ if __name__ == "__main__":
         num_requests=args.num_requests,
         buckets=args.buckets,
         proxy_url=args.proxy_url,
+        cloud=args.cloud,
         aether_host=args.aether_host,
         aether_path=args.aether_path,
         policy_upload_script=args.policy_upload_script,
         policy_path=args.policy_path,
         public_key_path=args.public_key_path,
         upload_credentials_path=args.upload_credentials_path,
-        cloud=args.cloud
+        with_policy_upload=args.with_policy_upload,
     )

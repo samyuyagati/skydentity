@@ -20,7 +20,17 @@ echo "Setting up authorizations..."
                          -c $FIREBASE_CREDS -y $ROOT/skydentity/examples/heavy_load/config 
 
 # Run test_server.py
-python run_experiment.py --num-requests $NUM_REQUESTS --api-endpoint "http://127.0.0.1:5000/" --concurrent
+# Batch size 5
+echo $(date)
+python run_experiment.py --num-requests $NUM_REQUESTS --api-endpoint "http://127.0.0.1:5000/" --batch-size 5 --delete --concurrent
+sleep 10
+# Batch size 15
+echo $(date)
+python run_experiment.py --num-requests $NUM_REQUESTS --api-endpoint "http://127.0.0.1:5000/" --batch-size 15 --delete --concurrent
+sleep 10
+# Batch size 1
+echo $(date)
+python run_experiment.py --num-requests $NUM_REQUESTS --api-endpoint "http://127.0.0.1:5000/" --batch-size 1 --delete --concurrent
 
 # Clean up
 echo "Cleaning up..."

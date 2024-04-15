@@ -89,8 +89,9 @@ def ping_proxy(serverless_proxy_url: Optional[str]):
         time.sleep(15)
         # send any request and ignore any response
         LOGGER.info("Sending pings to serverless proxy")
+        normalized_url = serverless_proxy_url.strip("/")
         for _ in range(NUM_PINGS):
-            requests.get(serverless_proxy_url)
+            requests.get(f"{normalized_url}/ping")
             time.sleep(3)
 
         LOGGER.info("Waiting 15 seconds for serverless proxy to start")
@@ -217,7 +218,7 @@ def send_requests(
     # tuple of (type, bucket, time)
     request_times = []
 
-    # ping_proxy(serverless_proxy_url)
+    ping_proxy(serverless_proxy_url)
     LOGGER.info("===== SENDING WRITES =====")
 
     write_processes = send_write_requests()
@@ -289,7 +290,7 @@ def upload_policy(
     policy_path: str,
     public_key_path: str,
     upload_credentials_path: str,
-    cloud: str
+    cloud: str,
 ):
     """
     Run the upload policy script to upload the given policy
@@ -339,6 +340,7 @@ def main(
     bucket_prefix: str,
     proxy_url: str,
     serverless_proxy_url: Optional[str],
+    cloud: str,
     # aether options
     aether_host: str,
     aether_path: str,
@@ -347,16 +349,17 @@ def main(
     policy_path: str,
     public_key_path: str,
     upload_credentials_path: str,
-    cloud: str
+    # script options
+    with_policy_upload: bool = True,
 ):
-    # first upload policy
-    upload_policy(
-        policy_upload_script=policy_upload_script,
-        policy_path=policy_path,
-        public_key_path=public_key_path,
-        upload_credentials_path=upload_credentials_path,
-        cloud=cloud
-    )
+    if with_policy_upload:
+        # first upload policy
+        upload_policy(
+            policy_upload_script=policy_upload_script,
+            policy_path=policy_path,
+            public_key_path=public_key_path,
+            upload_credentials_path=upload_credentials_path,
+        )
 
     # create temporary file of random bytes
     file = tempfile.NamedTemporaryFile()
@@ -437,7 +440,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--proxy-url",
         type=str,
-        default=None,
+        default="http://127.0.0.1:5000",
         help="URL of the proxy to use",
     )
     parser.add_argument(
@@ -451,6 +454,19 @@ if __name__ == "__main__":
         type=str,
         default="skydentity-test-storage",
         help="Bucket prefix for concurrent requests; format of bucket will be '{prefix}-{idx}'",
+    )
+    parser.add_argument(
+        "--cloud",
+        type=str,
+        default="gcp",
+        help="Cloud used for the benchmark. One of gcp, azure",
+    )
+
+    parser.add_argument(
+        "--no-policy-upload",
+        action="store_true",
+        dest="with_policy_upload",
+        help="Disable initial policy upload",
     )
 
     aether_group = parser.add_argument_group("Aether settings")
@@ -492,12 +508,6 @@ if __name__ == "__main__":
         required=True,
         help="Path to credentials file for uploading the policy",
     )
-    policy_upload_group.add_argument(
-        "--cloud",
-        type=str,
-        default="gcp",
-        help="Cloud used for the benchmark. One of gcp, azure",
-    )
 
     args = parser.parse_args()
 
@@ -508,10 +518,11 @@ if __name__ == "__main__":
         aether_path=args.aether_path,
         proxy_url=args.proxy_url,
         bucket_prefix=args.bucket_prefix,
+        cloud=args.cloud,
         policy_upload_script=args.policy_upload_script,
         policy_path=args.policy_path,
         public_key_path=args.public_key_path,
         upload_credentials_path=args.upload_credentials_path,
         serverless_proxy_url=args.serverless_proxy_url,
-        cloud=args.cloud
+        with_policy_upload=args.with_policy_upload,
     )
