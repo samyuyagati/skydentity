@@ -79,23 +79,31 @@ def main():
             cloud_policy_manager = GCPPolicyManager(credentials_path=args.credentials)
             policy_type = GCPPolicy
     elif formatted_cloud == "azure":
-        policy_container_name = (
-            "policies" if not args.authorization else "authorization_policies"
-        )
-        policy_type = (
-            AzurePolicy if not args.authorization else AzureAuthorizationPolicy
-        )
-        cloud_policy_manager = AzurePolicyManager(
-            db_info_file=args.credentials,
-            policy_type=policy_type,
-            db_container_name=policy_container_name,
-        )
+        if args.storage:
+            cloud_policy_manager = AzurePolicyManager(
+                db_info_file = args.credentials,
+                db_container_name = 'storage_policies'
+            )
+            print("Uploading storage policy for Azure")
+            with open(args.policy, "r") as f:
+                policy_dict = yaml.load(f, Loader=yaml.SafeLoader)
+                print(policy_dict)
+                cloud_policy_manager.upload_policy_dict(hashed_public_key, policy_dict)
+        else:
+            policy_type = AzurePolicy if not args.authorization else AzureAuthorizationPolicy
+            policy_container_name = "authorization_policies" if args.authorization else "policies"
+            cloud_policy_manager = AzurePolicyManager(
+                db_info_file = args.credentials,
+                policy_type = policy_type,
+                db_container_name = policy_container_name
+            )
     else:
         raise Exception("Cloud not supported. Supported types are gcp and azure")
 
-    local_policy_manager = LocalPolicyManager(policy_type)
-    read_from_local_policy = local_policy_manager.get_policy(args.policy)
-    cloud_policy_manager.upload_policy(hashed_public_key, read_from_local_policy)
+    if not args.storage:
+        local_policy_manager = LocalPolicyManager(policy_type)
+        read_from_local_policy = local_policy_manager.get_policy(args.policy)
+        cloud_policy_manager.upload_policy(hashed_public_key, read_from_local_policy)
 
 
     if formatted_cloud == "gcp" and args.storage:

@@ -7,6 +7,7 @@ from azure.cosmos.partition_key import PartitionKey
 
 from skydentity.policies.checker.azure_storage_policy import StoragePolicyAction
 from skydentity.policies.managers.policy_manager import PolicyManager
+from skydentity.utils.log_util import build_file_handler
 from azure.storage.blob import BlobServiceClient, generate_container_sas, ContainerSasPermissions
 
 class AzureStoragePolicyManager(PolicyManager):
@@ -43,8 +44,10 @@ class AzureStoragePolicyManager(PolicyManager):
         self._db = self._client.create_database_if_not_exists(db_name)
         partition_key = PartitionKey(path = '/id')
         self._container = self._db.create_container_if_not_exists(db_container_name, partition_key = partition_key)
-
         self._storage_client = BlobServiceClient.from_connection_string(storage_account_connection_string)
+
+        self._policies = {}
+        self._policies_last_read = None
 
     def get_db_info_from_file(self, db_info_file: str):
         """
@@ -77,13 +80,18 @@ class AzureStoragePolicyManager(PolicyManager):
         :param public_key_hash: The hash of the public key tied to the policy.
         :return: The policy.
         """
-        print(public_key_hash)
-        return self._container.read_item(
-                    item = public_key_hash,
-                    partition_key = public_key_hash,
-                )['policy']
+        if public_key_hash in self ._policies and (datetime.now() - self._policies_last_read).total_seconds() < 30.0:
+            return self._policies[public_key_hash]
 
-    def generate_sas_token(self, container: str, actions: List[StoragePolicyAction]) -> Tuple[str, str]:
+        policy_dict = self._container.read_item(
+                        item = public_key_hash,
+                        partition_key = public_key_hash,
+                    )['policy']
+        self._policies[public_key_hash] = policy_dict
+        self._policies_last_read = datetime.now()
+        return policy_dict
+
+    def generate_sas_token(self, container: str, action: StoragePolicyAction) -> Tuple[str, str]:
         """
         Generates a SAS token for the given container and actions.
         :return: The SAS token and the expiration time.
@@ -96,14 +104,12 @@ class AzureStoragePolicyManager(PolicyManager):
         # Define the permissions for the SAS token
         permissions = ""
         
-        if StoragePolicyAction.READ in actions:
+        if StoragePolicyAction.READ == action:
             permissions = "r"
-        if StoragePolicyAction.UPLOAD in actions:
-            permissions += "c"
-        if StoragePolicyAction.OVERWRITE in actions:
-            if "c" not in permissions:
-                permissions += "c"
-            permissions += "w"
+        elif StoragePolicyAction.UPLOAD == action:
+            permissions = "c"
+        elif StoragePolicyAction.OVERWRITE == action:
+            permissions = "w"
 
         # Generate the SAS token for the container
         sas_token = generate_container_sas(

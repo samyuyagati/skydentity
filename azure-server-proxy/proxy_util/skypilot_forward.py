@@ -5,20 +5,43 @@ import base64
 import datetime
 import json
 import os
+import time
 from collections import namedtuple
-
+import random
 import requests
+import logging as py_logging
 from Crypto.PublicKey import RSA
 from Crypto.Signature import pkcs1_15
 from Crypto.Hash import SHA256
 from flask import Flask, Response, request
+from typing import Dict, Optional, Tuple
+from functools import cache
+from .logging import build_time_logging_string
 
-from .logging import get_logger, print_and_log
+LOGGER = py_logging.getLogger(__name__)
+py_logging.basicConfig(filename='redirector.log',
+                    filemode='a',
+                    format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
+                    datefmt='%H:%M:%S',
+                    level=py_logging.INFO)
+
+# reuse the request session across multiple forwarding calls
+# otherwise, there are some issues with connectivity latency
+REQUEST_SESSION = requests.Session()
+adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20)
+REQUEST_SESSION.mount('http://', adapter)
+REQUEST_SESSION.mount('https://', adapter)
 
 # global constants
+STORAGE_ENDPOINT = os.environ.get(
+    "STORAGE_ENDPOINT", "https://skydentity.blob.core.windows.net"
+)
+
 PRIVATE_KEY_PATH = os.environ.get(
     "PRIVATE_KEY_PATH", "proxy_util/private_key.pem" 
 )
+with open(PRIVATE_KEY_PATH, "rb") as key_file:
+    PRIVATE_KEY = RSA.import_key(key_file.read())
 
 SkypilotRoute = namedtuple(
     "SkypilotRoute",
@@ -108,12 +131,10 @@ ROUTES: list[SkypilotRoute] = [
     ),
 ]
 
-
 def get_headers_with_signature(request):
     new_headers = {k: v for k, v in request.headers}
 
-    with open(PRIVATE_KEY_PATH, "rb") as key_file:
-        private_key = RSA.import_key(key_file.read())
+    private_key = PRIVATE_KEY
            
     # assume set, predetermined/agreed upon tolerance on client proxy/receiving end
     # use utc for consistency if server runs in cloud in different region
@@ -135,7 +156,8 @@ def get_headers_with_signature(request):
     new_headers["X-Timestamp"] = str(timestamp)
     new_headers["X-PublicKey"] = encoded_public_key_string
 
-    del new_headers["Host"]
+    if "Host" in new_headers:
+        del new_headers["Host"]
 
     return new_headers
 
@@ -145,6 +167,8 @@ def generic_forward_request(request, log_dict=None):
     [SkyPilot Integration]
     Forward a generic request to google APIs.
     """
+    generic_forward_start = time.perf_counter()
+
     # logger = get_logger()
     # print(log_dict, flush=True)
     # if log_dict is not None:
@@ -203,9 +227,28 @@ def generic_forward_request(request, log_dict=None):
 
             # print("JSON with service acct capability:", new_json, flush=True)
 
+    forward_start = time.perf_counter()
     azure_response = forward_to_client(
         request, new_url, new_headers=new_headers, new_json=new_json
     )
+    LOGGER.info(build_time_logging_string(
+            request.full_path,
+            "skypilot_forward:generic_forward_request",
+            "forward_request",
+            forward_start,
+            time.perf_counter(),
+        )
+    )
+
+    LOGGER.info(build_time_logging_string(
+        request.full_path,
+        "skypilot_forward:generic_forward_request",
+        "generic_forward_request",
+        generic_forward_start,
+        time.perf_counter(),
+        )
+    )
+
     return Response(azure_response.content, azure_response.status_code, content_type=azure_response.headers["Content-Type"])
 
 
@@ -331,7 +374,7 @@ def forward_to_client(request, new_url: str, new_headers=None, new_json=None, ne
 
     # If no JSON body, don't include a json body in proxied request
     if len(request.get_data()) == 0:
-        return requests.request(
+        return REQUEST_SESSION.request(
             method=request.method,
             url=new_url,
             headers=new_headers,
@@ -339,7 +382,7 @@ def forward_to_client(request, new_url: str, new_headers=None, new_json=None, ne
             allow_redirects=False,
             data=new_data
         )
-    return requests.request(
+    return REQUEST_SESSION.request(
         method=request.method,
         url=new_url,
         headers=new_headers,
@@ -349,8 +392,11 @@ def forward_to_client(request, new_url: str, new_headers=None, new_json=None, ne
         data=new_data
     )
 
+# cache for access tokens
+ACCESS_TOKEN_CACHE: Dict[Tuple[str, str], Tuple[str, str]] = {}
+
 def request_storage_token(
-    container: str, actions: list[str]
+    container: str, action: str
 ) -> Tuple[Optional[str], Optional[str], int]:
     """
     Requests an access token for the given container and actions.
@@ -360,14 +406,25 @@ def request_storage_token(
     - expiration timestamp (or None if error)
     - response status code (for error handling)
     """
+    # return token from cache if it exists
+    if (container, action) in ACCESS_TOKEN_CACHE:
+        access_token, expiration_timestamp = ACCESS_TOKEN_CACHE[(container, action)]
+        if datetime.datetime.now(datetime.timezone.utc) < datetime.datetime.fromisoformat(
+            expiration_timestamp
+        ).astimezone(datetime.timezone.utc):
+            # still valid, return it
+            return access_token, expiration_timestamp, 200
+        # expired; delete from cache
+        del ACCESS_TOKEN_CACHE[(container, action)]
+
     client_url = get_client_proxy_endpoint(request).strip("/") + "/"
     headers = get_headers_with_signature(requests.Request(method="POST"))
-    response = requests.post(
+    response = REQUEST_SESSION.post(
         client_url + f"skydentity/cloud/azure/create-storage-authorization",
         json={
             "cloud_provider": "azure",
             "container": container,
-            "actions": actions,
+            "action": action,
         },
         headers=headers,
     )
@@ -378,9 +435,11 @@ def request_storage_token(
     response_json = response.json()
     access_token = response_json["access_token"]
     expiration_timestamp = response_json["expires"]
-    print("access token", access_token)
+    LOGGER.debug(f"Access token: {access_token}")
 
     if access_token:
+        # cache the token
+        ACCESS_TOKEN_CACHE[(container, action)] = (access_token, expiration_timestamp)
         return access_token, expiration_timestamp, response.status_code
 
     # no access token; server error
@@ -392,13 +451,32 @@ def handle_blob_request(request, container, blob):
     elif request.method == "GET":
         return download_blob(request, container, blob)
 
+def invalidate_cache(container: str, action: str):
+    """
+    Invalidate the cache for the given bucket/action.
+    """
+    ACCESS_TOKEN_CACHE.pop((container, action), None)
+
 def upload_blob(request, container, blob):
     """
     POST /<container>/<blob> - Upload a blob to the specified container.
     """
+    request_name = request.method.upper() + str(random.randint(0, 1000)) + request.path
+    upload_start = time.perf_counter()
+
+    # token_start = time.perf_counter()
     access_token, expiration_timestamp, req_status = request_storage_token(
-        container, ["OVERWRITE_FALLBACK_UPLOAD"]
+        container, "OVERWRITE_FALLBACK_UPLOAD"
     )
+    LOGGER.info(build_time_logging_string(
+            request_name,
+            "skypilot_forward:upload_blob",
+            "request_storage_token",
+            token_start,
+            time.perf_counter(),
+        )
+    )
+
     if access_token is None or expiration_timestamp is None:
         if 400 <= req_status < 500:
             # auth error
@@ -424,17 +502,48 @@ def upload_blob(request, container, blob):
     access_token = access_token.replace("%3A", ":")
     storage_url += f"?{access_token}"
 
-    print("Sending to storage URL:", storage_url)
+    LOGGER.debug("Sending to storage URL:", storage_url)
     # forward directly to the Azure endpoint; no need to go through client proxy
-    azure_response = forward_to_client(request, storage_url, new_headers=new_headers, new_data=request.data)
-    print(azure_response.content)
+    forward_start = time.perf_counter()
+    azure_response = forward_to_client(request, storage_url, new_headers=new_headers, new_data=request.get_data())
+    LOGGER.info(build_time_logging_string(
+            request_name,
+            "skypilot_forward:upload_blob",
+            "forward_request",
+            forward_start,
+            time.perf_counter(),
+        )
+    )
+    if azure_response.status_code in (401, 403):
+        invalidate_cache(container, "READ")
+
+    LOGGER.info(build_time_logging_string(
+        request_name,
+        "skypilot_forward:upload_blob",
+        "upload_blob",
+        upload_start,
+        time.perf_counter(),
+        )
+    )
     return Response(azure_response.content, azure_response.status_code)
 
 def download_blob(request, container, blob):
     """
     GET /<container>/<blob> - Upload a blob to the specified container.
     """
-    access_token, expiration_timestamp, req_status = request_storage_token(container, ["READ"])
+    request_name = request.method.upper() + str(random.randint(0, 1000)) + request.path
+    download_start = time.perf_counter()
+
+    token_start = time.perf_counter()
+    access_token, expiration_timestamp, req_status = request_storage_token(container, "READ")
+    LOGGER.info(build_time_logging_string(
+            request_name,
+            "skypilot_forward:download_blob",
+            "request_storage_token",
+            token_start,
+            time.perf_counter(),
+        )
+    )
     if access_token is None or expiration_timestamp is None:
         if 400 <= req_status < 500:
             # auth error
@@ -461,6 +570,25 @@ def download_blob(request, container, blob):
     storage_url += f"?{access_token}"
 
     # forward directly to the Azure endpoint; no need to go through client proxy
+    forward_start = time.perf_counter()
     azure_response = forward_to_client(request, storage_url, new_headers=new_headers)
-    print(azure_response.content)
+    LOGGER.info(build_time_logging_string(
+            request_name,
+            "skypilot_forward:download_blob",
+            "forward_request",
+            forward_start,
+            time.perf_counter(),
+        )
+    )    
+    if azure_response.status_code in (401, 403):
+        invalidate_cache(container, "READ")
+
+    LOGGER.info(build_time_logging_string(
+        request_name,
+        "skypilot_forward:download_blob",
+        "download_blob",
+        download_start,
+        time.perf_counter(),
+        )
+    )
     return Response(azure_response.content, azure_response.status_code, headers=dict(azure_response.headers))

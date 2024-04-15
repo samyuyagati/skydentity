@@ -2,7 +2,7 @@
 Forwarding for SkyPilot requests.
 """
 import time
-
+import logging as py_logging
 import random
 import base64
 import json
@@ -29,6 +29,8 @@ from .policy_check import (
     get_storage_policy_manager
 )
 from .signature import strip_signature_headers, verify_request_signature
+
+LOGGER = py_logging.getLogger(__name__)
 
 # global constants
 COMPUTE_API_ENDPOINT = os.environ.get(
@@ -133,64 +135,64 @@ def generic_forward_request(request, log_dict=None):
     Forward a generic request to Azure APIs.
     """
     try:
-        start = time.time()
+        start = time.perf_counter()
         logger = get_logger()
 
         request_name = request.method.upper() + str(random.randint(0, 1000))
         caller = "skypilot_forward:generic_forward_request"
 
-        # if log_dict is not None:
-        #     log_str = f"PATH: {request.full_path}\n"
-        #     for key, val in log_dict.items():
-        #         log_str += f"\t{key}: {val}\n"
-        #     print_and_log(logger, log_str.strip())
+        if log_dict is not None:
+            log_str = f"REQUEST {request_name} PATH: {request.full_path}\n"
+            for key, val in log_dict.items():
+                log_str += f"\t{key}: {val}\n"
+            print_and_log(logger, log_str.strip())
 
-        print_and_log(logger, build_time_logging_string(request_name, caller, "setup_logs", start, time.time()))
+        print_and_log(logger, build_time_logging_string(request_name, caller, "setup_logs", start, time.perf_counter()))
 
-        start_verify_request_signature = time.time()
+        start_verify_request_signature = time.perf_counter()
         if not verify_request_signature(request):
             print_and_log(logger, "Request is unauthorized (signature verification failed)")
-            print_and_log(logger, build_time_logging_string(request_name, caller, "total (signature verif. failed)", start, time.time()))
+            print_and_log(logger, build_time_logging_string(request_name, caller, "total (signature verif. failed)", start, time.perf_counter()))
             return Response("Unauthorized", 401)
-        print_and_log(logger, build_time_logging_string(request_name, caller, "verify_request_signature", start_verify_request_signature, time.time()))
+        print_and_log(logger, build_time_logging_string(request_name, caller, "verify_request_signature", start_verify_request_signature, time.perf_counter()))
 
         # Check the request
-        start_check_request_from_policy = time.time()
+        start_check_request_from_policy = time.perf_counter()
         public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
         authorized, managed_identity_id = check_request_from_policy(public_key_bytes, request, request_id=request_name, caller_name=caller)
-        print_and_log(logger, build_time_logging_string(request_name, caller, "check_request_from_policy", start_check_request_from_policy, time.time()))
+        print_and_log(logger, build_time_logging_string(request_name, caller, "check_request_from_policy", start_check_request_from_policy, time.perf_counter()))
         if not authorized:
             print_and_log(logger, "Request is unauthorized (policy check failed)")
-            print_and_log(logger, build_time_logging_string(request_name, caller, "total (policy check failed)", start, time.time()))
+            print_and_log(logger, build_time_logging_string(request_name, caller, "total (policy check failed)", start, time.perf_counter()))
             return Response("Unauthorized", 401)
 
         # Get new endpoint and new headers
-        start_get_new_url = time.time()
+        start_get_new_url = time.perf_counter()
         new_url = get_new_url(request)
-        print_and_log(logger, build_time_logging_string(request_name, caller, "get_new_url", start_get_new_url, time.time()))
-        start_get_new_headers = time.time()
+        print_and_log(logger, build_time_logging_string(request_name, caller, "get_new_url", start_get_new_url, time.perf_counter()))
+        start_get_new_headers = time.perf_counter()
         new_headers = get_headers_with_auth(request)
-        print_and_log(logger, build_time_logging_string(request_name, caller, "get_headers_with_auth", start_get_new_headers, time.time()))
+        print_and_log(logger, build_time_logging_string(request_name, caller, "get_headers_with_auth", start_get_new_headers, time.perf_counter()))
 
         # Only modify the JSON if a valid service account capability was provided
         new_json = None
         if len(request.get_data()) > 0:
-            start_get_json_with_sa = time.time()
+            start_get_json_with_sa = time.perf_counter()
             new_json = request.json
             if managed_identity_id:
                 new_json = get_json_with_managed_identity(request, managed_identity_id)
                 # print_and_log(logger, f"Json with service account: {new_json}")
-            print_and_log(logger, build_time_logging_string(request_name, caller, "get_json_with_service_account", start_get_json_with_sa, time.time()))
+            print_and_log(logger, build_time_logging_string(request_name, caller, "get_json_with_service_account", start_get_json_with_sa, time.perf_counter()))
 
             # Inject random public ssh keys if applicable
             inject_random_public_key(new_json, new_url)
 
         # Send the request to Azure
-        start_send_azure_request = time.time()
+        start_send_azure_request = time.perf_counter()
         azure_response = send_azure_request(request, new_headers, new_url, new_json=new_json)
         
-        print_and_log(logger, build_time_logging_string(request_name, caller, "send_azure_request", start_send_azure_request, time.time()))
-        print_and_log(logger, build_time_logging_string(request_name, caller, "total", start, time.time()))
+        print_and_log(logger, build_time_logging_string(request_name, caller, "send_azure_request", start_send_azure_request, time.perf_counter()))
+        print_and_log(logger, build_time_logging_string(request_name, caller, "total", start, time.perf_counter()))
         return Response(azure_response.content, azure_response.status_code, headers=new_headers, content_type=azure_response.headers["Content-Type"])
     except Exception as e:
         print_and_log(logger, f"Error in generic_forward_request: {e}")
@@ -390,32 +392,43 @@ def create_authorization_route(cloud):
         return Response("Error", 500)
     
 def create_storage_authorization_route(cloud):
-    print("Create storage authorization handler")
+    storage_start = time.perf_counter()
     logger = get_logger()
+    caller = "skypilot_forward:create_storage_authorization_route"
+    request_name = "CREATE_AUTH" + str(random.randint(0, 1000))
+    LOGGER.debug("Create storage authorization handler")
+    # logger = get_logger()
 
     storage_policy_manager = get_storage_policy_manager()
-    print_and_log(logger, f"Creating authorization (json: {request.json})")
+    # print_and_log(logger, f"Creating authorization (json: {request.json})")
 
     # Get hash of public key
     public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
     # Compute hash of public key
     public_key_hash = hash_public_key(public_key_bytes)
-    print_and_log(logger, f"Public key hash: {public_key_hash}")
+    # print_and_log(logger, f"Public key hash: {public_key_hash}")
 
     # Retrieve storage policy from CosmosDB with public key hash
+    storage_policy_retrieval_start = time.perf_counter()
     storage_policy_dict = storage_policy_manager.get_policy_dict(public_key_hash)
-    print("Storage policy dict:", storage_policy_dict)
+    print_and_log(logger, build_time_logging_string(request_name, caller, "storage_retrieval", storage_policy_retrieval_start, time.perf_counter()))
+    # print("Storage policy dict:", storage_policy_dict)
 
     # Check request against storage policy
     storage_policy = AzureStoragePolicy(policy_dict=storage_policy_dict)
+    storage_check_request_start = time.perf_counter()
     request_auth, success = storage_policy.check_request(request)
+    print_and_log(logger, build_time_logging_string(request_name, caller, "storage_check_request", storage_check_request_start, time.perf_counter()))
 
     if success and request_auth is not None:
+        sas_token_start = time.perf_counter()
         access_token, expiration_timestamp = (
             storage_policy_manager.generate_sas_token(
-                request_auth.container, request_auth.actions
+                request_auth.container, request_auth.action
             )
         )
+        print_and_log(logger, build_time_logging_string(request_name, caller, "sas_token", sas_token_start, time.perf_counter()))
+        print_and_log(logger, build_time_logging_string(request_name, caller, "total", storage_start, time.perf_counter()))
         return Response(
             json.dumps({"access_token": access_token, "expires": expiration_timestamp}),
             200,

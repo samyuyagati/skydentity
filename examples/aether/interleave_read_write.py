@@ -26,7 +26,7 @@ LOGGER.addHandler(STREAM_HANDLER)
 
 
 def start_aether(
-    aether_path: str, port: int, proxy_url: str, bucket: str
+    aether_path: str, port: int, proxy_url: str, bucket: str, cloud: str
 ) -> subprocess.Popen:
     """
     Start an aether server for the given bucket.
@@ -36,6 +36,21 @@ def start_aether(
         abs_aether_path
     ), f"{abs_aether_path} must exist as a path to the aether server file"
 
+    aether_environment = {
+            **os.environ,
+            "AETHER_PORT": str(port),
+        }
+
+    if proxy_url:
+        aether_environment["CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE"] = proxy_url
+
+    if cloud == "gcp":
+        aether_environment["GCS_BUCKET_NAME"] = bucket
+    elif cloud == "azure":
+        aether_environment["AZURE_CONTAINER_NAME"] = bucket
+    else:
+        raise ValueError(f"Invalid cloud: {cloud}")
+
     process = subprocess.Popen(
         [
             "python3",
@@ -43,16 +58,10 @@ def start_aether(
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        env={
-            **os.environ,
-            "CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE": proxy_url,
-            "GCS_BUCKET_NAME": bucket,
-            "AETHER_PORT": str(port),
-        },
+        env=aether_environment
     )
 
     return process
-
 
 def send_requests(
     num_requests: int,
@@ -91,6 +100,7 @@ def send_requests(
         else:
             LOGGER.info(f"Upload took {upload_time} seconds")
 
+
         sys.stdout.flush()
 
         # read
@@ -120,6 +130,7 @@ def upload_policy(
     policy_path: str,
     public_key_path: str,
     upload_credentials_path: str,
+    cloud: str
 ):
     """
     Run the upload policy script to upload the given policy
@@ -143,7 +154,7 @@ def upload_policy(
             "--policy",
             abs_policy_path,
             "--cloud",
-            "gcp",
+            cloud,
             "--public-key-path",
             abs_key_path,
             "--credentials",
@@ -177,6 +188,7 @@ def main(
     policy_path: str,
     public_key_path: str,
     upload_credentials_path: str,
+    cloud: str
 ):
     # first upload policy
     upload_policy(
@@ -184,6 +196,7 @@ def main(
         policy_path=policy_path,
         public_key_path=public_key_path,
         upload_credentials_path=upload_credentials_path,
+        cloud=cloud
     )
 
     # create temporary file of random bytes
@@ -194,7 +207,7 @@ def main(
     file.write(file_content)
 
     # normalize aether url
-    aether_process = start_aether(aether_path, aether_port, proxy_url, bucket)
+    aether_process = start_aether(aether_path, aether_port, proxy_url, bucket, cloud)
     aether_url = f"{aether_host}:{aether_port}"
     LOGGER.info("Waiting for aether process to start")
     time.sleep(5)
@@ -250,7 +263,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--proxy-url",
         type=str,
-        default="http://127.0.0.1:5000",
+        default=None,
         help="URL of the proxy to use",
     )
 
@@ -299,6 +312,13 @@ if __name__ == "__main__":
         required=True,
         help="Path to credentials file for uploading the policy",
     )
+    policy_upload_group.add_argument(
+        "--cloud",
+        type=str,
+        default="gcp",
+        help="Cloud used for the benchmark. One of gcp, azure",
+    )
+    
 
     args = parser.parse_args()
     main(
@@ -313,4 +333,5 @@ if __name__ == "__main__":
         policy_path=args.policy_path,
         public_key_path=args.public_key_path,
         upload_credentials_path=args.upload_credentials_path,
+        cloud=args.cloud
     )

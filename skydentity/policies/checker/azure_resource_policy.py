@@ -837,9 +837,8 @@ class AzureDeploymentPolicy(ResourcePolicy):
         :param parameters_dict: The parameters for the template.
         :param path: The path of the request.
         """
-        request_body = {
-            }
-            request_body["properties"] = self.recursively_resolve_parameters(generic_source_dict["properties"], parameters_dict)
+        request_body = {}
+        request_body["properties"] = self.recursively_resolve_parameters(generic_source_dict["properties"], parameters_dict)
         if "location" in generic_source_dict:
             request_body["location"] = generic_source_dict["location"]
         return AzureDeploymentPolicy.MockAzureRequest(request_body, "PUT", path)

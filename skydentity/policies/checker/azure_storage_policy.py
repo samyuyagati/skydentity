@@ -1,3 +1,4 @@
+import logging as py_logging
 from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional, Tuple, Union
@@ -6,7 +7,10 @@ import yaml
 from flask import Request
 
 from skydentity.policies.checker.authorization_policy import AuthorizationPolicy
+from skydentity.utils.log_util import build_file_handler
 
+LOGGER = py_logging.getLogger("policies.checker.AzureStoragePolicy")
+LOGGER.addHandler(build_file_handler("azure_storage_policy.log"))
 
 class StoragePolicyAction(Enum):
     """
@@ -57,7 +61,7 @@ class AuthorizationRequest:
     cloud_provider: CloudProvider
     container: str
     # translated actions from storage request actions
-    actions: List[StoragePolicyAction]
+    action: StoragePolicyAction
 
 
 class AzureStoragePolicy(AuthorizationPolicy):
@@ -138,49 +142,34 @@ class AzureStoragePolicy(AuthorizationPolicy):
         except KeyError:
             cloud_provider = None
         container = policy_dict["container"]
-        request_actions = policy_dict["actions"]
+        request_action = policy_dict["action"]
 
-        combined_actions = set()
-        for request_action in request_actions:
-            try:
-                request_action_enum = StorageRequestAction[request_action]
-            except KeyError:
-                # unrecognized request action
-                print(f"Unrecognized requested action: {request_action}")
-                combined_actions.add(StoragePolicyAction.NONE)
-                continue
+        try:
+            request_action_enum = StorageRequestAction[request_action]
+        except ValueError:
+            # unrecognized request action
+            LOGGER.warning(f"Unrecognized requested action: {request_action}")
+            request_action_enum = None
 
-            if request_action_enum == StorageRequestAction.READ:
-                if StoragePolicyAction.READ not in self._policy.actions:
-                    print("[request check failed] action")
-                    combined_actions.add(StoragePolicyAction.NONE)
-                else:
-                    combined_actions.add(StoragePolicyAction.READ)
-            elif (
-                request_action_enum
-                == StorageRequestAction.OVERWRITE_FALLBACK_UPLOAD
-            ):
-                if StoragePolicyAction.OVERWRITE in self._policy.actions:
-                    combined_actions.add(StoragePolicyAction.OVERWRITE)
-                elif StoragePolicyAction.UPLOAD in self._policy.actions:
-                    combined_actions.add(StoragePolicyAction.UPLOAD)
-                else:
-                    # neither upload or overwrite allowed
-                    combined_actions.add(StoragePolicyAction.NONE)
-            else:
-                # unhandled request action
-                print(f"[request check failed] unknown action, {request_action}")
-
-        if StoragePolicyAction.NONE in combined_actions:
-            # if any failures occurred, replace all actions with only NONE
-            combined_actions = [StoragePolicyAction.NONE]
+        converted_action = StoragePolicyAction.NONE
+        if request_action_enum == StorageRequestAction.READ:
+            if StoragePolicyAction.READ in self._policy.actions:
+                converted_action = StoragePolicyAction.READ
+        elif (
+            request_action_enum
+            == StorageRequestAction.OVERWRITE_FALLBACK_UPLOAD
+        ):
+            if StoragePolicyAction.OVERWRITE in self._policy.actions:
+                converted_action = StoragePolicyAction.OVERWRITE
+            elif StoragePolicyAction.UPLOAD in self._policy.actions:
+                converted_action = StoragePolicyAction.UPLOAD
         else:
-            combined_actions = list(combined_actions)
+            LOGGER.warning(f"[request check failed] unknown action, {request_action}")
 
         auth_request = AuthorizationRequest(
             cloud_provider=cloud_provider,
             container=container,
-            actions=combined_actions,
+            action=converted_action,
         )
 
         return auth_request
@@ -200,34 +189,32 @@ class AzureStoragePolicy(AuthorizationPolicy):
 
             # check requested cloud provider
             if auth_request.cloud_provider != self._policy.cloud_provider:
-                print(f"[request check failed] cloud provider; expected {self._policy.cloud_provider}, got {auth_request.cloud_provider}")
+                LOGGER.warning(
+                    f"[request check failed] cloud provider; expected {self._policy.cloud_provider}, got {auth_request.cloud_provider}"
+                )
                 return (None, False)
 
             # check requested container
             if auth_request.container not in self._policy.containers:
-                print(f"[request check failed] container; expected {self._policy.containers}, got {auth_request.container}")
+                LOGGER.warning(
+                    f"[request check failed] container; expected {self._policy.containers}, got {auth_request.container}"
+                )
                 return (None, False)
 
             # check requested actions
-            if StoragePolicyAction.NONE in auth_request.actions:
-                print(f"[request check failed] action; expected subset of {self._policy.actions}, got {auth_request.actions}")
+            if (
+                auth_request.action == StoragePolicyAction.NONE or
+                auth_request.action not in self._policy.actions
+            ):
+                LOGGER.warning(
+                    f"[request check failed] action; expected subset of {self._policy.actions}, got {auth_request.actions}"
+                    )
                 return (None, False)
-            else:
-                for requested_action in auth_request.actions:
-                    if requested_action not in self._policy.actions:
-                        print(f"[request check failed] action; expected subset of {self._policy.actions}, got {auth_request.actions}")
-                        return (None, False)
 
             # passed all checks
             return (auth_request, True)
         else:
-            if logger:
-                logger.log_text(
-                    f"Request is unrecognized (azure_storage_policy.py): {request.url}",
-                    severity="WARNING",
-                )
-            else:
-                print(
-                    f"Request is unrecognized (azure_storage_policy.py): {request.url}, {request.method}"
-                )
+            LOGGER.warning(
+                f"Request is unrecognized (azure_storage_policy.py): {request.url}, {request.method}"
+            )
             return (None, False)

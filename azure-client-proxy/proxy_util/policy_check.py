@@ -9,10 +9,20 @@ from typing import Tuple, Union
 from skydentity.policies.managers.azure_authorization_policy_manager import (
     AzureAuthorizationPolicyManager,
 )
+from skydentity.policies.managers.azure_storage_policy_manager import (
+    AzureStoragePolicyManager,
+)
 from skydentity.policies.managers.azure_policy_manager import AzurePolicyManager
 from skydentity.utils.hash_util import hash_public_key
 
-from .credentials import get_capability_enc_key, get_db_info_file, get_db_endpoint, get_db_key, get_capability_enc_key_base64
+from .credentials import (
+    get_capability_enc_key, 
+    get_db_info_file, 
+    get_db_endpoint, 
+    get_db_key, 
+    get_capability_enc_key_base64,
+    get_storage_connection_string
+)
 from .logging import get_logger, print_and_log, build_time_logging_string
 
 
@@ -37,6 +47,14 @@ def get_authorization_policy_manager() -> AzureAuthorizationPolicyManager:
         db_key=get_db_key()
     )
 
+@cache
+def get_storage_policy_manager() -> AzureStoragePolicyManager:
+    return AzureStoragePolicyManager(
+        db_info_file=get_db_info_file(),
+        db_endpoint=get_db_endpoint(),
+        db_key=get_db_key(),
+        storage_account_connection_string=get_storage_connection_string()
+    )
 
 def check_request_from_policy(public_key_bytes, request, request_id=None, caller_name=None) -> Tuple[bool, Union[str, None]]:
     """

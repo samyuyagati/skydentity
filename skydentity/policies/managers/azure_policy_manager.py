@@ -1,6 +1,6 @@
 import json
-from functools import cache
-from typing import Type, Union
+from datetime import datetime
+from typing import Type, Union, Dict
 
 from azure.cosmos import CosmosClient
 from azure.cosmos.partition_key import PartitionKey
@@ -40,6 +40,8 @@ class AzurePolicyManager(PolicyManager):
 
         self._client = CosmosClient(db_endpoint, db_key)
         self._db = self._client.create_database_if_not_exists(db_name)
+        self._policies = {}
+        self._policies_last_read = None
         partition_key = PartitionKey(path = '/id')
         self._container = self._db.create_container_if_not_exists(db_container_name, partition_key = partition_key)
 
@@ -49,21 +51,29 @@ class AzurePolicyManager(PolicyManager):
         :param public_key_hash: The public key of the policy.
         :param policy: The policy to upload.
         """
+        self.upload_policy_dict(public_key_hash, policy.to_dict())
+
+    def upload_policy_dict(self, public_key_hash: str, policy_dict: Dict):
+        """
+        Uploads a policy to Azure.
+        :param public_key_hash: The public key of the policy.
+        :param policy: The policy to upload.
+        """
         self._container.upsert_item(
             body = {
                 'id': public_key_hash,
-                'policy': policy.to_dict()
+                'policy': policy_dict
             },
         )
 
-    # Cache the policies to avoid unnecessary calls to the database
-    @cache
     def get_policy(self, public_key_hash: str) -> Union[AzurePolicy, AzureAuthorizationPolicy]:
         """
         Gets a policy from the cloud vendor.
         :param public_key_hash: The public key of the policy.
         :return: The policy.
         """
+        if public_key_hash in self._policies and (datetime.now() - self._policies_last_read).total_seconds() < 30.0:
+            return self._policies[public_key_hash]
         try:
             policy = self._policy_type.from_dict(
                 self._container.read_item(
@@ -71,6 +81,8 @@ class AzurePolicyManager(PolicyManager):
                     partition_key = public_key_hash,
                 )['policy']
             )
+            self._policies[public_key_hash] = policy
+            self._policies_last_read = datetime.now()
             return policy
         except Exception as e:
             print("Failed to get policy from Azure, possibly due to invalid public key:", e)
