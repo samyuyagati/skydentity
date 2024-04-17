@@ -14,6 +14,7 @@ from Crypto.PublicKey import RSA
 from Crypto.Signature import pkcs1_15
 from Crypto.Hash import SHA256
 from flask import Flask, Response, request
+from flask import stream_with_context
 from typing import Dict, Optional, Tuple
 from functools import cache
 from .logging import build_time_logging_string
@@ -364,7 +365,7 @@ def get_new_url(request):
     return new_url
 
 
-def forward_to_client(request, new_url: str, new_headers=None, new_json=None, new_data=None):
+def forward_to_client(request, new_url: str, new_headers=None, new_json=None, new_data=None, stream=None):
     """
     Forward the request to the client proxy, with new headers, URL, and request body.
     """
@@ -380,7 +381,8 @@ def forward_to_client(request, new_url: str, new_headers=None, new_json=None, ne
             headers=new_headers,
             cookies=request.cookies,
             allow_redirects=False,
-            data=new_data
+            data=new_data,
+            stream=stream
         )
     return REQUEST_SESSION.request(
         method=request.method,
@@ -389,7 +391,8 @@ def forward_to_client(request, new_url: str, new_headers=None, new_json=None, ne
         json=new_json,
         cookies=request.cookies,
         allow_redirects=False,
-        data=new_data
+        data=new_data,
+        stream=stream
     )
 
 # cache for access tokens
@@ -464,7 +467,7 @@ def upload_blob(request, container, blob):
     request_name = request.method.upper() + str(random.randint(0, 1000)) + request.path
     upload_start = time.perf_counter()
 
-    # token_start = time.perf_counter()
+    token_start = time.perf_counter()
     access_token, expiration_timestamp, req_status = request_storage_token(
         container, "OVERWRITE_FALLBACK_UPLOAD"
     )
@@ -500,8 +503,10 @@ def upload_blob(request, container, blob):
         STORAGE_ENDPOINT.strip("/") + "/",
     )
     access_token = access_token.replace("%3A", ":")
-    storage_url += f"?{access_token}"
-
+    if "?" in storage_url:
+        storage_url += f"&{access_token}"
+    else:
+        storage_url += f"?{access_token}"
     LOGGER.debug("Sending to storage URL:", storage_url)
     # forward directly to the Azure endpoint; no need to go through client proxy
     forward_start = time.perf_counter()
@@ -571,7 +576,7 @@ def download_blob(request, container, blob):
 
     # forward directly to the Azure endpoint; no need to go through client proxy
     forward_start = time.perf_counter()
-    azure_response = forward_to_client(request, storage_url, new_headers=new_headers)
+    azure_response = forward_to_client(request, storage_url, new_headers=new_headers, stream=True)
     LOGGER.info(build_time_logging_string(
             request_name,
             "skypilot_forward:download_blob",
@@ -591,4 +596,4 @@ def download_blob(request, container, blob):
         time.perf_counter(),
         )
     )
-    return Response(azure_response.content, azure_response.status_code, headers=dict(azure_response.headers))
+    return Response(stream_with_context(azure_response.iter_content(chunk_size=None)), azure_response.status_code, headers=dict(azure_response.headers))
