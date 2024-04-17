@@ -17,35 +17,44 @@ from .log_util import build_time_logging_string
 LOGGER = py_logging.getLogger(__name__)
 
 
-def sign_request(request, private_key_path: str):
+def sign_request(request, private_key):
     """
     Sign a request using the given private key file.
     Used in the redirector proxy.
 
     Returns the modified request headers, with added headers for the signature.
     """
+    start = time.perf_counter()
     new_headers = {k: v for k, v in request.headers}
 
-    with open(private_key_path, "rb") as key_file:
-        contents = key_file.read()
-        private_key = RSA.import_key(contents)
+    start_read = time.perf_counter()
+    #with open(private_key_path, "rb") as key_file:
+    #    contents = key_file.read()
+    #    private_key = RSA.import_key(contents)
+    LOGGER.info(f"private key: {private_key}")
 
     # assume set, predetermined/agreed upon tolerance on client proxy/receiving end
     # use utc for consistency if server runs in cloud in different region
     timestamp = datetime.datetime.now(datetime.timezone.utc).timestamp()
+    start_pk = time.perf_counter()
     public_key_string = private_key.public_key().export_key()
+    LOGGER.info(f"Time to get public key: {time.perf_counter() - start_pk}")
 
     # message = f"{str(request.method)}-{timestamp}-{public_key_string}"
     message = f"{str(request.method)}-{timestamp}-{public_key_string}"
     message_bytes = message.encode("utf-8")
 
+    start_sign = time.perf_counter()
     h = SHA256.new(message_bytes)
     # TODO should we be using PSS?
     signature = pkcs1_15.new(private_key).sign(h)
+    LOGGER.info(f"Time to sign: {time.perf_counter() - start_sign}")
 
     # base64 encode the signature and public key
+    start_encode = time.perf_counter()
     encoded_signature = base64.b64encode(signature)
     encoded_public_key_string = base64.b64encode(public_key_string)
+    LOGGER.info(f"Time to encode: {time.perf_counter() - start_encode}")
 
     new_headers["X-Signature"] = encoded_signature
     new_headers["X-Timestamp"] = str(timestamp)
@@ -78,7 +87,7 @@ def verify_request_signature(
         )
     except ValueError:
         # invalid timestamp
-        LOGGER.info(
+        LOGGER.warning(
             build_time_logging_string(
                 request_name,
                 caller,
@@ -96,7 +105,7 @@ def verify_request_signature(
     now = datetime.datetime.now(datetime.timezone.utc)
     if now - datetime.timedelta(seconds=60) > timestamp_datetime:
         # if timestamp when request was sent is > 60 seconds old, deny the request
-        LOGGER.info(
+        LOGGER.warning(
             build_time_logging_string(
                 request_name,
                 caller,
@@ -116,7 +125,7 @@ def verify_request_signature(
     try:
         pkcs1_15.new(public_key).verify(h, signature)
     except (ValueError, TypeError):
-        LOGGER.info(
+        LOGGER.warning(
             build_time_logging_string(
                 request_name,
                 caller,

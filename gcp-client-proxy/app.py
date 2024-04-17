@@ -1,10 +1,9 @@
 import logging as py_logging
 import os
 
-from flask import Flask
+from flask import Flask, Response
 from google.cloud import logging as gcp_logging
 
-from skydentity.proxy_util.gcp.logging import get_logger, print_and_log
 from skydentity.proxy_util.gcp.skypilot_forward import setup_routes
 from skydentity.utils.log_util import build_file_handler
 
@@ -32,13 +31,13 @@ LOGGER.addHandler(build_file_handler("authorizer.log"))
 ######
 
 
-@app.route("/hello", methods=["GET"])
-def handle_hello():
+@app.route("/ping", methods=["GET"])
+def handle_ping():
     """
-    Debugging route.
+    Ping the proxy.
     """
-    LOGGER.debug("Hello!")
-    return "Hello"
+    LOGGER.debug("Ping!")
+    return Response(status=204)
 
 
 def setup_app():

@@ -25,9 +25,6 @@ class GCPServiceAccountManager:
         """
         :param credentials_path: path to service account json
         """
-        py_logging.basicConfig(
-            filename="gcp_service_account_manager.log", level=py_logging.INFO
-        )
         LOGGER.debug(f"Credentials path: {credentials_path}")
         self._service_accounts = {}
         self._credentials = service_account.Credentials.from_service_account_file(

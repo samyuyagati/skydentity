@@ -20,9 +20,9 @@ parser.add_argument("--delete", action="store_true", help="Delete instances afte
 args = parser.parse_args()
 
 if args.api_endpoint != None:
-    LOGS_DIR = "logs/with_skydentity"
+    LOGS_DIR = f"logs/with_skydentity_{args.batch_size}"
 else:
-    LOGS_DIR = "logs/baseline"
+    LOGS_DIR = f"logs/baseline_{args.batch_size}"
 
 def run_sequential(num_requests):
     for i in range(num_requests):
@@ -57,7 +57,7 @@ def run_concurrent(num_requests, batch_size=None):
             if (args.api_endpoint != None):
                 cur_subprocess = subprocess.Popen(
                     [
-                        #"time",
+                        "/usr/bin/time",
                         "python",
                         "test_server.py",
                         "--project",
@@ -76,7 +76,7 @@ def run_concurrent(num_requests, batch_size=None):
             else:
                 cur_subprocess = subprocess.Popen(
                     [
-                        #"time",
+                        "/usr/bin/time",
                         "python",
                         "test_server.py",
                         "--credentials",
@@ -117,11 +117,13 @@ def main():
         print("Running sequential requests")
         run_sequential(args.num_requests)
     if args.delete:
-        print("Waiting ten seconds for instances to come up...")
-        time.sleep(10)
+        print("Waiting thirty seconds for instances to come up...")
+        time.sleep(30)
         print("Deleting instances...")
         for i in range(args.num_requests):
             delete_instance(args.project, args.zone, f"gcp-clilib-{i}")
+        print("Waiting two minutes for deletion to complete...")
+        time.sleep(120)
 
 if __name__ == "__main__":
     main()

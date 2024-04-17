@@ -1,4 +1,5 @@
 from typing import List
+from datetime import datetime
 
 from google.cloud import compute_v1
 from google.oauth2 import service_account
@@ -19,11 +20,13 @@ parser.add_argument('--api-endpoint', type=str, default=None, help='API endpoint
 parser.add_argument("--credentials", type=str, default=None, help="Path to the service account key file")
 parser.add_argument("--vm-id", type=str, default="", help="ID of the VM to create")
 
-def get_dummy_credentials() -> service_account.Credentials:
-    return service_account.Credentials.from_service_account_file(
-        DUMMY_CREDS)
+def get_dummy_credentials(credentials=None) -> service_account.Credentials:
+    if credentials:
+        return service_account.Credentials.from_service_account_file(
+            credentials)
+    return service_account.Credentials.from_service_account_file(DUMMY_CREDS)
 
-def get_image_from_family(project: str, family: str, api_endpoint=None) -> compute_v1.Image:
+def get_image_from_family(project: str, family: str, api_endpoint=None, credentials=None) -> compute_v1.Image:
     """
     Retrieve the newest image that is part of a given family in a project.
 
@@ -39,7 +42,7 @@ def get_image_from_family(project: str, family: str, api_endpoint=None) -> compu
         image_client = compute_v1.ImagesClient(credentials=get_dummy_credentials(),
             client_options=options)
     else:
-        image_client = compute_v1.ImagesClient(credentials=get_dummy_credentials())
+        image_client = compute_v1.ImagesClient(credentials=get_dummy_credentials(credentials=credentials))
     newest_image = image_client.get_from_family(project=project, family=family)
     return newest_image
 
@@ -109,6 +112,7 @@ def create_instance(
     machine_type: str = "e2-micro",
     network_link: str = "global/networks/default",
     api_endpoint=None,
+    credentials=None,
 ) -> compute_v1.Instance:
     """
     Send an instance creation request to the Compute Engine API and wait for it to complete.
@@ -131,7 +135,7 @@ def create_instance(
         instance_client = compute_v1.InstancesClient(credentials=get_dummy_credentials(),
             client_options=options)
     else:
-        instance_client = compute_v1.InstancesClient(credentials=get_dummy_credentials())
+        instance_client = compute_v1.InstancesClient(credentials=get_dummy_credentials(credentials=credentials))
 
     # Use the network interface provided in the network_link argument.
     network_interface = compute_v1.NetworkInterface()
@@ -163,6 +167,8 @@ def create_instance(
 
     # Wait for the create operation to complete.
     #print(f"Sending creation request for the {instance_name} instance in {zone} to Sky Identity...")
+
+    print("Sending create instance req: ", datetime.now())
 
     operation = instance_client.insert(request=request)
 
@@ -196,7 +202,10 @@ def get_image(api_endpoint=None):
 def main():
     disks = get_image(api_endpoint=args.api_endpoint)
     start = time.perf_counter()
-    create_instance(args.project, args.zone, f"gcp-clilib-{args.vm_id}", disks, api_endpoint=args.api_endpoint)
+    if args.api_endpoint != None:
+        create_instance(args.project, args.zone, f"gcp-clilib-{args.vm_id}", disks, api_endpoint=args.api_endpoint)
+    else:
+        create_instance(args.project, args.zone, f"gcp-clilib-{args.vm_id}", disks, credentials=args.credentials)
     print(f"Time for instance creation req: ", time.perf_counter() - start)
 
 if __name__ == "__main__":

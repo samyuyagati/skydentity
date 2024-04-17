@@ -1,5 +1,6 @@
 import logging as py_logging
 
+from datetime import datetime
 import firebase_admin
 from firebase_admin import credentials, firestore
 
@@ -30,6 +31,8 @@ class GCPPolicyManager(PolicyManager):
             self._app = firebase_admin.get_app("policy_manager")
         self._db = firestore.client(self._app)
         self._firestore_policy_collection = firestore_policy_collection
+        self._policies = {}
+        self._policies_last_read = None
 
     def upload_policy(self, public_key_hash: str, policy: GCPPolicy):
         """
@@ -48,6 +51,9 @@ class GCPPolicyManager(PolicyManager):
         :param public_key: The public key of the policy.
         :return: The policy.
         """
+        # Cache already-read policies for 30 seconds
+        if public_key_hash in self._policies and (datetime.now() - self._policies_last_read).total_seconds() < 30.0:
+            return self._policies[public_key_hash]
         try:
             policy = GCPPolicy.from_dict(
                 self._db.collection(self._firestore_policy_collection)
@@ -55,6 +61,8 @@ class GCPPolicyManager(PolicyManager):
                 .get()
                 .to_dict()
             )
+            self._policies[public_key_hash] = policy
+            self._policies_last_read = datetime.now()
             return policy
         except Exception as e:
             LOGGER.warning(
