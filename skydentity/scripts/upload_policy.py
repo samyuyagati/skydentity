@@ -100,7 +100,7 @@ def main():
     else:
         raise Exception("Cloud not supported. Supported types are gcp and azure")
 
-    if not args.storage:
+    if not (formatted_cloud == "azure" and args.storage):
         local_policy_manager = LocalPolicyManager(policy_type)
         read_from_local_policy = local_policy_manager.get_policy(args.policy)
         cloud_policy_manager.upload_policy(hashed_public_key, read_from_local_policy)

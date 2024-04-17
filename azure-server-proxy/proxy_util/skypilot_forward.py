@@ -19,11 +19,6 @@ from functools import cache
 from .logging import build_time_logging_string
 
 LOGGER = py_logging.getLogger(__name__)
-py_logging.basicConfig(filename='redirector.log',
-                    filemode='a',
-                    format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
-                    datefmt='%H:%M:%S',
-                    level=py_logging.INFO)
 
 # reuse the request session across multiple forwarding calls
 # otherwise, there are some issues with connectivity latency
@@ -464,7 +459,7 @@ def upload_blob(request, container, blob):
     request_name = request.method.upper() + str(random.randint(0, 1000)) + request.path
     upload_start = time.perf_counter()
 
-    # token_start = time.perf_counter()
+    token_start = time.perf_counter()
     access_token, expiration_timestamp, req_status = request_storage_token(
         container, "OVERWRITE_FALLBACK_UPLOAD"
     )
@@ -502,7 +497,7 @@ def upload_blob(request, container, blob):
     access_token = access_token.replace("%3A", ":")
     storage_url += f"?{access_token}"
 
-    LOGGER.debug("Sending to storage URL:", storage_url)
+    LOGGER.debug("Sending to storage URL: %s", storage_url)
     # forward directly to the Azure endpoint; no need to go through client proxy
     forward_start = time.perf_counter()
     azure_response = forward_to_client(request, storage_url, new_headers=new_headers, new_data=request.get_data())
