@@ -31,4 +31,4 @@ USER appuser
 WORKDIR /app/proxy
 
 # Provides defaults for an executing container; can be overridden with Docker CLI.
-CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "1", "--threads", "1", "--timeout", "0", "app:app"]
+CMD exec gunicorn --bind 0.0.0.0:5001 --workers 1 --threads 4 --timeout 0 app:app

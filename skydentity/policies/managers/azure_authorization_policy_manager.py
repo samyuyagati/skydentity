@@ -4,6 +4,7 @@ import secrets
 import string
 from typing import Dict
 from functools import cache
+import re
 
 from skydentity.policies.managers.policy_manager import PolicyManager
 from skydentity.policies.checker.azure_authorization_policy import AzureAuthorizationPolicy
@@ -44,6 +45,10 @@ class AzureAuthorizationPolicyManager(PolicyManager):
         else:
             self._capability_enc = capability_enc
 
+        self.azure_managed_identity_manager = AzureManagedIdentityManager(self.get_subscription_id())
+        self.resource_group_extractor = re.compile(r"resourcegroups/(?P<resourceGroup>[^/]+)/providers")
+
+    @cache
     def get_policy_dict(self, public_key_hash: str) -> Dict:
         return self._internal_policy_manager.get_policy(public_key_hash).to_dict()
     
@@ -86,26 +91,34 @@ class AzureAuthorizationPolicyManager(PolicyManager):
         subscription_client = SubscriptionClient(credential)
         subscription = next(subscription_client.subscriptions.list())
         return subscription.subscription_id
-        
+    
+    def duplicate_managed_identity(self, managed_identity_full: str, target_resource_group: str):
+        """
+        Duplicates a managed identity to a new resource group.
+        """
+        source_resource_group = self.resource_group_extractor.search(managed_identity_full).group('resourceGroup')
+        managed_identity_name = managed_identity_full.split('/')[-1]
+        self.azure_managed_identity_manager.duplicate_managed_identity_in_different_resource_group(
+            source_resource_group, managed_identity_name, target_resource_group
+        )
+
     def create_managed_identity_with_roles(self, authorization: AzureAuthorizationPolicy) -> str:
         """
         Creates a managed identity with the roles specified in the policy.
         :param authorization: The AuthorizationPolicy specifying the roles for the managed identity.
         :return The created managed identity name.
         """
-        azure_managed_identity_manager = AzureManagedIdentityManager(self.get_subscription_id())
-
         # Create random managed identity name from a random 64 bit value
         account_name = secrets.choice(string.ascii_letters) + secrets.token_hex(8)
 
         # Create managed identity
-        full_id = azure_managed_identity_manager.create_managed_identity(
+        full_id = self.azure_managed_identity_manager.create_managed_identity(
             authorization=authorization,
             managed_identity_name=account_name
         )
 
         # Add roles to managed identity
-        azure_managed_identity_manager.add_roles_to_managed_identity(
+        self.azure_managed_identity_manager.add_roles_to_managed_identity(
             authorization=authorization,
             managed_identity_name=account_name
         )

@@ -8,3 +8,8 @@ For serverless deployment, need to choose between Azure Container Apps, Azure Co
     - Between Azure Container Apps and Azure Functions, Azure Funtions appears to have higher costs while idle which is I think is good to consider for our case
 
     - For deploying a Flask app with Azure Container Apps: https://learn.microsoft.com/en-us/azure/developer/python/tutorial-containerize-simple-web-app?tabs=web-app-flask 
+
+=================
+Update: Everything currently in terms of the serverless function is manually set up
+To build Dockerfile, as things are currently stored in Dockerhub, run 
+docker build . -t kdharmarajan123/skydentity:latest -f /home/kdharmarajan/skydentity/serverless-azure-skydentity/Dockerfile

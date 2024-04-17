@@ -13,9 +13,18 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.backends import default_backend
 
 # Global file variables; underscore to prevent external imports
-_CAPABILITY_ENC_KEY_FILE = os.environ.get("CAPABILITY_ENC_KEY_FILE", None)
+# The secrets folder contains the files for each of the secrets below in the following names:
+# Folder in serverless instance: /cloud_creds
+# APP_ID: app-id
+# APP_SECRET: app-secret
+# DB_INFO_FILE: (the actual value here should be) /cloud_creds/azure-db-info
+# CONNECTION_STRING: azure-storage-connection-string
+# CAPABILITY_ENC_KEY: capability-enc-key
+# TENANT_ID: tenant-id
+_SECRETS_FOLDER = os.environ.get("SECRETS_FOLDER", None)
 _DB_INFO_FILE = os.environ.get("AZURE_DB_INFO_FILE", None)
 
+_CAPABILITY_ENC_KEY_FILE = os.environ.get("CAPABILITY_ENC_KEY_FILE", None)
 _CAPABILITY_ENC_KEY = os.environ.get("CAPABILITY_ENC_KEY", None)
 _DB_ENDPOINT = os.environ.get("AZURE_DB_ENDPOINT", None)
 _DB_KEY = os.environ.get("AZURE_DB_KEY", None)
@@ -24,10 +33,52 @@ _TENANT_ID = os.environ.get("TENANT_ID", None)
 _APP_SECRET = os.environ.get("APP_SECRET", None)
 _APP_ID = os.environ.get("APP_ID", None)
 
+_CONNECTION_STRING = os.environ.get("AZURE_STORAGE_CONNECTION_STRING", None)
+
+loaded_secrets = False
+def load_secrets():
+    """
+    Load secrets from the secrets folder.
+    """
+    global _CAPABILITY_ENC_KEY
+    global _DB_INFO_FILE
+    global _DB_ENDPOINT
+    global _TENANT_ID
+    global _APP_SECRET
+    global _APP_ID
+    global _CONNECTION_STRING
+    global loaded_secrets
+
+    if loaded_secrets:
+        return
+
+    with open(os.path.join(_SECRETS_FOLDER, "app-id"), "r") as f:
+        _APP_ID = f.read().strip()
+
+    with open(os.path.join(_SECRETS_FOLDER, "app-secret"), "r") as f:
+        _APP_SECRET = f.read().strip()
+
+    _DB_INFO_FILE = os.path.join(_SECRETS_FOLDER, "azure-db-info")
+
+    with open(os.path.join(_SECRETS_FOLDER, "capability-enc-key"), "r") as f:
+        _CAPABILITY_ENC_KEY = f.read().strip()
+
+    with open(os.path.join(_SECRETS_FOLDER, "tenant-id"), "r") as f:
+        _TENANT_ID = f.read().strip()
+
+    with open(os.path.join(_SECRETS_FOLDER, "azure-storage-connection-string"), "r") as f:
+        _CONNECTION_STRING = f.read().strip()
+
+    loaded_secrets = True
+    print("Loaded secrets")    
+
+if _SECRETS_FOLDER is not None:
+    load_secrets()
+
 # validate global constants from environment variables
-assert (_CAPABILITY_ENC_KEY_FILE is not None and os.path.isfile(_CAPABILITY_ENC_KEY_FILE)) \
-    or _CAPABILITY_ENC_KEY is not None
+assert _CAPABILITY_ENC_KEY is not None
 assert (_DB_INFO_FILE is not None) or (_DB_ENDPOINT is not None and _DB_KEY is not None)
+assert _CONNECTION_STRING is not None
 
 @cache
 def get_managed_identity_auth_token() -> bytes:
@@ -119,3 +170,9 @@ def _generate_rsa_key_pair() -> Tuple[str, str]:
         serialization.PublicFormat.OpenSSH).decode('utf-8').strip()
 
     return public_key, private_key
+
+def get_storage_connection_string() -> str:
+    """
+    Retrieve the connection string for the Azure Storage Account.
+    """
+    return _CONNECTION_STRING
