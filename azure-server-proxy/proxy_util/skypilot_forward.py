@@ -365,13 +365,29 @@ def get_new_url(request):
     return new_url
 
 
-def forward_to_client(request, new_url: str, new_headers=None, new_json=None, new_data=None, stream=None):
+def forward_to_client(request, new_url: str, new_headers=None, new_json=None, new_data=None, stream=None, use_prepared_request=False):
     """
     Forward the request to the client proxy, with new headers, URL, and request body.
     """
     if new_headers is None:
         # default to the current headers
         new_headers = request.headers
+
+    if use_prepared_request:
+        prepared_request = requests.Request(
+            method=request.method,
+            url=new_url,
+            headers=new_headers,
+            cookies=request.cookies,
+            data=new_data,
+            json=new_json,
+        ).prepare()
+        if "Transfer-Encoding" in prepared_request.headers:
+            del prepared_request.headers["Transfer-Encoding"]
+
+        return REQUEST_SESSION.send(prepared_request,
+                                    allow_redirects=False,
+                                    stream=stream)
 
     # If no JSON body, don't include a json body in proxied request
     if len(request.get_data()) == 0:
@@ -510,7 +526,7 @@ def upload_blob(request, container, blob):
     LOGGER.debug("Sending to storage URL:", storage_url)
     # forward directly to the Azure endpoint; no need to go through client proxy
     forward_start = time.perf_counter()
-    azure_response = forward_to_client(request, storage_url, new_headers=new_headers, new_data=request.get_data())
+    azure_response = forward_to_client(request, storage_url, new_headers=new_headers, new_data=request.stream, use_prepared_request=True)
     LOGGER.info(build_time_logging_string(
             request_name,
             "skypilot_forward:upload_blob",
