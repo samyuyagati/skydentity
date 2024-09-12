@@ -7,6 +7,7 @@ build
 gunicorn
 pyyaml
 pycryptodome
+backoff
 # Azure
 azure-mgmt-resource 
 azure-mgmt-compute
@@ -16,6 +17,7 @@ azure-mgmt-authorization
 azure-mgmt-subscription
 azure-identity
 azure-cosmos
+azure-storage-blob
 # GCP
 google-cloud-compute
 google-cloud-logging

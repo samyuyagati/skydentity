@@ -65,13 +65,15 @@ prefix = "skydentity-test"
 
 NUM_JOBS = args.num_jobs
 api_endpoint = "https://compute.googleapis.com/"
+# GCP with skydentity
+if args.with_skydentity:
+    api_endpoint = "http://127.0.0.1:5000/"
 if args.cloud == "azure":
     api_endpoint = "https://management.azure.com/"
     if args.with_skydentity:
         api_endpoint = "https://127.0.0.1:5000/"
-# GCP with skydentity
-if args.with_skydentity:
-    api_endpoint = "http://127.0.0.1:5000/"
+
+print("API endpoint:", api_endpoint)
 
 print("API endpoint:", api_endpoint)
 
@@ -112,7 +114,7 @@ for batch in range(num_batches):
                     f"{prefix}-{i}",
                     "job.yaml",
                     "-c",
-                    "skydentity"
+                    f"skydentity-{i}"
                 ],
                 stdout=out_fd,
                 stderr=err_fd,
@@ -133,7 +135,9 @@ for batch in range(num_batches):
                     "-d",
                     "-n",
                     f"{prefix}-{i}",
-                    "job.yaml"
+                    "job.yaml",
+                    "-c",
+                    f"skydentity-{i}"
                 ],
                 stdout=out_fd,
                 stderr=err_fd,
