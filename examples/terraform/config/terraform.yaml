@@ -1,0 +1,64 @@
+virtual_machine:
+  cloud_provider:
+    - gcp
+
+  actions:
+    - ALL
+
+  regions:
+    - gcp:
+        - us-west1
+        - us-west1-b
+
+  # Can specify max hardware spec or a list of allowed machines
+  instance_type:
+    - gcp:
+        - n1-standard-1
+        - n1-standard-2
+
+  allowed_images:
+    - gcp:
+        - debian-10-buster-v20240213
+        - debian-10-buster-v20240110
+        - ubuntu-1604-xenial-v20181029
+        - ubuntu-1804-bionic-v20181029
+        - ubuntu-2204-jammy-v20240223
+
+# vpcs as a diff fresource type
+
+  startup_scripts:
+      - gcp:
+        # sha256 hash of 'echo "startup"\n'
+        - 456aba8c6835deb2e69602b60e34c23ef129c0e0eb70b08bcd4b9e80ef8e8fcb
+
+attached_authorizations:
+  - gcp:
+      - authorization:
+          - placeholder
+
+# auxiliary read requests made during setup
+# TODO: if reads is included then check the reads; otherwise disallow all reads
+reads:
+  gcp:
+    # /compute/v1/projects/<project>/...
+    project: sky-identity
+
+    # /compute/v1/projects/<project>/regions/<region>/...
+    regions:
+      - us-west1
+    # /compute/v1/projects/<project>/zones/<zone>/...
+    zones:
+      - us-west1-b
+
+    # /compute/v1/projects/<project>/aggregated/reservations
+    reservations: true
+    # /compute/v1/projects/<project>/global/firewalls
+    # /compute/v1/projects/<project>/global/networks/<network>/getEffectiveFirewalls
+    firewalls: true
+    # /compute/v1/projects/<project>/regions/<region>/subnetworks
+    subnetworks: true
+
+    # filter for GET
+    # /compute/v1/projects/<project>/global/operations/<operation>
+    # /compute/v1/projects/<project>/zones/<region>/operations/<operation>
+    operations: true

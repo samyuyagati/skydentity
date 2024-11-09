@@ -1,0 +1,37 @@
+attached_authorizations:
+- gcp:
+  - authorization: Adc79b174a7695875@sky-identity.iam.gserviceaccount.com
+reads:
+  gcp:
+    firewalls: true
+    operations: true
+    project: sky-identity
+    regions:
+    - us-west1
+    reservations: true
+    subnetworks: true
+    zones:
+    - us-west1-b
+virtual_machine:
+  actions:
+  - ALL
+  allowed_images:
+  - gcp:
+    - debian-10-buster-v20240213
+    - debian-10-buster-v20240110
+    - ubuntu-1604-xenial-v20181029
+    - ubuntu-1804-bionic-v20181029
+    - ubuntu-2204-jammy-v20240223
+  cloud_provider:
+  - gcp
+  instance_type:
+  - gcp:
+    - n1-standard-1
+    - n1-standard-2
+  regions:
+  - gcp:
+    - us-west1
+    - us-west1-b
+  startup_scripts:
+  - gcp:
+    - 456aba8c6835deb2e69602b60e34c23ef129c0e0eb70b08bcd4b9e80ef8e8fcb

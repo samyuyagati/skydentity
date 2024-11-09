@@ -1,0 +1,14 @@
+storage:
+  cloud_provider:
+    - GCP
+
+  project:
+    - sky-identity
+
+  actions:
+    - READ
+    - UPLOAD
+    - OVERWRITE
+
+  buckets:
+    - sky-identity-astro-test-bucket

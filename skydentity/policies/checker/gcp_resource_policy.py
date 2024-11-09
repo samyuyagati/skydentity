@@ -148,7 +148,8 @@ class GCPVMPolicy(VMPolicy):
             for interface in interfaces:
                 # Basic network config
                 if "network" in interface:
-                    if interface.get("network", None) != "global/networks/default":
+                    network = interface.get("network", None)
+                    if network is None or not network.endswith("global/networks/default"):
                         LOGGER.debug(f"network interface denied (network mismatch) {interface}")
                         return False
                     continue
@@ -165,9 +166,9 @@ class GCPVMPolicy(VMPolicy):
                     access_config_type = access_config.get("type", None)
 
                     if (
-                        access_config_name is None
-                        or access_config_type is None
-                        or access_config_name != "External NAT"
+                        # access_config_name is None
+                        access_config_type is None
+                        # or access_config_name != "External NAT"
                         or access_config_type != "ONE_TO_ONE_NAT"
                     ):
                         LOGGER.debug(
@@ -194,10 +195,10 @@ class GCPVMPolicy(VMPolicy):
                     LOGGER.debug(f"network interface denied (subnetwork mismatch) {interface}")
                     return False
 
-        if "scheduling" in request_contents:
-            if request_contents["scheduling"] != None:
-                LOGGER.debug(f"scheduling denied {request_contents['scheduling']}")
-                return False
+        # if "scheduling" in request_contents:
+        #     if request_contents["scheduling"] != None:
+        #         LOGGER.debug(f"scheduling denied {request_contents['scheduling']}")
+        #         return False
 
         return True
 
@@ -244,7 +245,7 @@ class GCPVMPolicy(VMPolicy):
 
             # Extract the region from the machine type
             extracted_region_and_machine_type = (
-                GCPVMPolicy.REGION_AND_INSTANCE_TYPE_REGEX.match(full_machine_type)
+                GCPVMPolicy.REGION_AND_INSTANCE_TYPE_REGEX.search(full_machine_type)
             )
 
             out_dict["instance_type"].append(
@@ -763,6 +764,8 @@ class GCPPolicy(CloudPolicy):
             "labels",
             "scheduling",
             "tags",
+            "deletionProtection",
+            "canIpForward"
         ]
     )
     ATTACHED_AUTHORIZATION_KEYS = set(["serviceAccounts"])
@@ -904,6 +907,7 @@ class GCPPolicy(CloudPolicy):
         :param policy_dict: The dictionary representation of the policy.
         :return: The policy representation of the dict.
         """
+        LOGGER.warning(str(policy_dict))
         vm_dict = {}
         if "virtual_machine" in policy_dict:
             vm_dict = policy_dict["virtual_machine"]

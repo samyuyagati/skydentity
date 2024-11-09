@@ -46,8 +46,11 @@ ENV COMPUTE_API_ENDPOINT="https://compute.googleapis.com/"
 # capability encryption key
 ENV CAPABILITY_ENC_KEY_FILE="/cloud_creds/enc/capability_enc.key"
 
+# setting gcloud ADC
+ENV GOOGLE_APPLICATION_CREDENTIALS=$SERVICE_ACCOUNT_INFO_FILE
+
 # Launch HTTP server
-CMD exec gunicorn --bind :$PORT --workers 1 --threads 4 --timeout 0 app:app
+CMD exec gunicorn --bind :$PORT --workers 1 --threads 20 --timeout 0 app:app
 
 # Launch HTTPS server; only for local docker testing.
 #CMD exec gunicorn --bind :$PORT --workers 1 --threads 4 --timeout 0 --keyfile /certs/domain.key --certfile ./certs/domain.crt app:app 

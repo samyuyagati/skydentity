@@ -40,6 +40,7 @@ from .policy_check import (
     get_authorization_policy_manager,
     get_storage_policy_manager,
 )
+from .session import get_session
 
 LOGGER = py_logging.getLogger(__name__)
 
@@ -111,8 +112,18 @@ ROUTES: list[Route] = [
     ),
     Route(
         methods=["GET"],
+        path="/compute/v1/projects/<project>/global/networks/<network>",
+        fields=["project", "network"],
+    ),
+    Route(
+        methods=["GET"],
         path="/compute/v1/projects/<project>/global/networks/<network>/getEffectiveFirewalls",
         fields=["project", "network"],
+    ),
+    Route(
+        methods=["GET"],
+        path="/compute/v1/projects/<project>/zones/<region>",
+        fields=["project", "region"],
     ),
     Route(
         methods=["GET"],
@@ -130,6 +141,11 @@ ROUTES: list[Route] = [
         fields=["project", "region", "operation"],
     ),
     Route(
+        methods=["GET"],
+        path="/compute/v1/projects/<project>/zones/<region>/disks/<instance>",
+        fields=["project", "region", "instance"],
+    ),
+    Route(
         methods=["POST"],
         path="/compute/v1/projects/<project>/zones/<region>/instances/<instance>/setLabels",
         fields=["project", "region", "instance"],
@@ -140,7 +156,7 @@ ROUTES: list[Route] = [
         fields=["project", "region", "instance"],
     ),
     Route(
-        methods=["DELETE"],
+        methods=["GET", "DELETE"],
         path="/compute/v1/projects/<project>/zones/<region>/instances/<instance>",
         fields=["project", "region", "instance"],
     ),
@@ -159,6 +175,11 @@ ROUTES: list[Route] = [
         methods=["GET"],
         path="/download/storage/v1/b/<bucket>/o/<path:file>",
         fields=["bucket", "file"],
+    ),
+    Route(
+        methods=["GET"],
+        path="/storage/v1/b/<bucket>/o",
+        fields=["bucket"],
     ),
     # skydentity internal routes
     Route(
@@ -183,23 +204,16 @@ ROUTES: list[Route] = [
 ]
 
 
-@cache
-def get_session():
-    """
-    Cached requests session, shared across multiple requests;
-    this ensures that any connection pool information is cached
-    for as long as possible, and connections can be reused.
-    """
-    return requests.Session()
-
-
 def generic_forward_request(request, log_dict=None):
     """
     Forward a generic request to google APIs.
     """
+    LOGGER.debug("forwarding request %s", request)
     start = time.time()
 
-    request_name = request.method.upper() + str(random.randint(0, 1000)) + " " + request.path
+    request_name = (
+        request.method.upper() + str(random.randint(0, 1000)) + " " + request.path
+    )
     caller = "skypilot_forward:generic_forward_request"
 
     if log_dict is not None:

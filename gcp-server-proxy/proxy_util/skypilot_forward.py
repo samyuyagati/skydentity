@@ -13,9 +13,10 @@ from typing import Dict, Optional, Tuple
 
 import backoff
 import requests
-from flask import Flask, Request, Response, request
 from Crypto.PublicKey import RSA
+from flask import Flask, Request, Response, request
 
+from skydentity.proxy_util.gcp.session import get_session
 from skydentity.utils.log_util import build_time_logging_string
 
 from .signature import get_headers_with_signature
@@ -42,13 +43,6 @@ PRIVATE_KEY = RSA.import_key(open(PRIVATE_KEY_PATH).read())
 # requests_log.propagate = True
 # http.client.print = lambda *args: requests_log.debug(" ".join(args))
 ######
-
-# reuse the request session across multiple forwarding calls
-# otherwise, there are some issues with connectivity latency
-REQUEST_SESSION = requests.Session()
-adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20)
-REQUEST_SESSION.mount('http://', adapter)
-REQUEST_SESSION.mount('https://', adapter)
 
 SkypilotRoute = namedtuple(
     "SkypilotRoute",
@@ -90,7 +84,9 @@ def generic_forward_request(request, log_dict=None):
     Forward a generic request to google APIs.
     """
     start = time.perf_counter()
-    LOGGER.info(f"Redirector received request {request.method} {request.path}: {datetime.now()}")
+    LOGGER.info(
+        f"Redirector received request {request.method} {request.path}: {datetime.now()}"
+    )
     LOGGER.debug(str(log_dict))
     if log_dict is not None:
         log_str = f"PATH: {request.full_path}\n"
@@ -99,9 +95,13 @@ def generic_forward_request(request, log_dict=None):
         LOGGER.debug(log_str.strip())
 
     new_url = get_new_url(request)
-    LOGGER.info(f"Redirector handler for {request.method} {request.path} (through get_new_url) took {time.perf_counter() - start:.2f}s")
+    LOGGER.info(
+        f"Redirector handler for {request.method} {request.path} (through get_new_url) took {time.perf_counter() - start:.2f}s"
+    )
     new_headers = get_headers_with_signature(request, PRIVATE_KEY)
-    LOGGER.info(f"Redirector handler for {request.method} {request.path} (through get_headers_with_signature) took {time.perf_counter() - start:.2f}s")
+    LOGGER.info(
+        f"Redirector handler for {request.method} {request.path} (through get_headers_with_signature) took {time.perf_counter() - start:.2f}s"
+    )
 
     # pylogger.debug(f"{new_headers}")
 
@@ -126,7 +126,9 @@ def generic_forward_request(request, log_dict=None):
                 extra={"service_acc_json": new_json},
             )
 
-    LOGGER.info(f"Redirector handler for {request.method} {request.path} (through modify_json) took {time.perf_counter() - start:.2f}s")
+    LOGGER.info(
+        f"Redirector handler for {request.method} {request.path} (through modify_json) took {time.perf_counter() - start:.2f}s"
+    )
     LOGGER.debug("Forwarding to client...")
 
     gcp_response = forward_to_client(
@@ -134,7 +136,9 @@ def generic_forward_request(request, log_dict=None):
     )
 
     LOGGER.debug(f"Received response from client...\n {gcp_response}")
-    LOGGER.info(f"Redirector handler for {request.method} {request.path} took {time.perf_counter() - start:.2f}s")
+    LOGGER.info(
+        f"Redirector handler for {request.method} {request.path} took {time.perf_counter() - start:.2f}s"
+    )
     return Response(gcp_response.content, gcp_response.status_code)
 
 
@@ -257,9 +261,11 @@ def forward_to_client(
     LOGGER.debug(f"url {repr(request.url)}\n" f"headers {repr(request.headers)}\n")
     LOGGER.debug("NEW\n" f"url {new_url}\n" f"headers {new_headers}\n")
 
+    request_session = get_session()
+
     # If no JSON body, don't include a json body in proxied request
     if len(request.get_data()) == 0:
-        return REQUEST_SESSION.request(
+        return request_session.request(
             method=request.method,
             url=new_url,
             headers=new_headers,
@@ -268,7 +274,7 @@ def forward_to_client(
         )
 
     if new_data is not None:
-        return REQUEST_SESSION.request(
+        return request_session.request(
             method=request.method,
             url=new_url,
             headers=new_headers,
@@ -277,7 +283,7 @@ def forward_to_client(
             data=new_data,
         )
     elif new_json is not None:
-        return REQUEST_SESSION.request(
+        return request_session.request(
             method=request.method,
             url=new_url,
             headers=new_headers,
@@ -287,7 +293,7 @@ def forward_to_client(
         )
     else:
         # keep original body
-        return REQUEST_SESSION.request(
+        return request_session.request(
             method=request.method,
             url=new_url,
             headers=new_headers,
@@ -325,10 +331,11 @@ def request_storage_access_token(
 
     LOGGER.debug("Requesting access token")
     client_url = get_client_proxy_endpoint(request).strip("/") + "/"
-    headers = get_headers_with_signature(requests.Request(method="POST"), PRIVATE_KEY)
 
     access_token_start = time.perf_counter()
-    response = REQUEST_SESSION.post(
+    headers = get_headers_with_signature(requests.Request(method="POST"), PRIVATE_KEY)
+
+    response = get_session().post(
         client_url + f"skydentity/cloud/gcp/create-storage-authorization",
         json={
             "cloud_provider": "GCP",

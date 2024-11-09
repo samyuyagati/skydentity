@@ -1,0 +1,29 @@
+services:
+  skydentity:
+    tty: true
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # ports:
+    # - 5001:5001
+    environment:
+      PORT: 5001
+
+    volumes:
+      - type: bind
+        source: ../../tokens/gcp/sky-identity_test-serverless-proxy-account.json
+        target: /cloud_creds/gcp/proxy_service_account_key.json
+        read_only: true
+      - type: bind
+        source: ../../gcp-client-proxy/local_tokens/capability_enc.key
+        target: /cloud_creds/enc/capability_enc.key
+        read_only: true
+
+    network_mode: host
+    # networks:
+    #   - skydentity-network
+
+# networks:
+#   skydentity-network:
+#     driver: host
+#     name: skydentity-network

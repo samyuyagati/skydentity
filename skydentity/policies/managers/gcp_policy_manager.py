@@ -55,6 +55,7 @@ class GCPPolicyManager(PolicyManager):
         if public_key_hash in self._policies and (datetime.now() - self._policies_last_read).total_seconds() < 30.0:
             return self._policies[public_key_hash]
         try:
+            LOGGER.warning(self._firestore_policy_collection)
             policy = GCPPolicy.from_dict(
                 self._db.collection(self._firestore_policy_collection)
                 .document(public_key_hash)
