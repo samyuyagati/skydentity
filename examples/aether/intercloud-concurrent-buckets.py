@@ -29,7 +29,7 @@ FORMATTER = logging.Formatter(
 )
 
 # set file handler for logging to a file
-FILE_HANDLER = logging.FileHandler("concurrent-buckets-results.log")
+FILE_HANDLER = logging.FileHandler("intercloud-concurrent-buckets-results.log")
 FILE_HANDLER.setFormatter(FORMATTER)
 LOGGER.addHandler(FILE_HANDLER)
 # set stream handler for logging to stdout
@@ -37,8 +37,16 @@ STREAM_HANDLER = logging.StreamHandler(sys.stdout)
 STREAM_HANDLER.setFormatter(FORMATTER)
 LOGGER.addHandler(STREAM_HANDLER)
 
+
 def start_aether(
-    aether_path: str, port: int, proxy_url: str, bucket: str, cloud: str
+    *,
+    aether_path: str,
+    port: int,
+    gcp_bucket: str,
+    gcp_proxy_url: Optional[str],
+    azure_container: str,
+    azure_connection_string: Optional[str],
+    azure_proxy_url: Optional[str],
 ) -> subprocess.Popen:
     """
     Start an aether server for the given bucket.
@@ -49,18 +57,13 @@ def start_aether(
     ), f"{abs_aether_path} must exist as a path to the aether server file"
 
     aether_environment = {
-            **os.environ,
-            "AETHER_PORT": str(port),
-        }
-
-    if proxy_url:
-        aether_environment["CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE"] = proxy_url
-    if cloud == "gcp":
-        aether_environment["GCS_BUCKET_NAME"] = bucket
-    elif cloud == "azure":
-        aether_environment["AZURE_CONTAINER_NAME"] = bucket
-    else:
-        raise ValueError(f"Invalid cloud: {cloud}")
+        "AETHER_PORT": str(port),
+        "GCS_BUCKET_NAME": gcp_bucket,
+        "AZURE_CONTAINER_NAME": azure_container,
+        "AZURE_CONNECTION_STRING": azure_connection_string or "",
+        "CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE": gcp_proxy_url or "",
+        "AZURE_API_ENDPOINT_OVERRIDE": azure_proxy_url or "",
+    }
 
     process = subprocess.Popen(
         [
@@ -69,7 +72,10 @@ def start_aether(
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        env=aether_environment
+        env={
+            **os.environ,
+            **aether_environment,
+        },
     )
 
     return process
@@ -101,7 +107,8 @@ def ping_proxy(serverless_proxy_url: Optional[str]):
 def send_request(
     req_num: int,
     aether_url: str,
-    bucket: str,
+    gcp_bucket: str,
+    azure_container: str,
     file_path: str,
     file_content: bytes,
     request_type: Union[Literal["READ"], Literal["UPLOAD"]] = "READ",
@@ -122,7 +129,7 @@ def send_request(
     download_url = aether_url + "/download"
 
     if request_type == "UPLOAD":
-        LOGGER.info(f"[{bucket}] Upload request {req_num}")
+        LOGGER.info(f"[{gcp_bucket}/{azure_container}] Upload request {req_num}")
         upload_start_time = time.perf_counter()
         upload_response = requests.post(upload_url, files={"file": file})
         upload_end_time = time.perf_counter()
@@ -130,23 +137,29 @@ def send_request(
         upload_time = upload_end_time - upload_start_time
 
         if not upload_response.ok:
-            LOGGER.error(f"[{bucket}] UPLOAD FAILED (took {upload_time} seconds)")
+            LOGGER.error(
+                f"[{gcp_bucket}/{azure_container}] UPLOAD FAILED (took {upload_time} seconds)"
+            )
             return -1, None
 
         # parse response to get file id
         upload_response_json = upload_response.json()
         upload_file_id = upload_response_json.get("file_id", None)
         if upload_file_id is None:
-            LOGGER.error(f"[{bucket}] UPLOAD FAILED (took {upload_time} seconds)")
+            LOGGER.error(
+                f"[{gcp_bucket}/{azure_container}] UPLOAD FAILED (took {upload_time} seconds)"
+            )
             return -1, None
         else:
-            LOGGER.info(f"[{bucket}] Upload took {upload_time} seconds")
+            LOGGER.info(
+                f"[{gcp_bucket}/{azure_container}] Upload took {upload_time} seconds"
+            )
 
         return upload_time, upload_file_id
     elif request_type == "READ":
         assert request_file_id is not None
 
-        LOGGER.info(f"[{bucket}] Read request {req_num}")
+        LOGGER.info(f"[{gcp_bucket}/{azure_container}] Read request {req_num}")
         read_start_time = time.perf_counter()
         read_response = requests.get(f"{download_url}/{request_file_id}")
         read_end_time = time.perf_counter()
@@ -156,10 +169,14 @@ def send_request(
         # check response data
         read_response_data = read_response.content
         if read_response_data != file_content:
-            LOGGER.error(f"[{bucket}] READ MISMATCH (took {read_time} seconds)")
+            LOGGER.error(
+                f"[{gcp_bucket}/{azure_container}] READ MISMATCH (took {read_time} seconds)"
+            )
             return -1, None
         else:
-            LOGGER.info(f"[{bucket}] Read took {read_time} seconds")
+            LOGGER.info(
+                f"[{gcp_bucket}/{azure_container}] Read took {read_time} seconds"
+            )
             return read_time, None
 
 
@@ -167,24 +184,28 @@ def send_requests(
     process_pool: multiprocessing.pool.Pool,
     num_requests: int,
     aether_urls: List[str],
-    buckets: List[str],
+    gcp_buckets: List[str],
+    azure_containers: List[str],
     file: tempfile._TemporaryFileWrapper,
     file_content: bytes,
-    serverless_proxy_url: Optional[str],
-) -> List[Tuple[str, str, float]]:
+    gcp_serverless_proxy_url: Optional[str],
+    azure_serverless_proxy_url: Optional[str],
+) -> List[Tuple[str, str, str, float]]:
     def send_write_requests():
         # send writes
         write_processes: List[Tuple[int, AsyncResult[Tuple[float, Optional[str]]]]] = []
         for req_num in range(num_requests):
             aether_url = aether_urls[req_num]
-            bucket = buckets[req_num]
+            gcp_bucket = gcp_buckets[req_num]
+            azure_container = azure_containers[req_num]
 
             req_process = process_pool.apply_async(
                 send_request,
                 kwds={
                     "req_num": req_num,
                     "aether_url": aether_url,
-                    "bucket": bucket,
+                    "gcp_bucket": gcp_bucket,
+                    "azure_container": azure_container,
                     "file_path": file.name,
                     "file_content": file_content,
                     "request_type": "UPLOAD",
@@ -198,14 +219,16 @@ def send_requests(
         read_processes: List[Tuple[int, AsyncResult[Tuple[float, Optional[str]]]]] = []
         for req_num, file_id in file_ids:
             aether_url = aether_urls[req_num]
-            bucket = buckets[req_num]
+            gcp_bucket = gcp_buckets[req_num]
+            azure_container = azure_containers[req_num]
 
             req_process = process_pool.apply_async(
                 send_request,
                 kwds={
                     "req_num": req_num,
                     "aether_url": aether_url,
-                    "bucket": bucket,
+                    "gcp_bucket": gcp_bucket,
+                    "azure_container": azure_container,
                     "file_path": file.name,
                     "file_content": file_content,
                     "request_type": "READ",
@@ -218,7 +241,8 @@ def send_requests(
     # tuple of (type, bucket, time)
     request_times = []
 
-    ping_proxy(serverless_proxy_url)
+    ping_proxy(gcp_serverless_proxy_url)
+    ping_proxy(azure_serverless_proxy_url)
     LOGGER.info("===== SENDING WRITES =====")
 
     write_processes = send_write_requests()
@@ -230,9 +254,17 @@ def send_requests(
         assert write_file_id is not None
         write_results.append((req_num, write_file_id))
 
-        request_times.append((f"UPLOAD-{req_num}", buckets[req_num], write_time))
+        request_times.append(
+            (
+                f"UPLOAD-{req_num}",
+                gcp_buckets[req_num],
+                azure_containers[req_num],
+                write_time,
+            )
+        )
 
-    ping_proxy(serverless_proxy_url)
+    ping_proxy(gcp_serverless_proxy_url)
+    ping_proxy(azure_serverless_proxy_url)
     LOGGER.info("===== SENDING READS =====")
 
     read_processes = send_read_requests(write_results)
@@ -240,9 +272,17 @@ def send_requests(
     # get results
     for req_num, req_process in read_processes:
         read_time, _ = req_process.get()
-        request_times.append((f"READ-{req_num}", buckets[req_num], read_time))
+        request_times.append(
+            (
+                f"READ-{req_num}",
+                gcp_buckets[req_num],
+                azure_containers[req_num],
+                read_time,
+            )
+        )
 
-    ping_proxy(serverless_proxy_url)
+    ping_proxy(gcp_serverless_proxy_url)
+    ping_proxy(azure_serverless_proxy_url)
     LOGGER.info("===== SENDING WRITES =====")
 
     write_processes = send_write_requests()
@@ -254,9 +294,17 @@ def send_requests(
         assert write_file_id is not None
         write_results.append((req_num, write_file_id))
 
-        request_times.append((f"UPLOAD-{req_num}", buckets[req_num], write_time))
+        request_times.append(
+            (
+                f"UPLOAD-{req_num}",
+                gcp_buckets[req_num],
+                azure_containers[req_num],
+                write_time,
+            )
+        )
 
-    ping_proxy(serverless_proxy_url)
+    ping_proxy(gcp_serverless_proxy_url)
+    ping_proxy(azure_serverless_proxy_url)
     LOGGER.info("===== SENDING READS =====")
 
     read_processes = send_read_requests(write_results)
@@ -264,9 +312,17 @@ def send_requests(
     # get results
     for req_num, req_process in read_processes:
         read_time, _ = req_process.get()
-        request_times.append((f"READ-{req_num}", buckets[req_num], read_time))
+        request_times.append(
+            (
+                f"READ-{req_num}",
+                gcp_buckets[req_num],
+                azure_containers[req_num],
+                read_time,
+            )
+        )
 
-    ping_proxy(serverless_proxy_url)
+    ping_proxy(gcp_serverless_proxy_url)
+    ping_proxy(azure_serverless_proxy_url)
     LOGGER.info("===== SENDING READ/WRITES =====")
 
     # wave of reads
@@ -277,90 +333,45 @@ def send_requests(
     # get results
     for req_num, req_process in read_processes:
         read_time, _ = req_process.get()
-        request_times.append((f"SIMUL-READ-{req_num}", buckets[req_num], read_time))
+        request_times.append(
+            (
+                f"SIMUL-READ-{req_num}",
+                gcp_buckets[req_num],
+                azure_containers[req_num],
+                read_time,
+            )
+        )
     for req_num, req_process in write_processes:
         write_time, _ = req_process.get()
-        request_times.append((f"SIMUL-UPLOAD-{req_num}", buckets[req_num], write_time))
+        request_times.append(
+            (
+                f"SIMUL-UPLOAD-{req_num}",
+                gcp_buckets[req_num],
+                azure_containers[req_num],
+                write_time,
+            )
+        )
 
     return request_times
-
-
-def upload_policy(
-    policy_upload_script: str,
-    policy_path: str,
-    public_key_path: str,
-    upload_credentials_path: str,
-    cloud: str,
-):
-    """
-    Run the upload policy script to upload the given policy
-    and run checks to ensure that corresponding service accounts
-    have been pre-created.
-    """
-
-    # convert everything to absolute paths to be safe
-    abs_script_path = os.path.abspath(policy_upload_script)
-    abs_policy_path = os.path.abspath(policy_path)
-    abs_key_path = os.path.abspath(public_key_path)
-    abs_creds_path = os.path.abspath(upload_credentials_path)
-
-    LOGGER.info("Sending policy upload request")
-
-    response = subprocess.run(
-        [
-            "python3",
-            abs_script_path,
-            "--storage",
-            "--policy",
-            abs_policy_path,
-            "--cloud",
-            cloud,
-            "--public-key-path",
-            abs_key_path,
-            "--credentials",
-            abs_creds_path,
-        ],
-        capture_output=True,
-    )
-    LOGGER.debug(response.stdout)
-    if response.stderr:
-        LOGGER.warning(response.stderr)
-
-    # make sure command ran fine
-    response.check_returncode()
-
-    LOGGER.info("Waiting 15 seconds for service account changes to propagate")
-    time.sleep(15)
 
 
 def main(
     # main options
     file_size: int,
     num_requests: int,
-    bucket_prefix: str,
-    proxy_url: str,
-    serverless_proxy_url: Optional[str],
-    cloud: str,
-    # aether options
+    # GCP
+    gcp_bucket_prefix: str,
+    gcp_proxy_url: str,
+    gcp_serverless_proxy_url: Optional[str],
+    # Azure
+    azure_container_prefix: str,
+    azure_connection_string: str,
+    azure_proxy_url: str,
+    azure_serverless_proxy_url: Optional[str],
+    # Aether
     aether_host: str,
     aether_path: str,
-    # policy upload options
-    policy_upload_script: str,
-    policy_path: str,
-    public_key_path: str,
-    upload_credentials_path: str,
-    # script options
-    with_policy_upload: bool = True,
 ):
-    if with_policy_upload:
-        # first upload policy
-        upload_policy(
-            policy_upload_script=policy_upload_script,
-            policy_path=policy_path,
-            public_key_path=public_key_path,
-            upload_credentials_path=upload_credentials_path,
-        )
-
     # create temporary file of random bytes
     file = tempfile.NamedTemporaryFile()
     # hex doubles size; don't use binary file for ease of testing
@@ -372,13 +383,26 @@ def main(
     LOGGER.info("Starting aether processes")
     aether_processes: List[subprocess.Popen] = []
     aether_urls: List[str] = []
-    buckets: List[str] = []
+    gcp_buckets: List[str] = []
+    azure_containers: List[str] = []
     for i in range(num_requests):
         port = AETHER_START_PORT + i
-        bucket = f"{bucket_prefix}-{i+1}"
-        aether_processes.append(start_aether(aether_path, port, proxy_url, bucket, cloud))
+        gcp_bucket = f"{gcp_bucket_prefix}-{i+1}"
+        azure_container = f"{azure_container_prefix}-{i+1}"
+        aether_processes.append(
+            start_aether(
+                aether_path=aether_path,
+                port=port,
+                gcp_bucket=gcp_bucket,
+                gcp_proxy_url=gcp_proxy_url,
+                azure_container=azure_container,
+                azure_connection_string=azure_connection_string,
+                azure_proxy_url=azure_proxy_url,
+            )
+        )
         aether_urls.append(f"{aether_host}:{port}")
-        buckets.append(bucket)
+        gcp_buckets.append(gcp_bucket)
+        azure_containers.append(azure_container)
     LOGGER.info("Waiting 5 seconds for aether processes to start")
     time.sleep(5)
 
@@ -391,20 +415,34 @@ def main(
             process_pool=process_pool,
             num_requests=num_requests,
             aether_urls=aether_urls,
-            buckets=buckets,
+            gcp_buckets=gcp_buckets,
+            azure_containers=azure_containers,
             file=file,
             file_content=file_content,
-            serverless_proxy_url=serverless_proxy_url,
+            gcp_serverless_proxy_url=gcp_serverless_proxy_url,
+            azure_serverless_proxy_url=azure_serverless_proxy_url,
         )
 
         if len(request_times) > 0:
             # save data
-            with open("concurrent-buckets-data.csv", "w") as f:
-                csv_writer = csv.DictWriter(f, ["type", "bucket", "time"])
+            with open("intercloud-concurrent-buckets-data.csv", "w") as f:
+                csv_writer = csv.DictWriter(
+                    f, ["type", "gcp_bucket", "azure_container", "time"]
+                )
                 csv_writer.writeheader()
-                for request_type, bucket, request_time in request_times:
+                for (
+                    request_type,
+                    gcp_bucket,
+                    azure_container,
+                    request_time,
+                ) in request_times:
                     csv_writer.writerow(
-                        {"type": request_type, "bucket": bucket, "time": request_time}
+                        {
+                            "type": request_type,
+                            "gcp_bucket": gcp_bucket,
+                            "azure_container": azure_container,
+                            "time": request_time,
+                        }
                     )
     finally:
         LOGGER.info("CLEANUP")
@@ -437,43 +475,58 @@ if __name__ == "__main__":
         default=16,
         help=("Number of concurrent read/upload requests to make"),
     )
-    parser.add_argument(
-        "--proxy-url",
-        type=str,
-        default="http://127.0.0.1:5000",
-        help="URL of the proxy to use",
-    )
-    parser.add_argument(
-        "--serverless-proxy-url",
-        type=str,
-        default=None,
-        help="Serverless proxy url; used to ping the serverless proxy to ensure that it is alive prior to sending concurrent requests",
-    )
-    parser.add_argument(
-        "--bucket-prefix",
+
+    gcp_group = parser.add_argument_group("GCP settings")
+    gcp_group.add_argument(
+        "--gcp-bucket-prefix",
         type=str,
         default="skydentity-test-storage",
-        help="Bucket prefix for concurrent requests; format of bucket will be '{prefix}-{idx}'",
+        help="Bucket prefix for concurrent requests to GCP; format of bucket will be '{prefix}-{idx}'",
     )
-    parser.add_argument(
-        "--cloud",
+    gcp_group.add_argument(
+        "--gcp-proxy-url",
         type=str,
-        default="gcp",
-        help="Cloud used for the benchmark. One of gcp, azure",
+        default="http://127.0.0.1:5000",
+        help="URL of the GCP proxy to use",
+    )
+    gcp_group.add_argument(
+        "--gcp-serverless-proxy-url",
+        type=str,
+        default=None,
+        help="GCP serverless proxy url; used to ping the serverless proxy to ensure that it is alive prior to sending concurrent requests",
     )
 
-    parser.add_argument(
-        "--no-policy-upload",
-        action="store_true",
-        dest="with_policy_upload",
-        help="Disable initial policy upload",
+    azure_group = parser.add_argument_group("Azure settings")
+    azure_group.add_argument(
+        "--azure-container-prefix",
+        type=str,
+        default="skydentity-test-storage",
+        help="Bucket prefix for concurrent requests to Azure; format of bucket will be '{prefix}-{idx}'",
+    )
+    azure_group.add_argument(
+        "--azure-connection-string",
+        type=str,
+        default=None,
+        help="Azure connection string to pass through to Aether",
+    )
+    azure_group.add_argument(
+        "--azure-proxy-url",
+        type=str,
+        default="https://127.0.0.1:4000",
+        help="URL of the Azure proxy to use",
+    )
+    azure_group.add_argument(
+        "--azure-serverless-proxy-url",
+        type=str,
+        default=None,
+        help="Azure serverless proxy url; used to ping the serverless proxy to ensure that it is alive prior to sending concurrent requests",
     )
 
     aether_group = parser.add_argument_group("Aether settings")
     aether_group.add_argument(
         "--aether-path",
         type=str,
-        default="./gcp-aether-server.py",
+        default="./aether-server.py",
         help="Path to the Aether server python executable",
     )
     aether_group.add_argument(
@@ -483,46 +536,21 @@ if __name__ == "__main__":
         help="Host of the Aether server",
     )
 
-    policy_upload_group = parser.add_argument_group("Policy upload settings")
-    policy_upload_group.add_argument(
-        "--policy-upload-script",
-        type=str,
-        default="../../skydentity/scripts/upload_policy.py",
-        help="Path to the policy upload script to use",
-    )
-    policy_upload_group.add_argument(
-        "--policy-path",
-        type=str,
-        default="./config/storage_policy_concurrent.yaml",
-        help="Path to the policy to upload",
-    )
-    policy_upload_group.add_argument(
-        "--public-key-path",
-        type=str,
-        default="./keys/public.pem",
-        help="Path to the public key for uploading the policy",
-    )
-    policy_upload_group.add_argument(
-        "--upload-credentials-path",
-        type=str,
-        required=True,
-        help="Path to credentials file for uploading the policy",
-    )
-
     args = parser.parse_args()
 
     main(
         file_size=args.file_size,
         num_requests=args.num_requests,
+        # GCP
+        gcp_bucket_prefix=args.gcp_bucket_prefix,
+        gcp_proxy_url=args.gcp_proxy_url,
+        gcp_serverless_proxy_url=args.gcp_serverless_proxy_url,
+        # Azure
+        azure_container_prefix=args.azure_container_prefix,
+        azure_connection_string=args.azure_connection_string,
+        azure_proxy_url=args.azure_proxy_url,
+        azure_serverless_proxy_url=args.azure_serverless_proxy_url,
+        # Aether
         aether_host=args.aether_host,
         aether_path=args.aether_path,
-        proxy_url=args.proxy_url,
-        bucket_prefix=args.bucket_prefix,
-        cloud=args.cloud,
-        policy_upload_script=args.policy_upload_script,
-        policy_path=args.policy_path,
-        public_key_path=args.public_key_path,
-        upload_credentials_path=args.upload_credentials_path,
-        serverless_proxy_url=args.serverless_proxy_url,
-        with_policy_upload=args.with_policy_upload,
     )

@@ -24,10 +24,13 @@ _TENANT_ID = os.environ.get("TENANT_ID", None)
 _APP_SECRET = os.environ.get("APP_SECRET", None)
 _APP_ID = os.environ.get("APP_ID", None)
 
+_CONNECTION_STRING = os.environ.get("AZURE_STORAGE_CONNECTION_STRING", None)
+
 # validate global constants from environment variables
 assert (_CAPABILITY_ENC_KEY_FILE is not None and os.path.isfile(_CAPABILITY_ENC_KEY_FILE)) \
     or _CAPABILITY_ENC_KEY is not None
 assert (_DB_INFO_FILE is not None) or (_DB_ENDPOINT is not None and _DB_KEY is not None)
+assert _CONNECTION_STRING is not None
 
 @cache
 def get_managed_identity_auth_token() -> bytes:
@@ -119,3 +122,9 @@ def _generate_rsa_key_pair() -> Tuple[str, str]:
         serialization.PublicFormat.OpenSSH).decode('utf-8').strip()
 
     return public_key, private_key
+
+def get_storage_connection_string() -> str:
+    """
+    Retrieve the connection string for the Azure Storage Account.
+    """
+    return _CONNECTION_STRING

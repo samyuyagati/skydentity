@@ -2,11 +2,12 @@
 Forwarding for SkyPilot requests.
 """
 import time
-
+import logging as py_logging
 import random
 import base64
 import json
 import os
+import re
 from collections import namedtuple
 from urllib.parse import urlparse
 
@@ -14,6 +15,7 @@ import requests
 from flask import Flask, Response, request
 
 from skydentity.policies.checker.azure_authorization_policy import AzureAuthorizationPolicy
+from skydentity.policies.checker.azure_storage_policy import AzureStoragePolicy
 from skydentity.utils.hash_util import hash_public_key
 
 from .credentials import (
@@ -21,8 +23,14 @@ from .credentials import (
     _generate_rsa_key_pair
 )
 from .logging import get_logger, print_and_log, build_time_logging_string
-from .policy_check import check_request_from_policy, get_authorization_policy_manager
+from .policy_check import (
+    check_request_from_policy, 
+    get_authorization_policy_manager,
+    get_storage_policy_manager
+)
 from .signature import strip_signature_headers, verify_request_signature
+
+LOGGER = py_logging.getLogger(__name__)
 
 # global constants
 COMPUTE_API_ENDPOINT = os.environ.get(
@@ -111,6 +119,13 @@ ROUTES: list[SkypilotRoute] = [
         # wrapper to allow for the function to be defined later
         view_func=lambda cloud: create_authorization_route(cloud),
     ),
+    SkypilotRoute(
+        methods=["POST"],
+        path="/skydentity/cloud/<cloud>/create-storage-authorization",
+        fields=["cloud"],
+        # wrapper to allow for the function to be defined later
+        view_func=lambda cloud: create_storage_authorization_route(cloud),
+    ),
 ]
 
 
@@ -120,63 +135,64 @@ def generic_forward_request(request, log_dict=None):
     Forward a generic request to Azure APIs.
     """
     try:
-        start = time.time()
+        start = time.perf_counter()
         logger = get_logger()
 
         request_name = request.method.upper() + str(random.randint(0, 1000))
         caller = "skypilot_forward:generic_forward_request"
 
         if log_dict is not None:
-            log_str = f"PATH: {request.full_path}\n"
+            log_str = f"REQUEST {request_name} PATH: {request.full_path}\n"
             for key, val in log_dict.items():
                 log_str += f"\t{key}: {val}\n"
             print_and_log(logger, log_str.strip())
 
-        print_and_log(logger, build_time_logging_string(request_name, caller, "setup_logs", start, time.time()))
+        print_and_log(logger, build_time_logging_string(request_name, caller, "setup_logs", start, time.perf_counter()))
 
-        start_verify_request_signature = time.time()
+        start_verify_request_signature = time.perf_counter()
         if not verify_request_signature(request):
             print_and_log(logger, "Request is unauthorized (signature verification failed)")
-            print_and_log(logger, build_time_logging_string(request_name, caller, "total (signature verif. failed)", start, time.time()))
+            print_and_log(logger, build_time_logging_string(request_name, caller, "total (signature verif. failed)", start, time.perf_counter()))
             return Response("Unauthorized", 401)
-        print_and_log(logger, build_time_logging_string(request_name, caller, "verify_request_signature", start_verify_request_signature, time.time()))
+        print_and_log(logger, build_time_logging_string(request_name, caller, "verify_request_signature", start_verify_request_signature, time.perf_counter()))
 
         # Check the request
-        start_check_request_from_policy = time.time()
+        start_check_request_from_policy = time.perf_counter()
         public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
         authorized, managed_identity_id = check_request_from_policy(public_key_bytes, request, request_id=request_name, caller_name=caller)
-        print_and_log(logger, build_time_logging_string(request_name, caller, "check_request_from_policy", start_check_request_from_policy, time.time()))
+        print_and_log(logger, build_time_logging_string(request_name, caller, "check_request_from_policy", start_check_request_from_policy, time.perf_counter()))
         if not authorized:
             print_and_log(logger, "Request is unauthorized (policy check failed)")
-            print_and_log(logger, build_time_logging_string(request_name, caller, "total (policy check failed)", start, time.time()))
+            print_and_log(logger, build_time_logging_string(request_name, caller, "total (policy check failed)", start, time.perf_counter()))
             return Response("Unauthorized", 401)
 
         # Get new endpoint and new headers
-        start_get_new_url = time.time()
+        start_get_new_url = time.perf_counter()
         new_url = get_new_url(request)
-        print_and_log(logger, build_time_logging_string(request_name, caller, "get_new_url", start_get_new_url, time.time()))
-        start_get_new_headers = time.time()
+        print_and_log(logger, build_time_logging_string(request_name, caller, "get_new_url", start_get_new_url, time.perf_counter()))
+        start_get_new_headers = time.perf_counter()
         new_headers = get_headers_with_auth(request)
-        print_and_log(logger, build_time_logging_string(request_name, caller, "get_headers_with_auth", start_get_new_headers, time.time()))
+        print_and_log(logger, build_time_logging_string(request_name, caller, "get_headers_with_auth", start_get_new_headers, time.perf_counter()))
 
         # Only modify the JSON if a valid service account capability was provided
         new_json = None
         if len(request.get_data()) > 0:
-            start_get_json_with_sa = time.time()
+            start_get_json_with_sa = time.perf_counter()
             new_json = request.json
             if managed_identity_id:
                 new_json = get_json_with_managed_identity(request, managed_identity_id)
                 # print_and_log(logger, f"Json with service account: {new_json}")
-            print_and_log(logger, build_time_logging_string(request_name, caller, "get_json_with_service_account", start_get_json_with_sa, time.time()))
+            print_and_log(logger, build_time_logging_string(request_name, caller, "get_json_with_service_account", start_get_json_with_sa, time.perf_counter()))
 
-        # Inject random public ssh keys if applicable
-        inject_random_public_key(new_json)
+            # Inject random public ssh keys if applicable
+            inject_random_public_key(new_json, new_url)
 
         # Send the request to Azure
-        start_send_azure_request = time.time()
+        start_send_azure_request = time.perf_counter()
         azure_response = send_azure_request(request, new_headers, new_url, new_json=new_json)
-        print_and_log(logger, build_time_logging_string(request_name, caller, "send_azure_request", start_send_azure_request, time.time()))
-        print_and_log(logger, build_time_logging_string(request_name, caller, "total", start, time.time()))
+        
+        print_and_log(logger, build_time_logging_string(request_name, caller, "send_azure_request", start_send_azure_request, time.perf_counter()))
+        print_and_log(logger, build_time_logging_string(request_name, caller, "total", start, time.perf_counter()))
         return Response(azure_response.content, azure_response.status_code, headers=new_headers, content_type=azure_response.headers["Content-Type"])
     except Exception as e:
         print_and_log(logger, f"Error in generic_forward_request: {e}")
@@ -189,50 +205,6 @@ def build_generic_forward(path: str, fields: list[str]):
     The path is only used to create a unique and readable name for the anonymous function.
     """
     func = lambda **kwargs: generic_forward_request(request, kwargs)
-    # if fields == ["cloud"]:
-    #     func = lambda cloud: generic_forward_request(request, {"cloud": cloud})
-    # elif fields == ["subscriptionId"]:
-    #     func = lambda subscriptionId: generic_forward_request(request, {"subscriptionId": subscriptionId})
-    # elif fields == ["subscriptionId", "resourceGroupName"]:
-    #     func = lambda subscriptionId, resourceGroupName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName}
-    #     )
-    # elif fields == ["subscriptionId", "resourceGroupName", "nicName"]:
-    #     func = lambda subscriptionId, resourceGroupName, nicName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "nicName": nicName}
-    #     )
-    # elif fields == ["subscriptionId", "resourceGroupName", "ipName"]:
-    #     func = lambda subscriptionId, resourceGroupName, ipName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "ipName": ipName}
-    #     )
-    # elif fields == ["subscriptionId", "region", "operationId"]:
-    #     func = lambda subscriptionId, region, operationId: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "region": region, "operationId": operationId}
-    #     )
-    # elif fields == ["subscriptionId", "resourceGroupName", "virtualNetworkName"]:
-    #     func = lambda subscriptionId, resourceGroupName, virtualNetworkName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "virtualNetworkName": virtualNetworkName}
-    #     )
-    # elif fields == ["subscriptionId", "resourceGroupName", "virtualNetworkName", "subnetName"]:
-    #     func = lambda subscriptionId, resourceGroupName, virtualNetworkName, subnetName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "virtualNetworkName": virtualNetworkName, "subnetName": subnetName}
-    #     )
-    # elif fields == ["subscriptionId", "resourceGroupName", "vmName"]:
-    #     func = lambda subscriptionId, resourceGroupName, vmName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "vmName": vmName}
-    #     )
-    # elif fields == ["subscriptionId", "resourceGroupName", "nsgName"]:
-    #     func = lambda subscriptionId, resourceGroupName, nsgName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "nsgName": nsgName}
-    #     )
-    # elif fields == ["subscriptionId", "resourceGroupName", "deploymentName"]:
-    #     func = lambda subscriptionId, resourceGroupName, deploymentName: generic_forward_request(
-    #         request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "deploymentName": deploymentName}
-    #     )
-    # else:
-    #     raise ValueError(
-    #         f"Invalid list of variables to build generic forward for: {fields}"
-    #     )
 
     # Flask expects all view functions to have unique names
     # (otherwise it complains about overriding view functions)
@@ -316,7 +288,7 @@ def inject_random_public_key(request_body, request_url):
     """
     vm_body = request_body
     if "deployments" in request.url:
-        resources = new_dict["properties"]["template"]["resources"]
+        resources = vm_body["properties"]["template"]["resources"]
         for resource in resources:
             if resource["type"] == "Microsoft.Compute/virtualMachines":
                 vm_body = resource
@@ -328,8 +300,8 @@ def inject_random_public_key(request_body, request_url):
                 if "ssh" in vm_body["properties"]["osProfile"]["linuxConfiguration"]:
                     if "publicKeys" in vm_body["properties"]["osProfile"]["linuxConfiguration"]["ssh"]:
                         new_public_key = _generate_rsa_key_pair()
-                        request_dict["properties"]["osProfile"]["linuxConfiguration"]["ssh"]["publicKeys"] = [{
-                            "path": request_dict["properties"]["osProfile"]["linuxConfiguration"]["ssh"]["publicKeys"][0]["path"],
+                        vm_body["properties"]["osProfile"]["linuxConfiguration"]["ssh"]["publicKeys"] = [{
+                            "path": vm_body["properties"]["osProfile"]["linuxConfiguration"]["ssh"]["publicKeys"][0]["path"],
                             "keyData": new_public_key[0]
                         }]
 
@@ -362,8 +334,8 @@ def get_new_url(request):
     Redirect the URL (originally to the proxy) to the correct Azure endpoint.
     """
     new_url = request.url.replace(request.host_url, f"{COMPUTE_API_ENDPOINT}")
-    logger = get_logger()
-    print_and_log(logger, f"\tNew URL: {new_url}")
+    # logger = get_logger()
+    # print_and_log(logger, f"\tNew URL: {new_url}")
     return new_url
 
 
@@ -418,3 +390,47 @@ def create_authorization_route(cloud):
     except Exception as e:
         print_and_log(logger, f"Error in create_authorization_route: {e}")
         return Response("Error", 500)
+    
+def create_storage_authorization_route(cloud):
+    storage_start = time.perf_counter()
+    logger = get_logger()
+    caller = "skypilot_forward:create_storage_authorization_route"
+    request_name = "CREATE_AUTH" + str(random.randint(0, 1000))
+    LOGGER.debug("Create storage authorization handler")
+    # logger = get_logger()
+
+    storage_policy_manager = get_storage_policy_manager()
+    # print_and_log(logger, f"Creating authorization (json: {request.json})")
+
+    # Get hash of public key
+    public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
+    # Compute hash of public key
+    public_key_hash = hash_public_key(public_key_bytes)
+    # print_and_log(logger, f"Public key hash: {public_key_hash}")
+
+    # Retrieve storage policy from CosmosDB with public key hash
+    storage_policy_retrieval_start = time.perf_counter()
+    storage_policy_dict = storage_policy_manager.get_policy_dict(public_key_hash)
+    print_and_log(logger, build_time_logging_string(request_name, caller, "storage_retrieval", storage_policy_retrieval_start, time.perf_counter()))
+    # print("Storage policy dict:", storage_policy_dict)
+
+    # Check request against storage policy
+    storage_policy = AzureStoragePolicy(policy_dict=storage_policy_dict)
+    storage_check_request_start = time.perf_counter()
+    request_auth, success = storage_policy.check_request(request)
+    print_and_log(logger, build_time_logging_string(request_name, caller, "storage_check_request", storage_check_request_start, time.perf_counter()))
+
+    if success and request_auth is not None:
+        sas_token_start = time.perf_counter()
+        access_token, expiration_timestamp = (
+            storage_policy_manager.generate_sas_token(
+                request_auth.container, request_auth.action
+            )
+        )
+        print_and_log(logger, build_time_logging_string(request_name, caller, "sas_token", sas_token_start, time.perf_counter()))
+        print_and_log(logger, build_time_logging_string(request_name, caller, "total", storage_start, time.perf_counter()))
+        return Response(
+            json.dumps({"access_token": access_token, "expires": expiration_timestamp}),
+            200,
+        )
+    return Response("Unauthorized", 401)

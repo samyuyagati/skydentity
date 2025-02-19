@@ -5,7 +5,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import requests
 
@@ -16,7 +16,7 @@ FORMATTER = logging.Formatter(
 )
 
 # set file handler for logging to a file
-FILE_HANDLER = logging.FileHandler("interleave-read-write-results.log")
+FILE_HANDLER = logging.FileHandler("intercloud-interleave-read-write-results.log")
 FILE_HANDLER.setFormatter(FORMATTER)
 LOGGER.addHandler(FILE_HANDLER)
 # set stream handler for logging to stdout
@@ -26,7 +26,14 @@ LOGGER.addHandler(STREAM_HANDLER)
 
 
 def start_aether(
-    aether_path: str, port: int, proxy_url: str, bucket: str, cloud: str
+    *,  # require keyword args for clarity
+    aether_path: str,
+    port: int,
+    gcp_bucket: str,
+    gcp_proxy_url: Optional[str],
+    azure_container: str,
+    azure_connection_string: Optional[str],
+    azure_proxy_url: Optional[str],
 ) -> subprocess.Popen:
     """
     Start an aether server for the given bucket.
@@ -37,19 +44,13 @@ def start_aether(
     ), f"{abs_aether_path} must exist as a path to the aether server file"
 
     aether_environment = {
-            **os.environ,
-            "AETHER_PORT": str(port),
-        }
-
-    if proxy_url:
-        aether_environment["CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE"] = proxy_url
-
-    if cloud == "gcp":
-        aether_environment["GCS_BUCKET_NAME"] = bucket
-    elif cloud == "azure":
-        aether_environment["AZURE_CONTAINER_NAME"] = bucket
-    else:
-        raise ValueError(f"Invalid cloud: {cloud}")
+        "AETHER_PORT": str(port),
+        "GCS_BUCKET_NAME": gcp_bucket,
+        "AZURE_CONTAINER_NAME": azure_container,
+        "AZURE_CONNECTION_STRING": azure_connection_string or "",
+        "CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE": gcp_proxy_url or "",
+        "AZURE_API_ENDPOINT_OVERRIDE": azure_proxy_url or "",
+    }
 
     process = subprocess.Popen(
         [
@@ -58,10 +59,14 @@ def start_aether(
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        env=aether_environment
+        env={
+            **os.environ,
+            **aether_environment,
+        },
     )
 
     return process
+
 
 def send_requests(
     num_requests: int,
@@ -100,7 +105,6 @@ def send_requests(
         else:
             LOGGER.info(f"Upload took {upload_time} seconds")
 
-
         sys.stdout.flush()
 
         # read
@@ -130,7 +134,7 @@ def upload_policy(
     policy_path: str,
     public_key_path: str,
     upload_credentials_path: str,
-    cloud: str
+    cloud: str,
 ):
     """
     Run the upload policy script to upload the given policy
@@ -177,30 +181,16 @@ def main(
     # main options
     file_size: int,
     num_requests: int,
-    bucket: str,
-    proxy_url: str,
-    cloud: str,
+    gcp_bucket: str,
+    azure_container: str,
+    azure_connection_string: Optional[str],
+    gcp_proxy_url: str,
+    azure_proxy_url: str,
     # aether options
     aether_path: str,
     aether_host: str,
     aether_port: int,
-    # policy upload options
-    policy_upload_script: str,
-    policy_path: str,
-    public_key_path: str,
-    upload_credentials_path: str,
-    # script options
-    with_policy_upload: bool = True,
 ):
-    if with_policy_upload:
-        # first upload policy
-        upload_policy(
-            policy_upload_script=policy_upload_script,
-            policy_path=policy_path,
-            public_key_path=public_key_path,
-            upload_credentials_path=upload_credentials_path,
-        )
-
     # create temporary file of random bytes
     file = tempfile.NamedTemporaryFile()
     # hex doubles size; don't use binary file for ease of testing
@@ -209,7 +199,15 @@ def main(
     file.write(file_content)
 
     # normalize aether url
-    aether_process = start_aether(aether_path, aether_port, proxy_url, bucket, cloud)
+    aether_process = start_aether(
+        aether_path=aether_path,
+        port=aether_port,
+        gcp_bucket=gcp_bucket,
+        gcp_proxy_url=gcp_proxy_url,
+        azure_container=azure_container,
+        azure_connection_string=azure_connection_string,
+        azure_proxy_url=azure_proxy_url,
+    )
     aether_url = f"{aether_host}:{aether_port}"
     LOGGER.info("Waiting for aether process to start")
     time.sleep(5)
@@ -224,7 +222,7 @@ def main(
 
         # save data
         if len(request_times) > 0:
-            with open("interleave-read-write-data.csv", "w") as f:
+            with open("intercloud-interleave-read-write-data.csv", "w") as f:
                 csv_writer = csv.DictWriter(f, ["type", "time"])
                 csv_writer.writeheader()
                 for request_type, request_time in request_times:
@@ -256,37 +254,46 @@ if __name__ == "__main__":
         default=40,
         help="Number of interleaved read/upload requests to make (total individual requests is twice this value)",
     )
-    parser.add_argument(
-        "--bucket",
+
+    gcp_group = parser.add_argument_group("GCP settings")
+    gcp_group.add_argument(
+        "--gcp-bucket",
         type=str,
         default="skydentity-test-storage",
-        help="Bucket to use",
+        help="GCP bucket to use",
     )
-    parser.add_argument(
-        "--proxy-url",
+    gcp_group.add_argument(
+        "--gcp-proxy-url",
         type=str,
         default="http://127.0.0.1:5000",
-        help="URL of the proxy to use",
-    )
-    parser.add_argument(
-        "--cloud",
-        type=str,
-        default="gcp",
-        help="Cloud used for the benchmark. One of gcp, azure",
+        help="URL of the GCP proxy to use",
     )
 
-    parser.add_argument(
-        "--no-policy-upload",
-        action="store_false",
-        dest="with_policy_upload",
-        help="Disable initial policy upload",
+    azure_group = parser.add_argument_group("Azure settings")
+    azure_group.add_argument(
+        "--azure-container",
+        type=str,
+        default="skydentity-test-storage",
+        help="Azure container to use",
+    )
+    azure_group.add_argument(
+        "--azure-connection-string",
+        type=str,
+        default=None,
+        help="Azure connection string to pass through to Aether",
+    )
+    azure_group.add_argument(
+        "--azure-proxy-url",
+        type=str,
+        default="https://127.0.0.1:4000",
+        help="URL of the Azure proxy to use",
     )
 
     aether_group = parser.add_argument_group("Aether settings")
     aether_group.add_argument(
         "--aether-path",
         type=str,
-        default="./gcp-aether-server.py",
+        default="./aether-server.py",
         help="Path to the Aether server python executable",
     )
     aether_group.add_argument(
@@ -302,46 +309,19 @@ if __name__ == "__main__":
         help="Port of the Aether server",
     )
 
-    policy_upload_group = parser.add_argument_group("Policy upload settings")
-    policy_upload_group.add_argument(
-        "--policy-upload-script",
-        type=str,
-        default="../../skydentity/scripts/upload_policy.py",
-        help="Path to the policy upload script to use",
-    )
-    policy_upload_group.add_argument(
-        "--policy-path",
-        type=str,
-        default="./config/storage_policy_overwrite.yaml",
-        help="Path to the policy to upload",
-    )
-    policy_upload_group.add_argument(
-        "--public-key-path",
-        type=str,
-        default="./keys/public.pem",
-        help="Path to the public key for uploading the policy",
-    )
-    policy_upload_group.add_argument(
-        "--upload-credentials-path",
-        type=str,
-        required=True,
-        help="Path to credentials file for uploading the policy",
-    )
-    
-
     args = parser.parse_args()
     main(
         file_size=args.file_size,
         num_requests=args.num_requests,
-        bucket=args.bucket,
-        proxy_url=args.proxy_url,
-        cloud=args.cloud,
+        # GCP
+        gcp_bucket=args.gcp_bucket,
+        gcp_proxy_url=args.gcp_proxy_url,
+        # Azure
+        azure_container=args.azure_container,
+        azure_connection_string=args.azure_connection_string,
+        azure_proxy_url=args.azure_proxy_url,
+        # Aether
         aether_path=args.aether_path,
         aether_host=args.aether_host,
         aether_port=args.aether_port,
-        policy_upload_script=args.policy_upload_script,
-        policy_path=args.policy_path,
-        public_key_path=args.public_key_path,
-        upload_credentials_path=args.upload_credentials_path,
-        with_policy_upload=args.with_policy_upload,
     )

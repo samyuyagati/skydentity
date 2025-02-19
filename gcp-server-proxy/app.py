@@ -2,7 +2,6 @@ import logging as py_logging
 import os
 
 from flask import Flask
-from google.cloud import logging as gcp_logging
 from proxy_util.logging import get_logger, print_and_log
 from proxy_util.skypilot_forward import setup_routes
 
@@ -21,7 +20,6 @@ else:
     py_logging.getLogger().setLevel(py_logging.DEBUG)
 
 # add file handler for local logging
-LOGGER = py_logging.getLogger()
 DEFAULT_FILE_HANDLER = py_logging.FileHandler("redirector.log")
 DEFAULT_FORMATTER = py_logging.Formatter(
     fmt="%(asctime)s %(levelname)s %(filename)s:%(lineno)d - %(message)s"
