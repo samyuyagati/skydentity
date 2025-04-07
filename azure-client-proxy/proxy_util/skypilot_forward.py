@@ -1,32 +1,37 @@
 """
 Forwarding for SkyPilot requests.
 """
-import time
-import logging as py_logging
-import random
+
 import base64
 import json
+import logging as py_logging
 import os
-import re
-from collections import namedtuple
+import random
+import time
+from dataclasses import dataclass
+from typing import Any, Callable, Generic, Optional, TypeVar
 from urllib.parse import urlparse
 
 import requests
 from flask import Flask, Response, request
 
-from skydentity.policies.checker.azure_authorization_policy import AzureAuthorizationPolicy
+from skydentity.policies.checker.azure_authorization_policy import (
+    AzureAuthorizationPolicy,
+)
 from skydentity.policies.checker.azure_storage_policy import AzureStoragePolicy
+from skydentity.policies.checker.crosscloud_resources.crosscloud_resource_policy import (
+    CrossCloudPolicy,
+)
+from skydentity.proxy_util.crosscloud_resources.signature import KeyPair
 from skydentity.utils.hash_util import hash_public_key
 
-from .credentials import (
-    get_managed_identity_auth_token,
-    _generate_rsa_key_pair
-)
-from .logging import get_logger, print_and_log, build_time_logging_string
+from .credentials import _generate_rsa_key_pair, get_managed_identity_auth_token
+from .logging import build_time_logging_string, get_logger, print_and_log
 from .policy_check import (
-    check_request_from_policy, 
+    check_request_for_crosscloud_resources,
+    check_request_from_policy,
     get_authorization_policy_manager,
-    get_storage_policy_manager
+    get_storage_policy_manager,
 )
 from .signature import strip_signature_headers, verify_request_signature
 
@@ -37,16 +42,47 @@ COMPUTE_API_ENDPOINT = os.environ.get(
     "COMPUTE_API_ENDPOINT", "https://management.azure.com/"
 )
 
-SkypilotRoute = namedtuple(
-    "SkypilotRoute",
-    [
-        "methods",  # HTTP methods for the route
-        "path",  # Flask rule for the route path
-        "fields",  # fields in the routing rule
-        "view_func",  # explicit view function to use; optional
-    ],
-    defaults=[None, None],  # defaults for "fields" and "view_func"
-)
+T = TypeVar("T")
+
+
+@dataclass
+class ActionFuncResult(Generic[T]):
+    """
+    Result of an action function call from a route.
+    """
+
+    # state carried forward to a response function
+    state: Optional[T] = None
+
+    # Function that is called to modify the request body.
+    # This defaults to the identity function.
+    request_body_modifier: Callable[[dict], dict] = lambda body: body
+
+
+@dataclass
+class SkypilotRoute:
+    # HTTP methods for the route
+    methods: list[str]
+
+    # Flask rule for the route paths
+    path: str
+
+    # fields in the routing rule
+    fields: list[str]
+
+    # explicit view function to use; optional, mutually exclusive with action_func
+    view_func: Optional[Callable] = None
+
+    # function to call after the request is checked for authorization;
+    # mutually exclusive with view_func, since this is only called for a generic request forward.
+    # the results of the action function are saved and passed to the response function,
+    # in case there are any dependencies on this output.
+    action_func: Optional[Callable[[], ActionFuncResult]] = None
+
+    # function to call after the request has been forwarded to the cloud;
+    # the function is called with the response object, and any state from the action function.
+    # mutually exclusive with view_func, since this is only called for a generic request forward.
+    response_func: Optional[Callable[[requests.Response, Any], None]] = None
 
 
 # list of all routes required; must be defined after `build_generic_forward`
@@ -60,6 +96,10 @@ ROUTES: list[SkypilotRoute] = [
         methods=["GET", "PUT", "PATCH"],
         path="/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/virtualMachines/<vmName>",
         fields=["subscriptionId", "resourceGroupName", "vmName"],
+        action_func=lambda: vm_creation_action_func(),
+        response_func=lambda response, state: vm_creation_response_func(
+            response, state
+        ),
     ),
     SkypilotRoute(
         methods=["GET"],
@@ -94,7 +134,12 @@ ROUTES: list[SkypilotRoute] = [
     SkypilotRoute(
         methods=["GET", "PUT"],
         path="/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<virtualNetworkName>/subnets/<subnetName>",
-        fields=["subscriptionId", "resourceGroupName", "virtualNetworkName", "subnetName"],
+        fields=[
+            "subscriptionId",
+            "resourceGroupName",
+            "virtualNetworkName",
+            "subnetName",
+        ],
     ),
     SkypilotRoute(
         methods=["GET", "PUT"],
@@ -129,14 +174,16 @@ ROUTES: list[SkypilotRoute] = [
 ]
 
 
-def generic_forward_request(request, log_dict=None):
+def generic_forward_request(
+    request, log_dict=None, action_func=None, response_func=None, **kwargs
+):
     """
     [SkyPilot Integration]
     Forward a generic request to Azure APIs.
     """
+    logger = get_logger()
     try:
         start = time.perf_counter()
-        logger = get_logger()
 
         request_name = request.method.upper() + str(random.randint(0, 1000))
         caller = "skypilot_forward:generic_forward_request"
@@ -147,32 +194,107 @@ def generic_forward_request(request, log_dict=None):
                 log_str += f"\t{key}: {val}\n"
             print_and_log(logger, log_str.strip())
 
-        print_and_log(logger, build_time_logging_string(request_name, caller, "setup_logs", start, time.perf_counter()))
+        print_and_log(
+            logger,
+            build_time_logging_string(
+                request_name, caller, "setup_logs", start, time.perf_counter()
+            ),
+        )
 
         start_verify_request_signature = time.perf_counter()
         if not verify_request_signature(request):
-            print_and_log(logger, "Request is unauthorized (signature verification failed)")
-            print_and_log(logger, build_time_logging_string(request_name, caller, "total (signature verif. failed)", start, time.perf_counter()))
+            print_and_log(
+                logger, "Request is unauthorized (signature verification failed)"
+            )
+            print_and_log(
+                logger,
+                build_time_logging_string(
+                    request_name,
+                    caller,
+                    "total (signature verif. failed)",
+                    start,
+                    time.perf_counter(),
+                ),
+            )
             return Response("Unauthorized", 401)
-        print_and_log(logger, build_time_logging_string(request_name, caller, "verify_request_signature", start_verify_request_signature, time.perf_counter()))
+        print_and_log(
+            logger,
+            build_time_logging_string(
+                request_name,
+                caller,
+                "verify_request_signature",
+                start_verify_request_signature,
+                time.perf_counter(),
+            ),
+        )
 
         # Check the request
         start_check_request_from_policy = time.perf_counter()
-        public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
-        authorized, managed_identity_id = check_request_from_policy(public_key_bytes, request, request_id=request_name, caller_name=caller)
-        print_and_log(logger, build_time_logging_string(request_name, caller, "check_request_from_policy", start_check_request_from_policy, time.perf_counter()))
+        public_key_bytes = base64.b64decode(
+            request.headers["X-PublicKey"], validate=True
+        )
+        authorized, managed_identity_id = check_request_from_policy(
+            public_key_bytes, request, request_id=request_name, caller_name=caller
+        )
+        print_and_log(
+            logger,
+            build_time_logging_string(
+                request_name,
+                caller,
+                "check_request_from_policy",
+                start_check_request_from_policy,
+                time.perf_counter(),
+            ),
+        )
+
+        # unauthorized if result is None
         if not authorized:
             print_and_log(logger, "Request is unauthorized (policy check failed)")
-            print_and_log(logger, build_time_logging_string(request_name, caller, "total (policy check failed)", start, time.perf_counter()))
+            print_and_log(
+                logger,
+                build_time_logging_string(
+                    request_name,
+                    caller,
+                    "total (policy check failed)",
+                    start,
+                    time.perf_counter(),
+                ),
+            )
             return Response("Unauthorized", 401)
+
+        # call action function after validating the request
+        action_func_result = None
+        if action_func is not None:
+            print_and_log(logger, "calling action func")
+            action_func_result = action_func()
+        else:
+            print_and_log(logger, "no action func")
 
         # Get new endpoint and new headers
         start_get_new_url = time.perf_counter()
         new_url = get_new_url(request)
-        print_and_log(logger, build_time_logging_string(request_name, caller, "get_new_url", start_get_new_url, time.perf_counter()))
+        print_and_log(
+            logger,
+            build_time_logging_string(
+                request_name,
+                caller,
+                "get_new_url",
+                start_get_new_url,
+                time.perf_counter(),
+            ),
+        )
         start_get_new_headers = time.perf_counter()
         new_headers = get_headers_with_auth(request)
-        print_and_log(logger, build_time_logging_string(request_name, caller, "get_headers_with_auth", start_get_new_headers, time.perf_counter()))
+        print_and_log(
+            logger,
+            build_time_logging_string(
+                request_name,
+                caller,
+                "get_headers_with_auth",
+                start_get_new_headers,
+                time.perf_counter(),
+            ),
+        )
 
         # Only modify the JSON if a valid service account capability was provided
         new_json = None
@@ -182,29 +304,72 @@ def generic_forward_request(request, log_dict=None):
             if managed_identity_id:
                 new_json = get_json_with_managed_identity(request, managed_identity_id)
                 # print_and_log(logger, f"Json with service account: {new_json}")
-            print_and_log(logger, build_time_logging_string(request_name, caller, "get_json_with_service_account", start_get_json_with_sa, time.perf_counter()))
+            print_and_log(
+                logger,
+                build_time_logging_string(
+                    request_name,
+                    caller,
+                    "get_json_with_service_account",
+                    start_get_json_with_sa,
+                    time.perf_counter(),
+                ),
+            )
 
             # Inject random public ssh keys if applicable
             inject_random_public_key(new_json, new_url)
 
         # Send the request to Azure
         start_send_azure_request = time.perf_counter()
-        azure_response = send_azure_request(request, new_headers, new_url, new_json=new_json)
-        
-        print_and_log(logger, build_time_logging_string(request_name, caller, "send_azure_request", start_send_azure_request, time.perf_counter()))
-        print_and_log(logger, build_time_logging_string(request_name, caller, "total", start, time.perf_counter()))
-        return Response(azure_response.content, azure_response.status_code, headers=new_headers, content_type=azure_response.headers["Content-Type"])
+        azure_response = send_azure_request(
+            request, new_headers, new_url, new_json=new_json
+        )
+
+        print_and_log(
+            logger,
+            build_time_logging_string(
+                request_name,
+                caller,
+                "send_azure_request",
+                start_send_azure_request,
+                time.perf_counter(),
+            ),
+        )
+        print_and_log(
+            logger,
+            build_time_logging_string(
+                request_name, caller, "total", start, time.perf_counter()
+            ),
+        )
+
+        # call response function if provided
+        if response_func is not None:
+            LOGGER.info("calling response func")
+            response_func(azure_response, action_func_result)
+        else:
+            LOGGER.info("no response func")
+
+        return Response(
+            azure_response.content,
+            azure_response.status_code,
+            headers=new_headers,
+            content_type=azure_response.headers["Content-Type"],
+        )
     except Exception as e:
         print_and_log(logger, f"Error in generic_forward_request: {e}")
         return Response("Error", 500)
 
-def build_generic_forward(path: str, fields: list[str]):
+
+def build_generic_forward(
+    path: str, fields: list[str], action_func=None, response_func=None
+):
     """
     Return the appropriate generic forward view function for the fields provided.
 
     The path is only used to create a unique and readable name for the anonymous function.
     """
-    func = lambda **kwargs: generic_forward_request(request, kwargs)
+    func = lambda **kwargs: generic_forward_request(
+        request, action_func=action_func, response_func=response_func, **kwargs
+    )
 
     # Flask expects all view functions to have unique names
     # (otherwise it complains about overriding view functions)
@@ -229,7 +394,13 @@ def setup_routes(app: Flask):
             # create a generic view function from the fields
             app.add_url_rule(
                 route.path,
-                view_func=build_generic_forward(route.path, route.fields),
+                view_func=build_generic_forward(
+                    route.path,
+                    route.fields,
+                    # register action/response functions if specified
+                    action_func=route.action_func,
+                    response_func=route.response_func,
+                ),
                 methods=route.methods,
             )
         else:
@@ -252,6 +423,7 @@ def default_route_deny(request, path=None):
     print_and_log(logger, f"UNKNOWN ROUTE: /{path}")
     return Response("Unknown route; permission denied", 401)
 
+
 def get_json_with_managed_identity(request, managed_identity_id):
     """
     Modify the JSON of the request to include service account details.
@@ -259,9 +431,7 @@ def get_json_with_managed_identity(request, managed_identity_id):
     json_dict = request.json
     managed_identity_dict = {
         "type": "UserAssigned",
-        "userAssignedIdentities": {
-            managed_identity_id: {}
-        }
+        "userAssignedIdentities": {managed_identity_id: {}},
     }
     new_dict = json_dict.copy()
 
@@ -279,6 +449,7 @@ def get_json_with_managed_identity(request, managed_identity_id):
         new_dict["identity"] = managed_identity_dict
     del new_dict["managedIdentities"]
     return new_dict
+
 
 def inject_random_public_key(request_body, request_url):
     """
@@ -298,12 +469,23 @@ def inject_random_public_key(request_body, request_url):
         if "osProfile" in vm_body["properties"]:
             if "linuxConfiguration" in vm_body["properties"]["osProfile"]:
                 if "ssh" in vm_body["properties"]["osProfile"]["linuxConfiguration"]:
-                    if "publicKeys" in vm_body["properties"]["osProfile"]["linuxConfiguration"]["ssh"]:
+                    if (
+                        "publicKeys"
+                        in vm_body["properties"]["osProfile"]["linuxConfiguration"][
+                            "ssh"
+                        ]
+                    ):
                         new_public_key = _generate_rsa_key_pair()
-                        vm_body["properties"]["osProfile"]["linuxConfiguration"]["ssh"]["publicKeys"] = [{
-                            "path": vm_body["properties"]["osProfile"]["linuxConfiguration"]["ssh"]["publicKeys"][0]["path"],
-                            "keyData": new_public_key[0]
-                        }]
+                        vm_body["properties"]["osProfile"]["linuxConfiguration"]["ssh"][
+                            "publicKeys"
+                        ] = [
+                            {
+                                "path": vm_body["properties"]["osProfile"][
+                                    "linuxConfiguration"
+                                ]["ssh"]["publicKeys"][0]["path"],
+                                "keyData": new_public_key[0],
+                            }
+                        ]
 
 
 def get_headers_with_auth(request):
@@ -339,7 +521,9 @@ def get_new_url(request):
     return new_url
 
 
-def send_azure_request(request, new_headers, new_url, new_json=None):
+def send_azure_request(
+    request, new_headers, new_url, new_json=None
+) -> requests.Response:
     """
     Send a request to the Azure endpoint, with new headers, URL, and request body.
     """
@@ -368,11 +552,15 @@ def create_authorization_route(cloud):
         authorization_policy_manager = get_authorization_policy_manager()
         print_and_log(logger, f"Creating authorization (json: {request.json})")
 
-        public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
+        public_key_bytes = base64.b64decode(
+            request.headers["X-PublicKey"], validate=True
+        )
         # Compute hash of public key
         public_key_hash = hash_public_key(public_key_bytes)
         print_and_log(logger, f"Public key hash: {public_key_hash}")
-        request_auth_dict = authorization_policy_manager.get_policy_dict(public_key_hash)
+        request_auth_dict = authorization_policy_manager.get_policy_dict(
+            public_key_hash
+        )
         print("Request auth dict:", request_auth_dict)
         authorization_policy = AzureAuthorizationPolicy(policy_dict=request_auth_dict)
         authorization_request, success = authorization_policy.check_request(request)
@@ -390,7 +578,8 @@ def create_authorization_route(cloud):
     except Exception as e:
         print_and_log(logger, f"Error in create_authorization_route: {e}")
         return Response("Error", 500)
-    
+
+
 def create_storage_authorization_route(cloud):
     storage_start = time.perf_counter()
     logger = get_logger()
@@ -411,26 +600,135 @@ def create_storage_authorization_route(cloud):
     # Retrieve storage policy from CosmosDB with public key hash
     storage_policy_retrieval_start = time.perf_counter()
     storage_policy_dict = storage_policy_manager.get_policy_dict(public_key_hash)
-    print_and_log(logger, build_time_logging_string(request_name, caller, "storage_retrieval", storage_policy_retrieval_start, time.perf_counter()))
+    print_and_log(
+        logger,
+        build_time_logging_string(
+            request_name,
+            caller,
+            "storage_retrieval",
+            storage_policy_retrieval_start,
+            time.perf_counter(),
+        ),
+    )
     # print("Storage policy dict:", storage_policy_dict)
 
     # Check request against storage policy
     storage_policy = AzureStoragePolicy(policy_dict=storage_policy_dict)
     storage_check_request_start = time.perf_counter()
     request_auth, success = storage_policy.check_request(request)
-    print_and_log(logger, build_time_logging_string(request_name, caller, "storage_check_request", storage_check_request_start, time.perf_counter()))
+    print_and_log(
+        logger,
+        build_time_logging_string(
+            request_name,
+            caller,
+            "storage_check_request",
+            storage_check_request_start,
+            time.perf_counter(),
+        ),
+    )
 
     if success and request_auth is not None:
         sas_token_start = time.perf_counter()
-        access_token, expiration_timestamp = (
-            storage_policy_manager.generate_sas_token(
-                request_auth.container, request_auth.action
-            )
+        access_token, expiration_timestamp = storage_policy_manager.generate_sas_token(
+            request_auth.container, request_auth.action
         )
-        print_and_log(logger, build_time_logging_string(request_name, caller, "sas_token", sas_token_start, time.perf_counter()))
-        print_and_log(logger, build_time_logging_string(request_name, caller, "total", storage_start, time.perf_counter()))
+        print_and_log(
+            logger,
+            build_time_logging_string(
+                request_name, caller, "sas_token", sas_token_start, time.perf_counter()
+            ),
+        )
+        print_and_log(
+            logger,
+            build_time_logging_string(
+                request_name, caller, "total", storage_start, time.perf_counter()
+            ),
+        )
         return Response(
             json.dumps({"access_token": access_token, "expires": expiration_timestamp}),
             200,
         )
     return Response("Unauthorized", 401)
+
+
+def vm_creation_action_func() -> ActionFuncResult[tuple[CrossCloudPolicy, KeyPair]]:
+    """
+    Action function for VM creation.
+
+    Handles cross-cloud resource access setup.
+    """
+    LOGGER.info("in vm creation action func; method %s", request.method)
+    # only accept VM creation requests
+    if request.method != "PUT":
+        return ActionFuncResult()
+
+    # get public key from the request
+    public_key_bytes = base64.b64decode(request.headers["X-PublicKey"], validate=True)
+
+    # determine if the VM has a cross-cloud role attached
+    crosscloud_resource_check_result = check_request_for_crosscloud_resources(
+        public_key_bytes, request
+    )
+    LOGGER.info("crosscloud check result: %s", crosscloud_resource_check_result)
+
+    if crosscloud_resource_check_result is None:
+        # no roles attached, no action is needed
+        return ActionFuncResult()
+
+    # otherwise, a keypair was created
+    crosscloud_policy, keypair = crosscloud_resource_check_result
+
+    # TODO: store the key in azure key vault
+    #  and get the secret name, to be passed into the VM
+    #  to do this, we probably need to edit AzureManagedIdentityManager,
+    #  creating a new method to add access to a specific key vault
+
+    # TODO: and maybe we need to add a new class? to manage key vaults
+
+    def request_body_modifier(body):
+        """
+        Modifier for the request body to attach information about the private key.
+        """
+        # TODO: modify cloud-init script (i.e. the userdata of the request)
+        #  to include any additional files (ex. secret name, IP/hostname of the authorizers)
+        #  this is probably just going to be in one config file (JSON? YAML?), put in a standard location
+        return body
+
+    return ActionFuncResult(
+        state=(crosscloud_policy, keypair), request_body_modifier=request_body_modifier
+    )
+
+
+def vm_creation_response_func(
+    response: requests.Response,
+    result: ActionFuncResult[tuple[CrossCloudPolicy, KeyPair]],
+):
+    """
+    Response function for VM creation.
+
+    Handles finalization of cross-cloud resource access setup.
+    """
+    # only accept VM creation requests
+    if request.method != "PUT":
+        return
+
+    # check that the response was actually for a VM creation
+    LOGGER.info("response status: %s", response.status_code)
+    if response.status_code != 201:
+        # do nothing if the VM was not just created
+        LOGGER.info(
+            "VM was not created, so no new information was uploaded to the global state"
+        )
+        return
+
+    LOGGER.info("Response received for VM creation; action func result: %s", result)
+
+    # TODO: upload information about the VM into the global state
+    #  probably need a new class for this?
+    #  need to store mapping from (cloud, VM ID) to:
+    #   - public key for VM signatures
+    #   - orchestrator pubkey hash (to identify policy)
+    #   - VM role
+
+    # TODO: if the VM has been created, then modify the roles given
+    #  to the managed identity so that it has access to the secret store

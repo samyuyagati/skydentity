@@ -41,7 +41,7 @@ def create_service_account(project_id: str, name: str, display_name: str, creden
         .serviceAccounts()
         .create(
             name="projects/" + project_id,
-            body={"accountId": name, "serviceAccount": {"displayName": display_name}},
+            body={"accountId": name, "serviceAccount": {"displayName": display_name, "description": "[skydentity] Automatically generated service account"}},
         )
         .execute()
     )

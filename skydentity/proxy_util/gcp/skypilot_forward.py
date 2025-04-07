@@ -204,7 +204,7 @@ ROUTES: list[Route] = [
 ]
 
 
-def generic_forward_request(request, log_dict=None):
+def generic_forward_request(request, log_dict=None, **kwargs):
     """
     Forward a generic request to google APIs.
     """
@@ -338,7 +338,7 @@ def build_generic_forward(path: str, fields: list[str]):
 
     The path is only used to create a unique and readable name for the anonymous function.
     """
-    func = lambda **kwargs: generic_forward_request(request, kwargs)
+    func = lambda **kwargs: generic_forward_request(request, **kwargs)
 
     # Flask expects all view functions to have unique names
     # (otherwise it complains about overriding view functions)

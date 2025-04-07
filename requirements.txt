@@ -20,5 +20,7 @@ azure-cosmos
 azure-storage-blob
 # GCP
 google-cloud-compute
+google-cloud-resource-manager
+google-cloud-iam
 google-cloud-logging
 firebase-admin

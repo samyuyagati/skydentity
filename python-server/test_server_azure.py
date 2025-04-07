@@ -18,15 +18,15 @@ USERNAME = "skydentity"
 PASSWORD = "$kyD3ntity1sAwesome"
 NUM_VMS_TO_CREATE = 1
 
-BASE_URL = "https://127.0.0.1:5000"
-# BASE_URL = "https://management.azure.com"
+# BASE_URL = "https://127.0.0.1:5000"
+BASE_URL = "https://management.azure.com"
 
 """
     Creates a new resource group in the given location (region), or default westus.
     This includes creating the virtual network and subnet that are shared between VMs.
     Returns the subnet id necessary to create individual VMs.
 """
-def create_resource_group(resource_group_name, subscription_id, location="westus"):
+def create_resource_group(resource_group_name, subscription_id, location="westus2"):
     # Get credentials from CLI
     credential = AzureCliCredential()
 
@@ -94,7 +94,7 @@ def create_resource_group(resource_group_name, subscription_id, location="westus
     Create the public ip address and network interface for an individual VM in a given subnet.
     Returns the network interface id necessary to create a VM instance.
 """
-def create_public_ip_and_nic(resource_group_name, subscription_id, subnet_id, nsg_id, location="westus"):
+def create_public_ip_and_nic(resource_group_name, subscription_id, subnet_id, nsg_id, location="westus2"):
     # Get credentials from CLI
     credential = AzureCliCredential()
 
@@ -137,7 +137,7 @@ def create_public_ip_and_nic(resource_group_name, subscription_id, subnet_id, ns
 # TODO: Add type annotations
 # TODO: WIP, issue with image reference for disk
 # Useful reference: https://learn.microsoft.com/en-us/azure/developer/python/sdk/examples/azure-sdk-samples-managed-disks
-def disk_from_image_reference(vm_name, disk_size_gb, image_reference, location="westus"):
+def disk_from_image_reference(vm_name, disk_size_gb, image_reference, location="westus2"):
     credential = AzureCliCredential()
     compute_client = ComputeManagementClient(credential, subscription_id, base_url=BASE_URL)
     os_disk_name = vm_name + '-osdisk'
@@ -185,7 +185,7 @@ Creates a new VM with the provided network interface id.
                 sku='16.04-LTS'
                 version='latest'
 """
-def create_instance(resource_group_name, subscription_id, nic_id, vm_name, vm_size="Standard_B1s", location="westus", disk=None):
+def create_instance(resource_group_name, subscription_id, nic_id, vm_name, vm_size="Standard_B1s", location="westus2", disk=None):
     credential = AzureCliCredential()
     compute_client = ComputeManagementClient(credential, subscription_id, base_url=BASE_URL)
 
@@ -239,7 +239,7 @@ def create_instance(resource_group_name, subscription_id, nic_id, vm_name, vm_si
 def main():
     # Create resource group (including vnet and subnet) once
     resource_group_name = "skydentity"
-    subnet_id, nsg_id = create_resource_group(resource_group_name, subscription_id, location="westus")
+    subnet_id, nsg_id = create_resource_group(resource_group_name, subscription_id, location="westus2")
 
     # Create VMs
     for i in range(NUM_VMS_TO_CREATE):

@@ -16,7 +16,6 @@ ORGNAME = Skydentity
 # resolve to the same IP address as the FQDN.
 ALTNAMES = DNS:$FQDN   # , DNS:bar.example.org , DNS:www.foo.example.org
 
-# --- no modifications required below ---
 [ req ]
 default_bits = 2048
 default_md = sha256
@@ -24,12 +23,16 @@ prompt = no
 encrypt_key = no
 distinguished_name = dn
 req_extensions = req_ext
+x509_extensions = req_ext
 
 [ dn ]
-C = CH
+C = US
 O = $ORGNAME
 CN = $FQDN
 
 [ req_ext ]
 subjectAltName = $ALTNAMES
-
+# mark the certificate as a CA (and disallow other CAs in the trust chain)
+basicConstraints = critical, CA:TRUE, pathlen:1
+# allow the CA to sign other certs
+keyUsage = critical, keyCertSign

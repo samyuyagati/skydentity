@@ -1,21 +1,24 @@
 """
 Forwarding for SkyPilot requests.
 """
+
 import base64
 import datetime
 import json
+import logging as py_logging
 import os
+import random
 import time
 from collections import namedtuple
-import random
+from functools import cache
+from typing import Dict, Optional, Tuple
+
 import requests
-import logging as py_logging
+from Crypto.Hash import SHA256
 from Crypto.PublicKey import RSA
 from Crypto.Signature import pkcs1_15
-from Crypto.Hash import SHA256
 from flask import Flask, Response, request
-from typing import Dict, Optional, Tuple
-from functools import cache
+
 from .logging import build_time_logging_string
 
 LOGGER = py_logging.getLogger(__name__)
@@ -24,17 +27,15 @@ LOGGER = py_logging.getLogger(__name__)
 # otherwise, there are some issues with connectivity latency
 REQUEST_SESSION = requests.Session()
 adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20)
-REQUEST_SESSION.mount('http://', adapter)
-REQUEST_SESSION.mount('https://', adapter)
+REQUEST_SESSION.mount("http://", adapter)
+REQUEST_SESSION.mount("https://", adapter)
 
 # global constants
 STORAGE_ENDPOINT = os.environ.get(
     "STORAGE_ENDPOINT", "https://skydentity.blob.core.windows.net"
 )
 
-PRIVATE_KEY_PATH = os.environ.get(
-    "PRIVATE_KEY_PATH", "proxy_util/private_key.pem" 
-)
+PRIVATE_KEY_PATH = os.environ.get("PRIVATE_KEY_PATH", "proxy_util/private_key.pem")
 with open(PRIVATE_KEY_PATH, "rb") as key_file:
     PRIVATE_KEY = RSA.import_key(key_file.read())
 
@@ -95,7 +96,12 @@ ROUTES: list[SkypilotRoute] = [
     SkypilotRoute(
         methods=["GET", "PUT"],
         path="/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<virtualNetworkName>/subnets/<subnetName>",
-        fields=["subscriptionId", "resourceGroupName", "virtualNetworkName", "subnetName"],
+        fields=[
+            "subscriptionId",
+            "resourceGroupName",
+            "virtualNetworkName",
+            "subnetName",
+        ],
     ),
     SkypilotRoute(
         methods=["GET", "PUT"],
@@ -122,21 +128,22 @@ ROUTES: list[SkypilotRoute] = [
     SkypilotRoute(
         methods=["POST"],
         path="/skydentity/cloud/<cloud>/create-authorization",
-        fields=["cloud"]
+        fields=["cloud"],
     ),
 ]
+
 
 def get_headers_with_signature(request):
     new_headers = {k: v for k, v in request.headers}
 
     private_key = PRIVATE_KEY
-           
+
     # assume set, predetermined/agreed upon tolerance on client proxy/receiving end
     # use utc for consistency if server runs in cloud in different region
     timestamp = datetime.datetime.now(datetime.timezone.utc).timestamp()
     public_key_string = private_key.public_key().export_key()
 
-    message = f"{str(request.method)}-{timestamp}-{public_key_string}"    
+    message = f"{str(request.method)}-{timestamp}-{public_key_string}"
     message_bytes = message.encode("utf-8")
 
     h = SHA256.new(message_bytes)
@@ -176,13 +183,13 @@ def generic_forward_request(request, log_dict=None):
     new_url = get_new_url(request)
     new_headers = get_headers_with_signature(request)
 
-    # Only modifies the body to attach the service account capability 
+    # Only modifies the body to attach the service account capability
     new_json = None
     if len(request.get_data()) > 0:
         old_json = request.json
         # print("Old JSON:", old_json, flush=True)
         if "identity" not in old_json and "deployments" not in request.url:
-        # if "identity" not in old_json and "deployments" not in request.url and "resourcegroups" not in request.url:
+            # if "identity" not in old_json and "deployments" not in request.url and "resourcegroups" not in request.url:
             new_json = request.json
         else:
             new_json = old_json
@@ -194,29 +201,45 @@ def generic_forward_request(request, log_dict=None):
                         if "resources" in new_json["properties"]["template"]:
                             # Make sure to remove all managed identities
                             managed_identity_ids = []
-                            for i, resource in enumerate(new_json["properties"]["template"]["resources"]):
+                            for i, resource in enumerate(
+                                new_json["properties"]["template"]["resources"]
+                            ):
                                 if "type" in resource:
-                                    if resource["type"] == "Microsoft.Compute/virtualMachines":
+                                    if (
+                                        resource["type"]
+                                        == "Microsoft.Compute/virtualMachines"
+                                    ):
                                         if "identity" in resource:
                                             # print("Found identity field in the template", flush=True)
                                             contains_identity_field = True
-                                    elif resource["type"] == "Microsoft.ManagedIdentity/userAssignedIdentities":
+                                    elif (
+                                        resource["type"]
+                                        == "Microsoft.ManagedIdentity/userAssignedIdentities"
+                                    ):
                                         managed_identity_ids.append(i)
-                                    elif resource["type"] == "Microsoft.Authorization/roleAssignments":
+                                    elif (
+                                        resource["type"]
+                                        == "Microsoft.Authorization/roleAssignments"
+                                    ):
                                         managed_identity_ids.append(i)
-                            
+
                             for i in range(len(managed_identity_ids) - 1, -1, -1):
-                                new_json["properties"]["template"]["resources"].pop(managed_identity_ids[i])
+                                new_json["properties"]["template"]["resources"].pop(
+                                    managed_identity_ids[i]
+                                )
 
             # if "resourcegroups" in request.url:
             #     contains_identity_field = True
 
             if not ("deployments" in request.url and not contains_identity_field):
-                # TODO don't hardcode the path to the capability
                 parent_dir = os.path.dirname(os.getcwd())
                 capability_dir = "tokens"
                 capability_file = "capability.json"
-                capability_path = os.path.join(parent_dir, capability_dir, capability_file)
+                # get capability path from env var, or use default
+                capability_path = os.environ.get(
+                    "CAPABILITY_FILE",
+                    os.path.join(parent_dir, capability_dir, capability_file),
+                )
                 with open(capability_path, "r") as f:
                     new_json["managedIdentities"] = [json.load(f)]
 
@@ -226,7 +249,8 @@ def generic_forward_request(request, log_dict=None):
     azure_response = forward_to_client(
         request, new_url, new_headers=new_headers, new_json=new_json
     )
-    LOGGER.info(build_time_logging_string(
+    LOGGER.info(
+        build_time_logging_string(
             request.full_path,
             "skypilot_forward:generic_forward_request",
             "forward_request",
@@ -235,16 +259,21 @@ def generic_forward_request(request, log_dict=None):
         )
     )
 
-    LOGGER.info(build_time_logging_string(
-        request.full_path,
-        "skypilot_forward:generic_forward_request",
-        "generic_forward_request",
-        generic_forward_start,
-        time.perf_counter(),
+    LOGGER.info(
+        build_time_logging_string(
+            request.full_path,
+            "skypilot_forward:generic_forward_request",
+            "generic_forward_request",
+            generic_forward_start,
+            time.perf_counter(),
         )
     )
 
-    return Response(azure_response.content, azure_response.status_code, content_type=azure_response.headers["Content-Type"])
+    return Response(
+        azure_response.content,
+        azure_response.status_code,
+        content_type=azure_response.headers["Content-Type"],
+    )
 
 
 def build_generic_forward(path: str, fields: list[str]):
@@ -257,42 +286,99 @@ def build_generic_forward(path: str, fields: list[str]):
     if fields == ["cloud"]:
         func = lambda cloud: generic_forward_request(request, {"cloud": cloud})
     elif fields == ["subscriptionId"]:
-        func = lambda subscriptionId: generic_forward_request(request, {"subscriptionId": subscriptionId})
+        func = lambda subscriptionId: generic_forward_request(
+            request, {"subscriptionId": subscriptionId}
+        )
     elif fields == ["subscriptionId", "resourceGroupName"]:
         func = lambda subscriptionId, resourceGroupName: generic_forward_request(
-            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName}
+            request,
+            {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName},
         )
     elif fields == ["subscriptionId", "resourceGroupName", "nicName"]:
-        func = lambda subscriptionId, resourceGroupName, nicName: generic_forward_request(
-            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "nicName": nicName}
+        func = (
+            lambda subscriptionId, resourceGroupName, nicName: generic_forward_request(
+                request,
+                {
+                    "subscriptionId": subscriptionId,
+                    "resourceGroupName": resourceGroupName,
+                    "nicName": nicName,
+                },
+            )
         )
     elif fields == ["subscriptionId", "resourceGroupName", "ipName"]:
-        func = lambda subscriptionId, resourceGroupName, ipName: generic_forward_request(
-            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "ipName": ipName}
+        func = (
+            lambda subscriptionId, resourceGroupName, ipName: generic_forward_request(
+                request,
+                {
+                    "subscriptionId": subscriptionId,
+                    "resourceGroupName": resourceGroupName,
+                    "ipName": ipName,
+                },
+            )
         )
     elif fields == ["subscriptionId", "region", "operationId"]:
         func = lambda subscriptionId, region, operationId: generic_forward_request(
-            request, {"subscriptionId": subscriptionId, "region": region, "operationId": operationId}
+            request,
+            {
+                "subscriptionId": subscriptionId,
+                "region": region,
+                "operationId": operationId,
+            },
         )
     elif fields == ["subscriptionId", "resourceGroupName", "virtualNetworkName"]:
         func = lambda subscriptionId, resourceGroupName, virtualNetworkName: generic_forward_request(
-            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "virtualNetworkName": virtualNetworkName}
+            request,
+            {
+                "subscriptionId": subscriptionId,
+                "resourceGroupName": resourceGroupName,
+                "virtualNetworkName": virtualNetworkName,
+            },
         )
-    elif fields == ["subscriptionId", "resourceGroupName", "virtualNetworkName", "subnetName"]:
+    elif fields == [
+        "subscriptionId",
+        "resourceGroupName",
+        "virtualNetworkName",
+        "subnetName",
+    ]:
         func = lambda subscriptionId, resourceGroupName, virtualNetworkName, subnetName: generic_forward_request(
-            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "virtualNetworkName": virtualNetworkName, "subnetName": subnetName}
+            request,
+            {
+                "subscriptionId": subscriptionId,
+                "resourceGroupName": resourceGroupName,
+                "virtualNetworkName": virtualNetworkName,
+                "subnetName": subnetName,
+            },
         )
     elif fields == ["subscriptionId", "resourceGroupName", "vmName"]:
-        func = lambda subscriptionId, resourceGroupName, vmName: generic_forward_request(
-            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "vmName": vmName}
+        func = (
+            lambda subscriptionId, resourceGroupName, vmName: generic_forward_request(
+                request,
+                {
+                    "subscriptionId": subscriptionId,
+                    "resourceGroupName": resourceGroupName,
+                    "vmName": vmName,
+                },
+            )
         )
     elif fields == ["subscriptionId", "resourceGroupName", "nsgName"]:
-        func = lambda subscriptionId, resourceGroupName, nsgName: generic_forward_request(
-            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "nsgName": nsgName}
+        func = (
+            lambda subscriptionId, resourceGroupName, nsgName: generic_forward_request(
+                request,
+                {
+                    "subscriptionId": subscriptionId,
+                    "resourceGroupName": resourceGroupName,
+                    "nsgName": nsgName,
+                },
+            )
         )
     elif fields == ["subscriptionId", "resourceGroupName", "deploymentName"]:
         func = lambda subscriptionId, resourceGroupName, deploymentName: generic_forward_request(
-            request, {"subscriptionId": subscriptionId, "resourceGroupName": resourceGroupName, "deploymentName": deploymentName}
+            request,
+            {
+                "subscriptionId": subscriptionId,
+                "resourceGroupName": resourceGroupName,
+                "deploymentName": deploymentName,
+            },
         )
     else:
         raise ValueError(
@@ -327,7 +413,7 @@ def setup_routes(app: Flask):
             raise ValueError(
                 "Invalid route specification; missing either `view_func` or `fields`"
             )
-        
+
     # set up default route
     default_view = lambda path: generic_forward_request(request, {"path": path})
     default_view.__name__ = "default_view"
@@ -351,15 +437,26 @@ def get_new_url(request):
     Redirect the URL (originally to the proxy) to the correct client proxy.
     """
     redirect_endpoint = get_client_proxy_endpoint(request)
+    LOGGER.debug(
+        f"\tOld URL: {request.host_url} (Redirect endpoint: {redirect_endpoint})",
+    )
+
     # logger = get_logger()
     # print_and_log(logger, f"\tOld URL: {request.host_url} (Redirect endpoint: {redirect_endpoint})")
-    new_url = request.url.replace(request.host_url, redirect_endpoint)
-    
+    new_url = request.url.replace(
+        # normalize to include one slash
+        request.host_url.strip("/") + "/",
+        redirect_endpoint.strip("/") + "/",
+    )
+
+    LOGGER.debug(f"\tNew URL: {new_url}")
     # print_and_log(logger, f"\tNew URL: {new_url}")
     return new_url
 
 
-def forward_to_client(request, new_url: str, new_headers=None, new_json=None, new_data=None):
+def forward_to_client(
+    request, new_url: str, new_headers=None, new_json=None, new_data=None
+):
     """
     Forward the request to the client proxy, with new headers, URL, and request body.
     """
@@ -375,7 +472,7 @@ def forward_to_client(request, new_url: str, new_headers=None, new_json=None, ne
             headers=new_headers,
             cookies=request.cookies,
             allow_redirects=False,
-            data=new_data
+            data=new_data,
         )
     return REQUEST_SESSION.request(
         method=request.method,
@@ -384,11 +481,13 @@ def forward_to_client(request, new_url: str, new_headers=None, new_json=None, ne
         json=new_json,
         cookies=request.cookies,
         allow_redirects=False,
-        data=new_data
+        data=new_data,
     )
+
 
 # cache for access tokens
 ACCESS_TOKEN_CACHE: Dict[Tuple[str, str], Tuple[str, str]] = {}
+
 
 def request_storage_token(
     container: str, action: str
@@ -404,9 +503,11 @@ def request_storage_token(
     # return token from cache if it exists
     if (container, action) in ACCESS_TOKEN_CACHE:
         access_token, expiration_timestamp = ACCESS_TOKEN_CACHE[(container, action)]
-        if datetime.datetime.now(datetime.timezone.utc) < datetime.datetime.fromisoformat(
-            expiration_timestamp
-        ).astimezone(datetime.timezone.utc):
+        if datetime.datetime.now(
+            datetime.timezone.utc
+        ) < datetime.datetime.fromisoformat(expiration_timestamp).astimezone(
+            datetime.timezone.utc
+        ):
             # still valid, return it
             return access_token, expiration_timestamp, 200
         # expired; delete from cache
@@ -440,17 +541,20 @@ def request_storage_token(
     # no access token; server error
     return None, None, 500
 
+
 def handle_blob_request(request, container, blob):
     if request.method == "PUT":
         return upload_blob(request, container, blob)
     elif request.method == "GET":
         return download_blob(request, container, blob)
 
+
 def invalidate_cache(container: str, action: str):
     """
     Invalidate the cache for the given bucket/action.
     """
     ACCESS_TOKEN_CACHE.pop((container, action), None)
+
 
 def upload_blob(request, container, blob):
     """
@@ -463,7 +567,8 @@ def upload_blob(request, container, blob):
     access_token, expiration_timestamp, req_status = request_storage_token(
         container, "OVERWRITE_FALLBACK_UPLOAD"
     )
-    LOGGER.info(build_time_logging_string(
+    LOGGER.info(
+        build_time_logging_string(
             request_name,
             "skypilot_forward:upload_blob",
             "request_storage_token",
@@ -500,8 +605,11 @@ def upload_blob(request, container, blob):
     LOGGER.debug("Sending to storage URL: %s", storage_url)
     # forward directly to the Azure endpoint; no need to go through client proxy
     forward_start = time.perf_counter()
-    azure_response = forward_to_client(request, storage_url, new_headers=new_headers, new_data=request.get_data())
-    LOGGER.info(build_time_logging_string(
+    azure_response = forward_to_client(
+        request, storage_url, new_headers=new_headers, new_data=request.get_data()
+    )
+    LOGGER.info(
+        build_time_logging_string(
             request_name,
             "skypilot_forward:upload_blob",
             "forward_request",
@@ -512,15 +620,17 @@ def upload_blob(request, container, blob):
     if azure_response.status_code in (401, 403):
         invalidate_cache(container, "READ")
 
-    LOGGER.info(build_time_logging_string(
-        request_name,
-        "skypilot_forward:upload_blob",
-        "upload_blob",
-        upload_start,
-        time.perf_counter(),
+    LOGGER.info(
+        build_time_logging_string(
+            request_name,
+            "skypilot_forward:upload_blob",
+            "upload_blob",
+            upload_start,
+            time.perf_counter(),
         )
     )
     return Response(azure_response.content, azure_response.status_code)
+
 
 def download_blob(request, container, blob):
     """
@@ -530,8 +640,11 @@ def download_blob(request, container, blob):
     download_start = time.perf_counter()
 
     token_start = time.perf_counter()
-    access_token, expiration_timestamp, req_status = request_storage_token(container, "READ")
-    LOGGER.info(build_time_logging_string(
+    access_token, expiration_timestamp, req_status = request_storage_token(
+        container, "READ"
+    )
+    LOGGER.info(
+        build_time_logging_string(
             request_name,
             "skypilot_forward:download_blob",
             "request_storage_token",
@@ -567,23 +680,29 @@ def download_blob(request, container, blob):
     # forward directly to the Azure endpoint; no need to go through client proxy
     forward_start = time.perf_counter()
     azure_response = forward_to_client(request, storage_url, new_headers=new_headers)
-    LOGGER.info(build_time_logging_string(
+    LOGGER.info(
+        build_time_logging_string(
             request_name,
             "skypilot_forward:download_blob",
             "forward_request",
             forward_start,
             time.perf_counter(),
         )
-    )    
+    )
     if azure_response.status_code in (401, 403):
         invalidate_cache(container, "READ")
 
-    LOGGER.info(build_time_logging_string(
-        request_name,
-        "skypilot_forward:download_blob",
-        "download_blob",
-        download_start,
-        time.perf_counter(),
+    LOGGER.info(
+        build_time_logging_string(
+            request_name,
+            "skypilot_forward:download_blob",
+            "download_blob",
+            download_start,
+            time.perf_counter(),
         )
     )
-    return Response(azure_response.content, azure_response.status_code, headers=dict(azure_response.headers))
+    return Response(
+        azure_response.content,
+        azure_response.status_code,
+        headers=dict(azure_response.headers),
+    )

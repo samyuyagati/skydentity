@@ -1,12 +1,20 @@
+import logging as py_logging
 import os
 import subprocess
 
 from flask import Flask
+from proxy_util.credentials import get_app_id, get_app_secret, get_tenant_id
 from proxy_util.logging import get_logger, print_and_log
 from proxy_util.skypilot_forward import setup_routes
-from proxy_util.credentials import get_tenant_id, get_app_secret, get_app_id
+
+from skydentity.utils.log_util import build_file_handler
 
 app = Flask(__name__)
+
+# add file handler for local logging
+LOGGER = py_logging.getLogger()
+LOGGER.setLevel(py_logging.DEBUG)
+LOGGER.addHandler(build_file_handler("authorizer.log"))
 
 
 @app.route("/hello", methods=["GET"])
@@ -35,7 +43,7 @@ def setup_app():
         # Setting APPSETTING_WEBSITE_SITE_NAME is for forcing azure to go to the correct MSI endpoint
         subprocess.Popen(
             ["az", "login", "--identity", "--username", managed_identity_id],
-            env = {"APPSETTING_WEBSITE_SITE_NAME": "DUMMY"},
+            env={"APPSETTING_WEBSITE_SITE_NAME": "DUMMY"},
             stdout=subprocess.PIPE,
         ).communicate()
     if use_system_identity is not None:
@@ -43,7 +51,7 @@ def setup_app():
         # Setting APPSETTING_WEBSITE_SITE_NAME is for forcing azure to go to the correct MSI endpoint
         subprocess.Popen(
             ["az", "login", "--identity"],
-            env = {"APPSETTING_WEBSITE_SITE_NAME": "DUMMY"},
+            env={"APPSETTING_WEBSITE_SITE_NAME": "DUMMY"},
             stdout=subprocess.PIPE,
         ).communicate()
     tenant_id = get_tenant_id()
@@ -52,7 +60,17 @@ def setup_app():
     if tenant_id is not None and app_id is not None and app_secret is not None:
         print_and_log(logger, "Setting up Azure AD")
         subprocess.Popen(
-            ["az", "login", "--service-principal", "--tenant", tenant_id, "-u", app_id, "-p", app_secret],
+            [
+                "az",
+                "login",
+                "--service-principal",
+                "--tenant",
+                tenant_id,
+                "-u",
+                app_id,
+                "-p",
+                app_secret,
+            ],
             stdout=subprocess.PIPE,
         ).communicate()
 

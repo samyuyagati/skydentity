@@ -1,0 +1,14 @@
+policy:
+  - role: bucket-reader
+    clouds:
+      - cloud: gcp
+        permissions:
+          # role in GCP
+          - permission: roles/storage.objectViewer
+            # resource that the role applies to;
+            # some resources require a type (ex. bucket, project, etc.), which should be specified separately
+            resource:
+              # type from https://cloud.google.com/iam/docs/conditions-resource-attributes#resource-type
+              type: storage.googleapis.com/Bucket
+              # name format from https://cloud.google.com/iam/docs/conditions-resource-attributes#resource-name
+              name: projects/_/buckets/skydentity-test-bucket

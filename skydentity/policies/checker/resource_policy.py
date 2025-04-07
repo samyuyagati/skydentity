@@ -66,25 +66,38 @@ class VMPolicy(ResourcePolicy, ABC):
         # Then check the regions
         for region in standardized_request["regions"]:
             if region not in standardized_vm_policy["regions"]:
-                LOGGER.debug("Region not allowed")
+                LOGGER.debug(
+                    "Region '%s' not allowed; expected %s",
+                    region,
+                    standardized_vm_policy["regions"],
+                )
                 return False
 
         # Then check the instance type
         for instance_type in standardized_request["instance_type"]:
             if instance_type not in standardized_vm_policy["instance_type"]:
-                LOGGER.debug("Instance type not allowed")
+                LOGGER.debug(
+                    "Instance type '%s' not allowed; expected %s",
+                    instance_type,
+                    standardized_vm_policy["instance_type"],
+                )
                 return False
 
         # Then check the allowed images
         for image in standardized_request["allowed_images"]:
             if image not in standardized_vm_policy["allowed_images"]:
-                LOGGER.debug("Image not allowed")
+                LOGGER.debug(
+                    "Image '%s' not allowed; expected %s",
+                    image,
+                    standardized_vm_policy["allowed_images"],
+                )
                 return False
 
         # Then check the startup script
         if (
             standardized_request["startup_script"] is not None
-            and not standardized_request["startup_script"] in standardized_vm_policy["startup_scripts"]
+            and not standardized_request["startup_script"]
+            in standardized_vm_policy["startup_scripts"]
         ):
             LOGGER.debug("Startup script not allowed")
             return False

@@ -113,11 +113,12 @@ def generic_forward_request(request, log_dict=None):
             new_json = request.json
         else:
             new_json = old_json
-            # TODO don't hardcode the path to the capability
             parent_dir = os.path.dirname(os.getcwd())
             capability_dir = "tokens"
             capability_file = "capability.json"
-            capability_path = os.path.join(parent_dir, capability_dir, capability_file)
+
+            # get capability path from env var, or use default
+            capability_path = os.environ.get("CAPABILITY_FILE", os.path.join(parent_dir, capability_dir, capability_file))
             with open(capability_path, "r") as f:
                 new_json["serviceAccounts"] = [json.load(f)]
 

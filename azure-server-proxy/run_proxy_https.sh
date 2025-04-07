@@ -1,6 +1,8 @@
 #!/bin/bash
 
-export CERT_FILE="certs/domain_dir/domain.crt"
-export CERT_KEY="certs/domain_dir/domain.key"
+export CAPABILITY_FILE="./tokens/capability.json"
 
-flask run --host="0.0.0.0" --port="${PORT:-5000}" --cert=$CERT_FILE --key=$CERT_KEY
+export CERT_FILE="./certs/proxy.crt"
+export CERT_KEY="./certs/proxy.key"
+
+flask run --host="0.0.0.0" --port="${PORT:-6000}" --cert=$CERT_FILE --key=$CERT_KEY

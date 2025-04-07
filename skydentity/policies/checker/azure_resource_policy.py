@@ -56,6 +56,7 @@ class AzureVMPolicy(VMPolicy):
             # Default deny on VM properties
             for key in request_contents["properties"]:
                 if key not in AzureVMPolicy.VM_PROPERTIES_ALLOWED_KEYS:
+                    self._pylogger.debug("Key '%s' not one of %s", key, AzureVMPolicy.VM_PROPERTIES_ALLOWED_KEYS)
                     return False
 
             # Default deny on storage properties in VM
@@ -283,7 +284,7 @@ class AzureAttachedAuthorizationPolicy(ResourcePolicy):
         sys.stdout.flush()
         
         request_contents = request.get_json(cache=True)
-        self._pylogger.debug(">>>request:", request_contents)
+        self._pylogger.debug(">>>request: %s", request_contents)
 
         # Handle attached managed identity capability
         if "managedIdentities" not in request_contents:
@@ -300,7 +301,7 @@ class AzureAttachedAuthorizationPolicy(ResourcePolicy):
         # Expect a capability of the form:
         #   { 'nonce': XX, 'header': XX, 'ciphertext': XX, 'tag': XX }
         managed_identity_capability = request_contents["managedIdentities"][0]
-        self._pylogger.debug(">>>managed_identity_capability:", managed_identity_capability)
+        self._pylogger.debug(">>>managed_identity_capability: %s", managed_identity_capability)
         if (managed_identity_capability["nonce"] is None or \
             managed_identity_capability["header"] is None or \
             managed_identity_capability["ciphertext"] is None or \
@@ -320,7 +321,7 @@ class AzureAttachedAuthorizationPolicy(ResourcePolicy):
         # the capability was issued)
         self._pylogger.debug(self._policy[AzurePolicy.Azure_CLOUD_NAME][0]["authorization"])
         if managed_identity_id not in self._policy[AzurePolicy.Azure_CLOUD_NAME][0]["authorization"]:
-            self._pylogger.debug("managed identity id", managed_identity_id, "not in", self._policy[AzurePolicy.Azure_CLOUD_NAME])
+            self._pylogger.debug("managed identity id %s not in %s", managed_identity_id, self._policy[AzurePolicy.Azure_CLOUD_NAME])
             return (None, False)
         
         # Now, change the resource group of the managed_identity_id to be the one in the new resource group
@@ -564,7 +565,7 @@ class AzureDefaultDenyPolicy(CloudPolicy):
         raise NotImplemented("Use `check_default_deny_request` instead.")
     
     def check_default_deny_request(self, request: Request, *aux_info: str) -> bool:
-        self._pylogger.debug("Called check_default_deny_request with aux_info:", aux_info)
+        self._pylogger.debug("Called check_default_deny_request with aux_info: %s", aux_info)
         default_deny_type = aux_info[0]
         request_contents = request.get_json(cache=True)
         if "location" in request_contents and request_contents["location"] not in self.allowed_regions:
@@ -760,7 +761,7 @@ class AzureDeploymentPolicy(ResourcePolicy):
 
                 if "resources" in template:
                     for resource in template["resources"]:
-                        self._pylogger.debug("Resource: ", resource)
+                        self._pylogger.debug("Resource: %s", resource)
                         if "type" in resource:
                             resource_type = resource["type"]
                             if resource_type == "Microsoft.Compute/virtualMachines":
@@ -968,7 +969,7 @@ class AzurePolicy(CloudPolicy):
         if len(resource_types) == 0:
             resource_types.add(("unrecognized",))
             self._pylogger.debug(">>>>> ALL UNRECOGNIZED RESOURCE TYPES <<<<<")
-        self._pylogger.debug("All resource types:", list(resource_types))
+        self._pylogger.debug("All resource types: %s", list(resource_types))
         return list(resource_types)
     
     def check_resource_type(self, resource_type: Tuple[str], request: Request) -> bool:
@@ -980,7 +981,7 @@ class AzurePolicy(CloudPolicy):
         """
         resource_type_key, *resource_type_aux = resource_type
         assert resource_type_key in self._resource_policies
-        self._pylogger.debug("AzurePolicy check_resource_type:", resource_type_key)
+        self._pylogger.debug("AzurePolicy check_resource_type: %s", resource_type_key)
 
         if resource_type_key == "attached_authorizations":
             # Authorization policies
@@ -1010,8 +1011,8 @@ class AzurePolicy(CloudPolicy):
         """
         out_dict = {}
         for resource_type, policy in self._resource_policies.items():
-            self._pylogger.debug("AzurePolicy resource type:", resource_type)
-            self._pylogger.debug("AzurePolicy policy:", policy)
+            self._pylogger.debug("AzurePolicy resource type: %s", resource_type)
+            self._pylogger.debug("AzurePolicy policy: %s", policy)
             if resource_type == "unrecognized" or resource_type == "deployments" or resource_type == "default_deny":
                 continue
             out_dict[resource_type] = policy.to_dict()

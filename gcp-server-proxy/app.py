@@ -2,8 +2,11 @@ import logging as py_logging
 import os
 
 from flask import Flask
+from google.cloud import logging as gcp_logging
 from proxy_util.logging import get_logger, print_and_log
 from proxy_util.skypilot_forward import setup_routes
+
+from skydentity.utils.log_util import build_file_handler
 
 # check whether gcp logging should be enabled (default yes)
 # useful to disable if the active GCP account does not have permissions
@@ -20,12 +23,8 @@ else:
     py_logging.getLogger().setLevel(py_logging.DEBUG)
 
 # add file handler for local logging
-DEFAULT_FILE_HANDLER = py_logging.FileHandler("redirector.log")
-DEFAULT_FORMATTER = py_logging.Formatter(
-    fmt="%(asctime)s %(levelname)s %(filename)s:%(lineno)d - %(message)s"
-)
-DEFAULT_FILE_HANDLER.setFormatter(DEFAULT_FORMATTER)
-LOGGER.addHandler(DEFAULT_FILE_HANDLER)
+LOGGER = py_logging.getLogger()
+LOGGER.addHandler(build_file_handler("redirector.log"))
 
 
 @app.route("/hello", methods=["GET"])

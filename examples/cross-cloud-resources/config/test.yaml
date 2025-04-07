@@ -1,0 +1,20 @@
+policy:
+  - role: bucket-reader
+    clouds:
+      - cloud: gcp
+        permissions:
+          # role in GCP
+          - permission: roles/storage.objectViewer
+            # resource that the role applies to;
+            # some resources require a type (ex. bucket, project, etc.), which should be specified separately
+            resource:
+              # type from https://cloud.google.com/iam/docs/conditions-resource-attributes#resource-type
+              type: storage.googleapis.com/Bucket
+              # name format from https://cloud.google.com/iam/docs/conditions-resource-attributes#resource-name
+              name: projects/_/buckets/storage-bucket-name
+      - cloud: azure
+        permissions:
+          # role in Azure
+          - permission: Storage Blob Data Reader
+            # a resource is defined only by a scope ID in Azure
+            resource: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/Example-Storage-rg/providers/Microsoft.Storage/storageAccounts/storage12345/blobServices/default/containers/blob-container-01

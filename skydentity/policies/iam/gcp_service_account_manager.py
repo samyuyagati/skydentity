@@ -64,7 +64,10 @@ class GCPServiceAccountManager:
                         name=f"projects/{auth.project}",
                         body={
                             "accountId": service_account_name,
-                            "serviceAccount": {"displayName": service_account_name},
+                            "serviceAccount": {
+                                "displayName": service_account_name,
+                                "description": "[skydentity] Automatically generated service account",
+                            },
                         },
                     )
                     .execute()

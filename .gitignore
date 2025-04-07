@@ -6,6 +6,8 @@ serverless-gcp-skydentity/skyid/*
 serverless-gcp-skydentity/gcloud/*
 serverless-gcp-skydentity/__pycache__/*
 serverless-gcp-skydentity/skyid/lib/**__pycache__**
+
+# logs and plots
 examples/skypilot/logs/*
 examples/skypilot/plots/*
 examples/skypilot/*.pdf
@@ -13,10 +15,13 @@ examples/heavy_load/logs/*
 examples/heavy_load/plots/*
 examples/aether/aether-plots/*
 examples/aether/logs/*
-certs/*.key*
-certs/*.crt
-certs/*.csr
-certs/*rootCA*
+
+# certificates
+**/certs/**/*.key
+**/certs/**/*.crt
+**/certs/**/*.csr
+**/certs/*root-ca*
+
 .python_packages
 gcp-env
 .venv/*
