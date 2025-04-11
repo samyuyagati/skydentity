@@ -12,3 +12,8 @@ policy:
               type: storage.googleapis.com/Bucket
               # name format from https://cloud.google.com/iam/docs/conditions-resource-attributes#resource-name
               name: projects/_/buckets/skydentity-test-bucket
+          - permission: roles/storage.objectViewer
+            resource:
+              type: storage.googleapis.com/Object
+              # can also specify prefixes (i.e. to allow access for objects in a bucket)
+              name_prefix: projects/_/buckets/skydentity-test-bucket

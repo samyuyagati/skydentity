@@ -22,10 +22,16 @@ from skydentity.policies.checker.azure_storage_policy import AzureStoragePolicy
 from skydentity.policies.checker.crosscloud_resources.crosscloud_resource_policy import (
     CrossCloudPolicy,
 )
-from skydentity.proxy_util.crosscloud_resources.signature import KeyPair
+from skydentity.policies.managers.gcp_global_state_manager import CrossCloudGlobalState
+from skydentity.proxy_util.crosscloud_resources.signature import KeyPair, export_key
 from skydentity.utils.hash_util import hash_public_key
 
-from .credentials import _generate_rsa_key_pair, get_managed_identity_auth_token
+from .credentials import (
+    _generate_rsa_key_pair,
+    get_global_state_manager,
+    get_managed_identity_auth_token,
+)
+from .crosscloud import prepare_cloudinit
 from .logging import build_time_logging_string, get_logger, print_and_log
 from .policy_check import (
     check_request_for_crosscloud_resources,
@@ -263,7 +269,7 @@ def generic_forward_request(
             return Response("Unauthorized", 401)
 
         # call action function after validating the request
-        action_func_result = None
+        action_func_result: Optional[ActionFuncResult] = None
         if action_func is not None:
             print_and_log(logger, "calling action func")
             action_func_result = action_func()
@@ -317,6 +323,10 @@ def generic_forward_request(
 
             # Inject random public ssh keys if applicable
             inject_random_public_key(new_json, new_url)
+
+        # apply request body modifier from action function
+        if new_json is not None and action_func_result is not None:
+            new_json = action_func_result.request_body_modifier(new_json)
 
         # Send the request to Azure
         start_send_azure_request = time.perf_counter()
@@ -651,7 +661,9 @@ def create_storage_authorization_route(cloud):
     return Response("Unauthorized", 401)
 
 
-def vm_creation_action_func() -> ActionFuncResult[tuple[CrossCloudPolicy, KeyPair]]:
+def vm_creation_action_func() -> (
+    ActionFuncResult[tuple[CrossCloudPolicy, str, KeyPair]]
+):
     """
     Action function for VM creation.
 
@@ -660,6 +672,7 @@ def vm_creation_action_func() -> ActionFuncResult[tuple[CrossCloudPolicy, KeyPai
     LOGGER.info("in vm creation action func; method %s", request.method)
     # only accept VM creation requests
     if request.method != "PUT":
+        LOGGER.info("Request method is not PUT; exiting out of vm creation action func")
         return ActionFuncResult()
 
     # get public key from the request
@@ -676,32 +689,37 @@ def vm_creation_action_func() -> ActionFuncResult[tuple[CrossCloudPolicy, KeyPai
         return ActionFuncResult()
 
     # otherwise, a keypair was created
-    crosscloud_policy, keypair = crosscloud_resource_check_result
+    crosscloud_policy, vm_role, keypair = crosscloud_resource_check_result
 
     # TODO: store the key in azure key vault
     #  and get the secret name, to be passed into the VM
     #  to do this, we probably need to edit AzureManagedIdentityManager,
     #  creating a new method to add access to a specific key vault
 
+    # TODO: see az vm secrets add
+    #  or secrets key to properties.osProfile.secretes
+
     # TODO: and maybe we need to add a new class? to manage key vaults
 
-    def request_body_modifier(body):
+    def request_body_modifier(body: dict):
         """
-        Modifier for the request body to attach information about the private key.
+        Modifier for the request body to attach information about the private key,
+        among other configuration information.
         """
-        # TODO: modify cloud-init script (i.e. the userdata of the request)
-        #  to include any additional files (ex. secret name, IP/hostname of the authorizers)
-        #  this is probably just going to be in one config file (JSON? YAML?), put in a standard location
+        LOGGER.debug("In request body modifier")
+        body = prepare_cloudinit(body, keypair.private_key)
+        LOGGER.info("New request body: %s", body)
         return body
 
     return ActionFuncResult(
-        state=(crosscloud_policy, keypair), request_body_modifier=request_body_modifier
+        state=(crosscloud_policy, vm_role, keypair),
+        request_body_modifier=request_body_modifier,
     )
 
 
 def vm_creation_response_func(
     response: requests.Response,
-    result: ActionFuncResult[tuple[CrossCloudPolicy, KeyPair]],
+    result: ActionFuncResult[tuple[CrossCloudPolicy, str, KeyPair]],
 ):
     """
     Response function for VM creation.
@@ -723,12 +741,28 @@ def vm_creation_response_func(
 
     LOGGER.info("Response received for VM creation; action func result: %s", result)
 
-    # TODO: upload information about the VM into the global state
-    #  probably need a new class for this?
-    #  need to store mapping from (cloud, VM ID) to:
-    #   - public key for VM signatures
-    #   - orchestrator pubkey hash (to identify policy)
-    #   - VM role
+    assert result.state is not None, "Action function result state was none"
+    crosscloud_policy, vm_role, keypair = result.state
 
-    # TODO: if the VM has been created, then modify the roles given
-    #  to the managed identity so that it has access to the secret store
+    # get public key from the request
+    orchestrator_pubkey_bytes = base64.b64decode(
+        request.headers["X-PublicKey"], validate=True
+    )
+    orchestrator_pubkey_hash = hash_public_key(orchestrator_pubkey_bytes)
+
+    # get VM ID from response
+    response_json = response.json()
+    vm_id = response_json["properties"]["vmId"]
+
+    global_state = CrossCloudGlobalState(
+        cloud="azure",
+        vm_id=vm_id,
+        vm_public_key=export_key(keypair.public_key),
+        vm_role=vm_role,
+        orchestrator_key_hash=orchestrator_pubkey_hash,
+    )
+
+    LOGGER.debug("Updating global state; adding: %s", global_state)
+    global_state_manager = get_global_state_manager()
+    global_state_manager.update_state(global_state)
+    LOGGER.info("Updated global state; added %s", global_state)

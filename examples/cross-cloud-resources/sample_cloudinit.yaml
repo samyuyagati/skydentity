@@ -1,0 +1,17 @@
+#cloud-config
+
+write_files:
+- path: /run/skydentity/start.py
+  encoding: text/plain
+  content: "import base64\nimport json\nfrom datetime import datetime\n\nimport requests\nfrom Crypto.Hash import SHA256\nfrom Crypto.PublicKey import RSA\nfrom Crypto.Signature import pkcs1_15\nfrom google.cloud.storage.client import Client\nfrom google.oauth2.credentials import Credentials\n\nSKYDENTITY_CONFIG_PATH = \"/run/skydentity/config.json\"\n\nwith open(SKYDENTITY_CONFIG_PATH, \"r\", encoding=\"utf-8\") as f:\n    config = json.load(f)\n\n# get authorizer URL\nconfig_urls = config[\"urls\"]\nGCP_AUTHORIZER_URL = config_urls[\"gcp\"].rstrip(\"/\")\n\n# TODO: move to secret store\n# fetch RSA private key for the VM\nvm_private_key_raw = config[\"private_key\"]\nvm_private_key = RSA.import_key(vm_private_key_raw)\n\n# fetch VM id from instance metadata\nmetadata_response = requests.get(\n    \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\",\n    headers={\"Metadata\": \"true\"},\n    proxies={\"http\": \"\", \"https\": \"\"},\n    timeout=60,\n)\nmetadata_json = metadata_response.json()\nVM_ID = metadata_json[\"compute\"][\"vmId\"]\n\n# sign request body\nsignature_body = {\n    \"vm_id\": VM_ID,\n    \"source_cloud\": \"azure\",\n    \"dest_cloud\": \"gcp\",\n    \"timestamp\": int(datetime.now().timestamp()),\n}\n# normalize signature body by sorting by key\nsignature_body_bytes = json.dumps(signature_body, sort_keys=True).encode(\"utf-8\")\nsignature_body_hash = SHA256.new(signature_body_bytes)\nsignature = pkcs1_15.new(vm_private_key).sign(signature_body_hash)\nsignature_b64 = base64.b64encode(signature).decode(\"utf-8\")\n\n# request credentials\ncredentials_request_body = {**signature_body, \"signature\": signature_b64}\ncredentials_response = requests.post(\n    f\"{GCP_AUTHORIZER_URL}/skydentity/cross-cloud/credentials\",\n    json=credentials_request_body,\n    timeout=60,\n)\n\n# get credentials from response\ncredentials_json = credentials_response.json()\naccess_token = credentials_json[\"access_token\"]\n\ncredentials = Credentials(token=access_token)\nclient = Client(project=\"sky-identity\", credentials=credentials)\n\n# send request to GCP with the given credentials\nblobs = client.bucket(\"skydentity-test-bucket\").list_blobs()\n\nall_bytes = b\"\"\nfor blob in blobs:\n    print(\"Blob:\", blob.name)\n    all_bytes += str(blob.name).encode(\"utf-8\")\n    all_bytes += b\"\\n\"\n    blob_content = blob.download_as_string()\n    print(\"Content:\", blob_content)\n    all_bytes += blob_content\n    all_bytes += b\"\\n\\n\"\n\n# write output to a file\nwith open(\"/run/skydentity/out\", \"wb\") as f:\n    f.write(all_bytes)\n"
+
+packages:
+- apt: [python3-pip, python3-venv]
+
+runcmd:
+  # create and activate a virtual environment
+- [python3, -m, venv, /run/skydentity/venv]
+  # install dependencies through pip
+- [/run/skydentity/venv/bin/pip, install, requests, pycryptodome, google-cloud-storage]
+  # run the script
+- [/run/skydentity/venv/bin/python3, /run/skydentity/start.py]

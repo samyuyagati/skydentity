@@ -21,7 +21,7 @@ class AzureVMPolicy(VMPolicy):
     Defines methods for Azure VM policies.
     """
 
-    VM_PROPERTIES_ALLOWED_KEYS = set(["hardwareProfile", "storageProfile", "networkProfile", "osProfile", "priority", "billingProfile"])
+    VM_PROPERTIES_ALLOWED_KEYS = set(["hardwareProfile", "storageProfile", "networkProfile", "osProfile", "priority", "billingProfile", "userData"])
     STORAGE_PROFILE_ALLOWED_KEYS = set(["osDisk", "imageReference"])
     OS_DISK_ALLOWED_KEYS = set(["createOption", "managedDisk", "diskSizeGB"])
     NETWORK_PROFILE_ALLOWED_KEYS = set(["networkInterfaces"])

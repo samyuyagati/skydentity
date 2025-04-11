@@ -10,6 +10,9 @@ if [ -z "$AZURE_DB_INFO_FILE" ]; then
     export AZURE_DB_INFO_FILE="local_tokens/cosmos_credentials.json"
 fi
 
+# global state service account file
+export GLOBAL_STATE_ACCOUNT_INFO_FILE="../tokens/gcp/sky-identity_global-state-accessor.json"
+
 # Default to HTTP
 SECURE=false
 

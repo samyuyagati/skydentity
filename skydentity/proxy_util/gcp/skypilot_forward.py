@@ -9,20 +9,20 @@ import os
 import random
 import time
 from collections import namedtuple
-from functools import cache
-from http import HTTPStatus
+from datetime import datetime
 from urllib.parse import urlparse
 
-import requests
 from flask import Flask, Response, request
 
+from skydentity.policies.checker.crosscloud_resources.crosscloud_resource_policy import (
+    CrossCloudPolicy,
+)
 from skydentity.policies.checker.gcp_storage_policy import (
-    AuthorizationRequest,
     GCPStoragePolicy,
 )
-from skydentity.policies.checker.policy_actions import PolicyAction
-from skydentity.policies.iam.gcp_storage_service_account_manager import (
-    GCPStorageServiceAccountManager,
+from skydentity.proxy_util.crosscloud_resources.signature import (
+    SignatureContent,
+    validate_signature,
 )
 
 from ...policies.checker.gcp_authorization_policy import GCPAuthorizationPolicy
@@ -31,10 +31,12 @@ from ...utils.log_util import build_time_logging_string
 from ...utils.signature import strip_signature_headers, verify_request_signature
 from .credentials import (
     activate_service_account,
+    get_crosscloud_policy_manager,
+    get_crosscloud_service_account_manager,
+    get_global_state_manager,
     get_service_account_auth_token,
     get_service_account_path,
 )
-from .logging import LogLevel, get_logger, print_and_log
 from .policy_check import (
     check_request_from_policy,
     get_authorization_policy_manager,
@@ -200,6 +202,11 @@ ROUTES: list[Route] = [
         path="/skydentity/cloud/<cloud>/init-storage-authorization",
         fields=["cloud"],
         view_func=lambda cloud: init_storage_authorization_route(cloud),
+    ),
+    Route(
+        methods=["POST"],
+        path="/skydentity/cross-cloud/credentials",
+        view_func=lambda: generate_crosscloud_credentials_route(),
     ),
 ]
 
@@ -537,7 +544,9 @@ def create_storage_authorization_route(cloud):
                 request_auth.bucket, request_auth.action
             )
         )
-        LOGGER.debug(f"Returning access token {access_token}, expires {expiration_timestamp}")
+        LOGGER.debug(
+            f"Returning access token {access_token}, expires {expiration_timestamp}"
+        )
         return Response(
             json.dumps({"access_token": access_token, "expires": expiration_timestamp}),
             200,
@@ -572,3 +581,89 @@ def init_storage_authorization_route(cloud):
     storage_policy_manager.init_service_accounts(allowed_buckets, allowed_actions)
 
     return Response(status=204)
+
+
+def generate_crosscloud_credentials_route():
+    """
+    Verifies request signature, and then generate credentials for the given VM.
+
+    Expects a request body of the form
+    {
+        "vm_id": <vm ID>
+        "source_cloud": <source cloud name>
+        "dest_cloud": "gcp",
+        "timestamp": <timestamp of request>
+        "signature": <b64-encoded signature on all of the above fields>
+    }
+    """
+
+    LOGGER.debug("generate crosscloud credentials handler")
+
+    request_body = request.json
+    assert request_body is not None
+
+    vm_id = request_body["vm_id"]
+    source_cloud = request_body["source_cloud"]
+    dest_cloud = request_body["dest_cloud"]
+    timestamp = request_body["timestamp"]
+    base64_signature = request_body["signature"]
+
+    # use the source cloud and VM ID to fetch the public key; error if not found
+    global_state_manager = get_global_state_manager()
+    global_state = global_state_manager.fetch_state(source_cloud, vm_id)
+
+    signature_content = SignatureContent(
+        vm_id=vm_id,
+        source_cloud=source_cloud,
+        dest_cloud=dest_cloud,
+        timestamp=timestamp,
+    )
+
+    valid_signature = validate_signature(
+        base64_signature, signature_content, global_state.vm_public_key.encode("utf-8")
+    )
+
+    if not valid_signature:
+        LOGGER.debug("Invalid signature!")
+        return Response("Unauthorized", 401)
+    if dest_cloud != "gcp":
+        LOGGER.debug("Invalid dest cloud (expected 'gcp', got %s)", dest_cloud)
+        return Response("Unauthorized", 401)
+
+    # check timestamp
+    try:
+        request_time = int(timestamp)
+    except ValueError:
+        return Response("Bad request: invalid timestamp", 400)
+
+    cur_time = datetime.now().timestamp()
+
+    # timestamps can have deviation of at most 60 seconds
+    # (to account for delays and desyncs)
+    if abs(cur_time - request_time) > 60:
+        LOGGER.debug(
+            "Timestamp discrepancy too high; given %d, current time %d",
+            request_time,
+            cur_time,
+        )
+        return Response("Unauthorized", 401)
+
+    # fetch the cross-cloud policy
+    crosscloud_policy_manager = get_crosscloud_policy_manager()
+    crosscloud_policy_dict = crosscloud_policy_manager.get_policy_dict(
+        global_state.orchestrator_key_hash
+    )
+    crosscloud_policy = CrossCloudPolicy(policy_dict=crosscloud_policy_dict)
+
+    # get the access identity in GCP
+    service_account_email = crosscloud_policy.get_access_identity(
+        global_state.vm_role, cloud="gcp"
+    )
+    if service_account_email is None:
+        return Response("Bad request: VM role no longer found in policy", 400)
+
+    # request valid; generate credentials for the role and return it
+    service_account_manager = get_crosscloud_service_account_manager()
+    access_token = service_account_manager.generate_credentials(service_account_email)
+
+    return Response(json.dumps({"access_token": access_token}), 200)

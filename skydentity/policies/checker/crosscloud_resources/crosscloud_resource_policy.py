@@ -191,6 +191,35 @@ class CrossCloudPolicy:
 
         return vm_role
 
+    def find_authorization(self, role: str) -> Optional[CrossCloudAuthorization]:
+        """
+        Find the authorization corresponding to the given role.
+        Returns None if not found.
+        """
+        for authorization in self.policy:
+            if authorization.role == role:
+                return authorization
+
+        return None
+
+    def get_access_identity(self, role: str, cloud: str) -> Optional[str]:
+        """
+        Retrieve the access identity for the given role in a particular cloud.
+
+        Returns None if either the role or the cloud is not found.
+        """
+        authorization = self.find_authorization(role)
+        if authorization is None:
+            # role not found
+            return None
+
+        for cloud_authorization in authorization.clouds:
+            if cloud_authorization.cloud == cloud:
+                return cloud_authorization.access_identity
+
+        # cloud not found
+        return None
+
 
 def _test_parse():
     """Test parsing"""

@@ -9,10 +9,15 @@ from skydentity.policies.checker.crosscloud_resources.crosscloud_resource_policy
 class CrossCloudPolicyManager:
     def __init__(
         self,
-        credentials_path: str,
+        creds: str | dict,
         firestore_policy_collection: str = "crosscloud_resource_policies",
     ):
-        self._credentials = credentials.Certificate(credentials_path)
+        """
+        Initializes the cross-cloud policy manager.
+
+        Requires either a path to the credentials file, or the contents of the credentials file.
+        """
+        self._credentials = credentials.Certificate(creds)
 
         try:
             self._app = firebase_admin.initialize_app(

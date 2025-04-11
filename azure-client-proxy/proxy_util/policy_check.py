@@ -2,13 +2,13 @@
 Utility functions for handling policy checking.
 """
 
+import logging
 import time
 from functools import cache
 from typing import Optional, Tuple, Union
 
 from flask import Request
 
-from skydentity.policies.checker.azure_resource_policy import AzurePolicy
 from skydentity.policies.checker.crosscloud_resources.crosscloud_resource_policy import (
     CrossCloudPolicy,
 )
@@ -31,13 +31,15 @@ from skydentity.utils.hash_util import hash_public_key
 from .credentials import (
     get_capability_enc_key,
     get_capability_enc_key_base64,
-    get_crosscloud_state_credentials,
     get_db_endpoint,
     get_db_info_file,
     get_db_key,
+    get_global_state_account_info,
     get_storage_connection_string,
 )
 from .logging import build_time_logging_string, get_logger, print_and_log
+
+LOGGER = logging.getLogger(__name__)
 
 
 @cache
@@ -74,7 +76,8 @@ def get_storage_policy_manager() -> AzureStoragePolicyManager:
 
 @cache
 def get_crosscloud_policy_manager() -> CrossCloudPolicyManager:
-    return CrossCloudPolicyManager(credentials_path=get_crosscloud_state_credentials())
+    cred_info = get_global_state_account_info()
+    return CrossCloudPolicyManager(creds=cred_info)
 
 
 def check_request_from_policy(
@@ -199,13 +202,14 @@ def check_request_from_policy(
 
 def check_request_for_crosscloud_resources(
     public_key_bytes: bytes, request: Request
-) -> Optional[tuple[CrossCloudPolicy, KeyPair]]:
+) -> Optional[tuple[CrossCloudPolicy, str, KeyPair]]:
     """
     Check the given VM creation request to extract roles relevant to the cross-cloud policy
     for the orchestrator specified by the given public key.
 
     If a valid role is specified, a new key-pair is created,
-    and various pieces of metadata about the policy is returned.
+    and various pieces of metadata about the policy is returned,
+    including the VM's desired role.
 
     Otherwise, this method returns None, and no further action needs to be taken,
     since the VM does not rqeuire cross-cloud resource access.
@@ -215,6 +219,7 @@ def check_request_for_crosscloud_resources(
 
     crosscloud_policy_manager = get_crosscloud_policy_manager()
     policy_dict = crosscloud_policy_manager.get_policy_dict(public_key_hash)
+    LOGGER.debug("Retrieved policy dict: %s", policy_dict)
 
     crosscloud_policy = CrossCloudPolicy(policy_dict)
     vm_role = crosscloud_policy.get_vm_role_from_request("azure", request)
@@ -226,4 +231,4 @@ def check_request_for_crosscloud_resources(
     # otherwise, role specified on VM creation;
     # generate a new key pair, and return it
     keypair = generate_vm_keypair()
-    return (crosscloud_policy, keypair)
+    return (crosscloud_policy, vm_role, keypair)

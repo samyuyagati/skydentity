@@ -4,6 +4,7 @@ Utility methods for fetching credentials.
 
 import base64
 import json
+import logging
 import os
 import subprocess
 from functools import cache
@@ -12,6 +13,10 @@ from typing import Tuple
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+
+from skydentity.policies.managers.gcp_global_state_manager import GCPGlobalStateManager
+
+LOGGER = logging.getLogger(__name__)
 
 # Global file variables; underscore to prevent external imports
 _CAPABILITY_ENC_KEY_FILE = os.environ.get("CAPABILITY_ENC_KEY_FILE", None)
@@ -27,7 +32,7 @@ _APP_ID = os.environ.get("APP_ID", None)
 
 _CONNECTION_STRING = os.environ.get("AZURE_STORAGE_CONNECTION_STRING", None)
 
-_CROSSCLOUD_STATE_CREDENTIALS = os.environ.get("CROSSCLOUD_STATE_CREDENTIALS", None)
+_GLOBAL_STATE_ACCOUNT_INFO_FILE = os.environ.get("GLOBAL_STATE_ACCOUNT_INFO_FILE", None)
 
 # validate global constants from environment variables
 assert (
@@ -36,7 +41,7 @@ assert (
 assert (_DB_INFO_FILE is not None) or (_DB_ENDPOINT is not None and _DB_KEY is not None)
 assert _CONNECTION_STRING is not None
 
-assert _CROSSCLOUD_STATE_CREDENTIALS is not None
+assert _GLOBAL_STATE_ACCOUNT_INFO_FILE is not None
 
 
 @cache
@@ -157,9 +162,18 @@ def get_storage_connection_string() -> str:
     return _CONNECTION_STRING
 
 
-def get_crosscloud_state_credentials() -> str:
+@cache
+def get_global_state_account_info() -> dict:
     """
-    Retrieve the path to credentials for global cross-cloud resource state
+    Retrieve the credentials for global cross-cloud resource state
     """
-    return _CROSSCLOUD_STATE_CREDENTIALS
+    with open(_GLOBAL_STATE_ACCOUNT_INFO_FILE, "r", encoding="utf-8") as cred_file:
+        cred_info = json.load(cred_file)
 
+    return cred_info
+
+
+@cache
+def get_global_state_manager() -> GCPGlobalStateManager:
+    cred_info = get_global_state_account_info()
+    return GCPGlobalStateManager(get_global_state_account_info())

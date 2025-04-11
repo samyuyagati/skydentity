@@ -1,18 +1,29 @@
 # Proxy
+virtualenv
 Flask
 requests
 setuptools
 build
 gunicorn
 pyyaml
+ruamel.yaml
+ruamel.yaml.string
 pycryptodome
 backoff
 # Azure
 azure-mgmt-resource 
 azure-mgmt-compute
 azure-mgmt-network
+azure-mgmt-msi
+azure-mgmt-authorization
+azure-mgmt-subscription
 azure-identity
+azure-cosmos
+azure-storage-blob
+azure-keyvault-secrets
 # GCP
 google-cloud-compute
+google-cloud-resource-manager
+google-cloud-iam
 google-cloud-logging
 firebase-admin

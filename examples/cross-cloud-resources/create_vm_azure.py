@@ -1,3 +1,5 @@
+import base64
+import os
 from typing import cast
 
 from azure.core.exceptions import ResourceNotFoundError
@@ -49,6 +51,8 @@ LOCATION = "westus2"
 
 USERNAME = "skydentity"
 PASSWORD = "$kyD3ntity1sAwesome"
+
+CLOUD_INIT_FILENAME = "sample_cloudinit.yaml"
 
 BASE_URL = "https://127.0.0.1:6000/"
 # BASE_URL = "https://management.azure.com"
@@ -148,6 +152,10 @@ def create_network() -> str:
     return nic.id
 
 
+def generate_cloudinit():
+    pass
+
+
 def create_instance(
     vm_name: str,
     nic_id: str,
@@ -158,7 +166,13 @@ def create_instance(
         CREDENTIAL, SUBSCRIPTION_ID, base_url=BASE_URL
     )
 
-    # identity_name = "test"
+    # cloud init file is relative to the script name
+    this_script_file_path = __file__
+    this_script_dir_path = os.path.dirname(this_script_file_path)
+    cloud_init_file_path = os.path.join(this_script_dir_path, CLOUD_INIT_FILENAME)
+
+    with open(cloud_init_file_path, "r", encoding="utf-8") as cloud_init_file:
+        cloud_init_data = cloud_init_file.read()
 
     vm = VirtualMachine(
         location=LOCATION,
@@ -180,6 +194,8 @@ def create_instance(
             )
         ),
         tags={"skydentity-crosscloud-role": crosscloud_role},
+        # user data must be base64 encoded
+        user_data=base64.b64encode(cloud_init_data.encode("utf-8")).decode("utf-8"),
     )
 
     print(f"Creating VM {vm_name}...")

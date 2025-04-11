@@ -6,6 +6,8 @@ setuptools
 build
 gunicorn
 pyyaml
+ruamel.yaml
+ruamel.yaml.string
 pycryptodome
 backoff
 # Azure
@@ -18,6 +20,7 @@ azure-mgmt-subscription
 azure-identity
 azure-cosmos
 azure-storage-blob
+azure-keyvault-secrets
 # GCP
 google-cloud-compute
 google-cloud-resource-manager

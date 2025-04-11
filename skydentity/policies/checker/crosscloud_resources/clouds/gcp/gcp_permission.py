@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import ClassVar, cast
+from typing import ClassVar, Optional
 
 from skydentity.policies.checker.crosscloud_resources.clouds.base import (
     CrossCloudPolicyPermission,
@@ -22,15 +22,22 @@ class GCPPermission(CrossCloudPolicyPermission):
         # https://cloud.google.com/iam/docs/conditions-resource-attributes#resource-type
         type: str
 
+        # TODO: can probably make the name attribute of type str | dict,
+        # so that more complicated policies can be specified
+
         # `resource.name` in IAM conditions:
         # https://cloud.google.com/iam/docs/conditions-resource-attributes#resource-name
-        name: str
+        name: Optional[str] = None
+
+        # `resource.name.startsWith` in IAM conditions
+        name_prefix: Optional[str] = None
 
         def to_dict(self):
             """Convert this object into a Python dictionary"""
             return {
                 "type": self.type,
                 "name": self.name,
+                "name_prefix": self.name_prefix,
             }
 
     @dataclass
@@ -68,16 +75,21 @@ class GCPPermission(CrossCloudPolicyPermission):
                 resource_dict, dict
             ), "Resource must be specified as a dict"
             assert "type" in resource_dict, "Resource type must be specified"
-            assert "name" in resource_dict, "Resource name must be specified"
+            assert (
+                "name" in resource_dict or "name_prefix" in resource_dict
+            ), "Resource name must be specified (either explicitly or as a prefix)"
 
             resource_type: str = resource_dict["type"]
-            resource_name: str = resource_dict["name"]
+            resource_name: Optional[str] = resource_dict.get("name", None)
+            resource_name_prefix: Optional[str] = resource_dict.get("name_prefix", None)
 
             parsed_permissions.append(
                 GCPPermission.Permission(
                     permission=permission_name,
                     resource=GCPPermission.Resource(
-                        type=resource_type, name=resource_name
+                        type=resource_type,
+                        name=resource_name,
+                        name_prefix=resource_name_prefix,
                     ),
                 )
             )

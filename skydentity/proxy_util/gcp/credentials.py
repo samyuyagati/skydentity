@@ -3,19 +3,41 @@ Utility methods for fetching credentials.
 """
 
 import json
+import logging
 import os
 import subprocess
 from functools import cache
-from typing import Tuple
+
+from skydentity.policies.iam.gcp_crosscloud_service_account_manager import (
+    GCPCrossCloudServiceAccountManager,
+)
+from skydentity.policies.managers.crosscloud_policy_manager import (
+    CrossCloudPolicyManager,
+)
+from skydentity.policies.managers.gcp_global_state_manager import GCPGlobalStateManager
+
+LOGGER = logging.getLogger(__name__)
 
 # Global file variables; underscore to prevent external imports
 # Must provide these environment variables if running locally
-_SERVICE_ACCT_INFO_FILE = os.environ.get("SERVICE_ACCOUNT_INFO_FILE", "/cloud_creds/gcp/proxy_service_account_key.json")
-_CAPABILITY_ENC_KEY_FILE = os.environ.get("CAPABILITY_ENC_KEY_FILE", "/cloud_creds/enc/capability_enc.key")
+_SERVICE_ACCT_INFO_FILE = os.environ.get(
+    "SERVICE_ACCOUNT_INFO_FILE", "/cloud_creds/gcp/proxy_service_account_key.json"
+)
+_CAPABILITY_ENC_KEY_FILE = os.environ.get(
+    "CAPABILITY_ENC_KEY_FILE", "/cloud_creds/enc/capability_enc.key"
+)
 
 # validate global constants from environment variables
 assert _SERVICE_ACCT_INFO_FILE is not None and os.path.isfile(_SERVICE_ACCT_INFO_FILE)
 assert _CAPABILITY_ENC_KEY_FILE is not None and os.path.isfile(_CAPABILITY_ENC_KEY_FILE)
+
+_GLOBAL_STATE_ACCT_INFO_FILE = os.environ.get(
+    "GLOBAL_STATE_ACCOUNT_INFO_FILE",
+    "/cloud_creds/gcp/proxy_service_account_key.json",
+)
+assert _GLOBAL_STATE_ACCT_INFO_FILE is not None and os.path.isfile(
+    _GLOBAL_STATE_ACCT_INFO_FILE
+)
 
 
 @cache  # shouldn't change throughout the proxy lifespan
@@ -75,3 +97,29 @@ def get_capability_enc_key() -> str:
     Retrieve the key for capability encoding.
     """
     return _CAPABILITY_ENC_KEY_FILE
+
+
+@cache
+def get_global_state_account_info() -> dict:
+    with open(_GLOBAL_STATE_ACCT_INFO_FILE, "r", encoding="utf-8") as cred_file:
+        cred_info = json.load(cred_file)
+
+    return cred_info
+
+
+@cache
+def get_global_state_manager() -> GCPGlobalStateManager:
+    return GCPGlobalStateManager(get_global_state_account_info())
+
+
+@cache
+def get_crosscloud_policy_manager() -> CrossCloudPolicyManager:
+    cred_info = get_global_state_account_info()
+    return CrossCloudPolicyManager(creds=cred_info)
+
+
+@cache
+def get_crosscloud_service_account_manager() -> GCPCrossCloudServiceAccountManager:
+    return GCPCrossCloudServiceAccountManager(
+        credentials_path=get_service_account_path()
+    )

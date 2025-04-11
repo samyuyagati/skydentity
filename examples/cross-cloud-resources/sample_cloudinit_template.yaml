@@ -1,0 +1,17 @@
+#cloud-config
+
+write_files:
+  - path: /run/skydentity/start.py
+    encoding: text/plain
+    content: SCRIPT_CONTENT
+
+packages:
+  - apt: [python3-pip, python3-venv]
+
+runcmd:
+  # create and activate a virtual environment
+  - [python3, -m, venv, /run/skydentity/venv]
+  # install dependencies through pip
+  - [/run/skydentity/venv/bin/pip, install, requests, pycryptodome, google-cloud-storage]
+  # run the script
+  - [/run/skydentity/venv/bin/python3, /run/skydentity/start.py]
